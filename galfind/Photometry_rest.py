@@ -60,6 +60,8 @@ class Photometry_rest(Photometry):
         Posterior distributions for properties. Default is `None`.
     property_kwargs : `dict` or `None`, optional
         Configuration dictionaries for property calculators. Default is `None`.
+    ext_src_corrs : `dict` or `None`, optional
+        Extended source corrections by filter name. Default is `None`.
     """
     def __init__(
         self: Self,
@@ -71,7 +73,8 @@ class Photometry_rest(Photometry):
         properties: Optional[Dict[str, Union[u.Magnitude, u.Quantity, u.Dex]]] = None,
         property_errs: Optional[Dict[str, Tuple[Union[u.Magnitude, u.Quantity, u.Dex], Union[u.Magnitude, u.Quantity, u.Dex]]]] = None,
         property_PDFs: Optional[Dict[str, Type[PDF]]] = None,
-        property_kwargs: Optional[Dict[str, Dict[str, Union[str, int, float]]]] = None
+        property_kwargs: Optional[Dict[str, Dict[str, Union[str, int, float]]]] = None,
+        ext_src_corrs: Optional[Dict[str, float]] = None,
     ):
         self.z = z
         if properties is None:
@@ -82,10 +85,13 @@ class Photometry_rest(Photometry):
             property_PDFs = {}
         if property_kwargs is None:
             property_kwargs = {}
+        if ext_src_corrs is None:
+            ext_src_corrs = {}
         self.properties = properties
         self.property_errs = property_errs
         self.property_PDFs = property_PDFs
         self.property_kwargs = property_kwargs
+        self.ext_src_corrs = ext_src_corrs
         # unmask if given as mask
         if isinstance(flux, Masked):
             flux = flux.unmasked
@@ -137,7 +143,9 @@ class Photometry_rest(Photometry):
         `Photometry_rest`
             Rest-frame photometry at the specified redshift.
         """
-        return cls(phot.filterset, phot.flux, phot.flux_errs, phot.depths, z)
+        # Propagate extended source corrections if present
+        ext_src_corrs = getattr(phot, 'ext_src_corrs', None)
+        return cls(phot.filterset, phot.flux, phot.flux_errs, phot.depths, z, ext_src_corrs=ext_src_corrs)
 
     @classmethod
     def from_phot_obs(cls, phot) -> Self:
@@ -153,12 +161,15 @@ class Photometry_rest(Photometry):
         `Photometry_rest`
             Rest-frame photometry at the galaxy's redshift.
         """
+        # Propagate extended source corrections if present
+        ext_src_corrs = getattr(phot, 'ext_src_corrs', None)
         return cls(
             phot.filterset,
             phot.flux,
             phot.flux_errs,
             phot.depths,
             phot.z,
+            ext_src_corrs=ext_src_corrs,
         )
 
     def __str__(self: Self) -> str:

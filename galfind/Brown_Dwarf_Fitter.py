@@ -12,9 +12,9 @@ import h5py
 from astropy.table import Table
 from pathlib import Path
 import itertools
-from typing import TYPE_CHECKING, Dict, List, NoReturn, Union
+from typing import TYPE_CHECKING, Dict, List, NoReturn, Union, Optional, Tuple
 if TYPE_CHECKING:
-    from . import Catalogue
+    from . import Catalogue, Spectral_Catalogue
 try:
     from typing import Self, Type, Any  # python 3.11+
 except ImportError:
@@ -181,11 +181,39 @@ class Template_Fitter(SED_code):
         }
         # , "met", "co", "f"
 
+    def pre_fitting(
+        self: Type[Self],
+        cat: Union[Catalogue, Spectral_Catalogue],
+        aper_diam: u.Quantity,
+        overwrite: bool = False,
+        save_name: Optional[str] = None,
+    ) -> None:
+        """Perform any pre-fitting steps required by this fitter.
+
+        Implements the `SED_code.pre_fitting` interface. Currently a no-op
+        for `Template_Fitter`, since no pre-fitting steps are required.
+
+        Parameters
+        ----------
+        cat : `Catalogue` or `Spectral_Catalogue`
+            Catalogue to fit.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter of the photometry to extract.
+        overwrite : `bool`, optional
+            Whether to remake the input file if one already exists. Default
+            is `False`.
+        save_name : `str`, optional
+            Name of the file to save any pre-fitting output to. Default is
+            ``None`` (no output saved).
+        """
+        pass
+
     def make_in(
         self,
         cat: Catalogue,
         aper_diam: u.Quantity,
-        overwrite: bool = False
+        overwrite: bool = False,
+        save_name: Optional[str] = None,
     ) -> str:
         """Build the input photometric catalogue required by the fit.
 
@@ -202,6 +230,9 @@ class Template_Fitter(SED_code):
         overwrite : `bool`, optional
             Whether to remake the input file if one already exists. Default
             is `False`.
+        save_name : `str`, optional
+            Name of the file to save the input catalogue to. Default is
+            ``None``
 
         Returns
         -------
@@ -219,6 +250,7 @@ class Template_Fitter(SED_code):
         save_PDFs: bool = True,
         overwrite: bool = False,
         verbose: bool = True,
+        save_name: Optional[str] = None,
         **kwargs: Dict[str, Any],
     ) -> NoReturn:
         """Fit a catalogue's photometry against template libraries using `BDFit.StarFit`.
@@ -249,6 +281,9 @@ class Template_Fitter(SED_code):
         verbose : `bool`, optional
             Whether `StarFit` should print verbose fitting output. Default
             is `True`.
+        save_name : `str`, optional
+            Name of the file to save the output table to. Default is ``None`` 
+            (output file name is automatically generated).
         **kwargs : `dict`
             Additional keyword arguments. Currently unused.
 
@@ -259,7 +294,7 @@ class Template_Fitter(SED_code):
             ``instrument_name == self.fit_instrument``.
         """
         from BDFit import StarFit
-        out_path = self._get_out_paths(cat, aper_diam)[1]
+        out_path = self._get_out_paths(cat, aper_diam, save_name = save_name)[1]
         if not Path(out_path).is_file() or overwrite:
             # convert cat.filterset to bands used in StarFit
             fit_instrument_indices = np.array([i for i, filt in enumerate(cat.filterset) if filt.instrument_name == self.fit_instrument])
@@ -312,7 +347,11 @@ class Template_Fitter(SED_code):
                 starfit.make_best_fit_SEDs(SED_save_path, IDs = cat.ID)
                 galfind_logger.info(f"Saved {self.tab_suffix} SEDs to {SED_save_path}")
 
-    def make_fits_from_out(self, out_path):
+    def make_fits_from_out(
+        self: Self,
+        out_path: str,
+        save_name: Optional[str] = None,
+    ):
         """Convert the raw output of the fit into a FITS binary table.
 
         Implements the `SED_code.make_fits_from_out` interface. Currently
@@ -323,13 +362,16 @@ class Template_Fitter(SED_code):
         ----------
         out_path : `str`
             Path to the output catalogue produced by `fit`.
+        save_name : `str`, optional
+            Name of the file to save the output table to. Default is ``None``
         """
         pass
 
     def _get_out_paths(
         self: Self,
         cat: Catalogue,
-        aper_diam: u.Quantity
+        aper_diam: u.Quantity,
+        save_name: Optional[str] = None,
     ) -> Tuple[str, str, str, Dict[str, List[str]], List[str]]:
         """Construct output file paths for this fitting run.
 
@@ -341,6 +383,9 @@ class Template_Fitter(SED_code):
             Catalogue being fit.
         aper_diam : `astropy.units.Quantity`
             Aperture diameter used in the fit.
+        save_name : `str`, optional
+            Name of the file to save the output table to. Default is ``None``
+            (output file name is automatically generated).
 
         Returns
         -------
@@ -352,6 +397,8 @@ class Template_Fitter(SED_code):
         out_path = f"{config['TemplateFitting']['BROWN_DWARF_OUT_DIR']}/{cat.version}/" + \
             f"{cat.filterset.instrument_name}/{cat.survey}/{aper_diams_str}/" + \
             f"{self.hdu_name}_{self.fit_instrument}.fits"
+        if save_name is not None:
+            out_path = out_path.replace(".fits", f"_{save_name}.fits")
         SED_path = out_path.replace(".fits", "_SEDs.h5")
         return None, out_path, out_path, None, SED_path
 

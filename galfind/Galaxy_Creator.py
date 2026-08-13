@@ -88,6 +88,11 @@ class Galaxy_Creator(Catalogue_Creator):
         Function to load SED fit results. Default is `None`.
     apply_gal_instr_mask : `bool`, optional
         Apply instrument masks to the galaxy. Default is `True`.
+    cache_fits_handle : `bool`, optional
+        Whether to keep a single FITS file handle open and reuse it for all
+        extension reads. Significantly speeds up loading many galaxies from
+        the same catalogue. Falls back to standard reading if any errors occur.
+        Default is `True`.
     simulated : `bool`, optional
         Whether the galaxy is from a simulation. Default is `False`.
     **kwargs
@@ -125,6 +130,7 @@ class Galaxy_Creator(Catalogue_Creator):
         load_selection_kwargs: Dict[str, Any] = {},
         load_SED_result_func: Optional[Callable] = None,
         apply_gal_instr_mask: bool = True,
+        cache_fits_handle: bool = True,
         simulated: bool = False,
     ) -> None:
         self.id = id
@@ -158,6 +164,7 @@ class Galaxy_Creator(Catalogue_Creator):
             load_selection_kwargs=load_selection_kwargs,
             load_SED_result_func=load_SED_result_func,
             apply_gal_instr_mask=apply_gal_instr_mask,
+            cache_fits_handle=cache_fits_handle,
             simulated=simulated
         )
 

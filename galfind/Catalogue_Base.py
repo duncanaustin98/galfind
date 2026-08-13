@@ -18,6 +18,8 @@ from astropy.table import Table, join, vstack
 from tqdm import tqdm
 import inspect
 import logging
+import tempfile
+import os
 from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Any, List, Dict, Union, Optional, NoReturn, Tuple
 if TYPE_CHECKING:
@@ -1005,14 +1007,28 @@ class Catalogue_Base:
             hdul[i] for i in range(len(hdul))
             if hdul[i].name not in ["PRIMARY", hdu_name]
         ]
-        # write the fits table
+        # write the fits table atomically to prevent truncation if interrupted
         out_hdul = fits.HDUList(
             [
                 fits.PrimaryHDU(),
                 fits.BinTableHDU(orig_tab, name=hdu_name)
             ] + non_objects_hdul
         )
-        out_hdul.writeto(cat_path, overwrite=True)
+        tmp_path = f"{cat_path}.tmp.fits"
+        try:
+            out_hdul.writeto(tmp_path, overwrite=True)
+            os.replace(tmp_path, cat_path)
+        except Exception as e:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+            error_msg = (
+                f"Failed to write FITS catalogue to {cat_path}. "
+                f"Error: {e}. "
+                f"If a temporary file exists at {tmp_path}, it can be safely deleted. "
+                f"You may need to re-run the catalogue loading process."
+            )
+            galfind_logger.error(error_msg)
+            raise
         funcs.change_file_permissions(cat_path)
         galfind_logger.info(
             f"Updated {hdu_name} in {cat_path} with new table!"

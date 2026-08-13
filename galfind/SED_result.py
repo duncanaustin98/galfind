@@ -16,9 +16,10 @@ import numpy as np
 from astropy.table import Table
 from tqdm import tqdm
 import logging
-from typing import Dict, Union, TYPE_CHECKING
+from typing import Optional, Type, Dict, Union, TYPE_CHECKING
 if TYPE_CHECKING:
     from .Photometry_obs import Photometry_obs
+    from . import PDF, SED, SED_code
 
 from . import galfind_logger
 from . import useful_funcs_austind as funcs
@@ -42,7 +43,7 @@ class SED_result:
         Best-fit property values (e.g., ``{"z": 1.5 * u.dimensionless_unscaled, ...}``).
     property_errs : `dict`
         Uncertainties on each property in ``properties``.
-    property_PDFs : `dict` or `None`
+    property_PDFs : `dict` of `PDF` instances or `None`
         Posterior probability distributions for each property, keyed by
         property name.
     SED : `SED` instance or `None`
@@ -58,13 +59,13 @@ class SED_result:
         Aperture diameter used for photometry.
     """
     def __init__(
-        self,
-        SED_code,
-        phot,
-        properties,
-        property_errs,
-        property_PDFs,
-        SED,
+        self: Self,
+        SED_code: Union[str, Type[SED_code]],
+        phot: Photometry_obs,
+        properties: Dict[str, Union[float, u.Quantity, u.Magnitude, u.Dex]],
+        property_errs: Dict[str, Union[float, u.Quantity, u.Magnitude, u.Dex]],
+        property_PDFs: Dict[str, Type[PDF]] = None,
+        SED: Optional[SED] = None,
     ):
         self.SED_code = SED_code
         self.properties = properties
@@ -88,7 +89,6 @@ class SED_result:
         self.phot_rest = Photometry_rest.from_phot(phot, self.z)
         self.aper_diam = phot.aper_diam
 
-    @classmethod
     @classmethod
     def load_fixz(
         cls,

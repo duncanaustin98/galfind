@@ -66,6 +66,10 @@ class Spectral_Grating:  # disperser
         self.load_resolution_curve()
         self.load_transmission_curve()
 
+    def __repr__(self) -> str:
+        """Return a string representation of the `Spectral_Grating` instance."""
+        return f"Spectral_Grating({self.name})"
+
     def load_dispersion_curve(self):
         """Load the dispersion curve for this grating. Not yet implemented."""
         pass
@@ -141,6 +145,10 @@ class Spectral_Filter:
         self.name = name
         self.load_transmission_curve()
 
+    def __repr__(self) -> str:
+        """Return a string representation of the `Spectral_Filter` instance."""
+        return f"Spectral_Filter({self.name})"
+
     def load_transmission_curve(self):
         """Load the transmission curve for this filter. Not yet implemented."""
         pass
@@ -181,7 +189,7 @@ class Spectral_Instrument(ABC):
         self,
         grating: Spectral_Grating,
         filter: Spectral_Filter,
-    ) -> NoReturn:
+    ) -> None:
         self.grating = grating
         self.filter = filter
 
@@ -358,6 +366,10 @@ class Spectrum:
         for key, value in kwargs.items():
             setattr(self, key, value)
 
+    def __repr__(self) -> str:
+        """Return a string representation of the `Spectrum` instance."""
+        return f"Spectrum({self.src_name}, z={self.z}, {self.instrument.grating_filter_name})"
+
     @property
     def PID(self) -> Union[int, None]:
         """`int` or `None`: JWST program ID, taken from `meta["PROGRAM"]` or the leading component of `meta["SRCNAM1"]` (cached after first access)."""
@@ -371,6 +383,18 @@ class Spectrum:
             else:
                 raise (Exception())
             return self._PID
+
+    # @property
+    # def root(self) -> Union[str, None]:
+    #     """`str` or `None`: Root name of the source, taken from `meta["SRCNAM1"]` (cached after first access)."""
+    #     try:
+    #         return self._root
+    #     except AttributeError:
+    #         if "SRCNAM1" in self.meta.keys():
+    #             self._root = str(self.meta["SRCNAM1"].split("_")[0])
+    #         else:
+    #             raise (Exception())
+    #         return self._root
 
     @property
     def src_ID(self) -> Union[int, None]:
@@ -389,7 +413,10 @@ class Spectrum:
     @property
     def src_name(self):
         """`str`: Unique source name, combining `PID` and `src_ID` as ``"{PID}_{src_ID}"``."""
-        return f"{self.PID}_{self.src_ID}"
+        _src_name = f"{self.PID}_{self.src_ID}"
+        if hasattr(self, "root"):
+            _src_name = f"{self.root}_{_src_name}"
+        return _src_name
 
     @property
     def MSA_ID(self):
@@ -424,7 +451,7 @@ class Spectrum:
         cls,
         url_path: str,
         save: bool = True,
-        version: str = "v3",
+        version: str = "v4_4",
         z: Union[float, None] = None,
         *args,
         **kwargs,
@@ -448,7 +475,7 @@ class Spectrum:
         version : `str`, optional
             DJA reduction version (e.g. ``"v2"``, ``"v3"``, ``"v4_2"``,
             ``"v4_4"``), used to determine how the flux errors and MSA
-            metafile name are extracted. Default is ``"v3"``.
+            metafile name are extracted. Default is ``"v4_4"``.
         z : `float` or `None`, optional
             Redshift of the source. If given, `z_method` is set to
             ``"cat"``, otherwise `z_method` is `None`. Default is `None`.
@@ -471,7 +498,6 @@ class Spectrum:
             config["Spectra"]["DJA_WEB_DIR"],
             config["Spectra"]["DJA_2D_SPECTRA_DIR"],
         )
-        #breakpoint()
         if not Path(loc_2d_path).is_file():
             funcs.make_dirs(loc_2d_path)
             img = fits.open(url_path, cache=False)
@@ -519,6 +545,7 @@ class Spectrum:
                 flux_errs = spectrum_1D.spec["full_err"]
             else:
                 flux_errs = spectrum_1D.spec["full_err"]
+            #breakpoint()
             # save as local .h5 file
             funcs.make_dirs(loc_1d_path)
             hf = h5py.File(loc_1d_path, "w")
@@ -540,6 +567,7 @@ class Spectrum:
             flux_unit = u.Unit(hf.attrs["flux_unit"])
             fluxes = np.array(hf["fluxes"])
             flux_errs = np.array(hf["flux_errs"])
+
         wavs *= wav_unit
         fluxes = Masked(fluxes * flux_unit, mask = mask)
         flux_errs = Masked(np.array(flux_errs) * flux_unit, mask = mask)
@@ -752,13 +780,17 @@ class Spectrum:
 
     def plot(
         self: Self,
+        frame: str = "obs",
         src: str = "manual",
         out_dir: Optional[str] = f"{config['DEFAULT']['GALFIND_WORK']}/DJA_spec_plots/",
         fig: Optional[plt.Figure] = None,
         ax: Optional[plt.Axes] = None,
         wav_units: u.Unit = u.um,
         flux_units: u.Unit = u.uJy,
+        annotate: bool = True,
         log_fluxes: bool = False,
+        rest_wav_range: Optional[Tuple[float, float]] = None,
+        plot_masked: bool = True,
         **fit_kwargs: Dict[str, Any],
     ) -> NoReturn:
         """Plot the spectrum, either via ``msaexp``'s plotting routine or manually.
@@ -771,6 +803,9 @@ class Spectrum:
 
         Parameters
         ----------
+        frame: `str`, optional
+            Frame to plot the spectrum in, either ``"obs"`` or ``"rest".
+            Default is ``"obs"``.
         src : `str`, optional
             Plotting method to use, either ``"msaexp"`` or ``"manual"``.
             Default is ``"manual"``.
@@ -787,8 +822,17 @@ class Spectrum:
             Units to convert the wavelength axis to. Default is `u.um`.
         flux_units : `astropy.units.Unit`, optional
             Units to convert the flux axis to. Default is `u.uJy`.
+        annotate : `bool`, optional
+            Whether to annotate the axes with labels, title and legend.
+            Default is `True`.
         log_fluxes : `bool`, optional
             Whether to plot the flux axis in log10 space. Default is `False`.
+        rest_wav_range : `tuple` of `float` or `None`, optional
+            Rest-frame wavelength range to plot, as ``(min, max)``.
+            If given, the spectrum is cropped to this range before plotting.
+            Default is `None`.
+        plot_masked : `bool`, optional
+            Whether to plot masked data points. Default is `True`.
         **fit_kwargs : `dict`
             Additional keyword arguments passed to the plotting calls
             (e.g. line colour, alpha).
@@ -796,7 +840,11 @@ class Spectrum:
         assert src in ["msaexp", "manual"], galfind_logger.critical(
             f"{src=} not in ['msaexp', 'manual']"
         )
+        assert frame in ["obs", "rest"], galfind_logger.critical(
+            f"{frame=} not in ['obs', 'rest']"
+        )
         if src == "msaexp":
+            raise NotImplementedError()
             import msaexp.spectrum
 
             fig, spec, data = msaexp.spectrum.plot_spectrum(
@@ -813,17 +861,32 @@ class Spectrum:
                 fig, ax = plt.subplots()
             # unit conversions
             mask = ~self.fluxes.mask
-            wavs = funcs.convert_wav_units(self.wavs[mask], wav_units).value
-            fluxes = funcs.convert_mag_units(self.wavs[mask], self.fluxes[mask].filled(np.nan), flux_units).value
+            wavs = funcs.convert_wav_units(self.wavs[mask], wav_units)
+            if frame == "rest":
+                wavs /= (1 + self.z)
+            if rest_wav_range is None:
+                wav_range_mask = np.ones_like(wavs, dtype=bool)
+            else:
+                if frame == "rest":
+                    wav_range = np.array(rest_wav_range.to(u.AA).value)
+                else: # frame == "obs":
+                    wav_range = np.array(rest_wav_range.to(u.AA).value) * (1 + self.z)
+                wav_range_mask = np.array(
+                    [wav > wav_range[0] and wav < wav_range[1] for wav in wavs.to(u.AA).value]
+                ).astype(bool)
+            wavs = wavs[wav_range_mask]
+            fluxes = funcs.convert_mag_units(wavs, self.fluxes[mask][wav_range_mask].filled(np.nan), flux_units)
             flux_errs = funcs.convert_mag_err_units(
-                self.wavs[mask],
-                self.fluxes[mask].filled(np.nan),
+                wavs,
+                self.fluxes[mask][wav_range_mask].filled(np.nan),
                 np.array([
-                    self.flux_errs[mask].filled(np.nan).value,
-                    self.flux_errs[mask].filled(np.nan).value
+                    self.flux_errs[mask][wav_range_mask].filled(np.nan).value,
+                    self.flux_errs[mask][wav_range_mask].filled(np.nan).value
                 ]) * self.flux_errs.unit,
                 flux_units
             )
+            wavs = wavs.value
+            fluxes = fluxes.value
             if log_fluxes:
                 flux_errs_l1 = np.log10(fluxes / (fluxes - flux_errs[0].value))
                 flux_errs_u1 = np.log10((fluxes + flux_errs[1].value) / fluxes)
@@ -835,6 +898,17 @@ class Spectrum:
             ax.plot(wavs, fluxes, label=self.src_name, **fit_kwargs)
             alpha = deepcopy(fit_kwargs).pop("alpha", 1.0) * 0.5
             ax.fill_between(wavs, fluxes - flux_errs[0], fluxes + flux_errs[1], alpha = alpha, **fit_kwargs)
+        if annotate:
+            # label x and y axes
+            ax.set_xlabel(f"{frame.capitalize()} wavelength [{wav_units.to_string()}]")
+            if log_fluxes:
+                ax.set_ylabel(f"log10(flux [{flux_units.to_string()}])")
+            else:
+                ax.set_ylabel(f"flux [{flux_units.to_string()}]")
+            # add title with source name and redshift
+            ax.set_title(f"{self.src_name} (z={self.z:.3f})")
+            # add legend
+            ax.legend()
     
     def make_mock_phot(
         self: Self,
@@ -866,10 +940,16 @@ class Spectrum:
         assert self.z is not None, galfind_logger.critical(
             f"{repr(self)} does not have a redshift (z) attribute!"
         )
-        sed_obs = SED_obs(self.z, self.wavs.value, self.fluxes.value, self.wavs.unit, self.fluxes.unit)
+        sed_obs = SED_obs(
+            self.z,
+            self.wavs.value, 
+            self.fluxes.value,
+            self.wavs.unit,
+            self.fluxes.unit,
+        )
         return sed_obs.create_mock_photometry(
             filterset,
-            depths = depths
+            depths = depths,
         )
 
     def fit_UV_slope(
@@ -938,7 +1018,11 @@ class Spectrum:
         return beta, [beta_err, beta_err]
 
 
-    def fit_Muv(self: Self, wav_range: u.Quantity = [1_450.0, 1_550.0] * u.AA, size = 10_000):
+    def fit_Muv(
+        self: Self,
+        wav_range: u.Quantity = [1_450.0, 1_550.0] * u.AA,
+        size = 10_000,
+    ):
         """Compute the absolute UV magnitude, M_UV, of the spectrum.
 
         Takes the inverse-variance weighted mean rest-frame f_lambda flux
@@ -979,7 +1063,6 @@ class Spectrum:
                 flux_errs = funcs.convert_mag_err_units(rest_wavs, fluxes, [flux_errs, flux_errs], u.erg / u.s / u.cm**2 / u.AA)[0] # symmetric in flux space
             except Exception as e:
                 galfind_logger.debug(f"Failed to convert mag err units for {repr(self)}: {e}")
-                #breakpoint()
                 return np.nan, [np.nan, np.nan]
         else:
             galfind_logger.debug(f"No valid data for {self.src_name}")
@@ -1245,7 +1328,6 @@ class Spectrum:
         """
         self.fit_Muv()
         self.fit_Ha(plot = plot)
-        #breakpoint()
         LUV_arr = funcs.flux_to_luminosity(self.flambda_1500_chains, 1_500.0 * u.AA, self.z)
         LHa_arr = funcs.flux_to_luminosity(self.Halpha_flux_arr / (1.0 + self.z), 6_562.8 * u.AA, self.z, out_units = u.erg / u.s)
         self.ndot_ion_arr = 7.28e11 * LHa_arr.value
@@ -1324,7 +1406,7 @@ class Spectral_Catalogue:
         the `Spectrum` objects belonging to one unique source.
     """
 
-    def __init__(self, spectrum_arr: NDArray[Spectrum]) -> NoReturn:
+    def __init__(self, spectrum_arr: NDArray[Spectrum]) -> None:
         # check if any of the sources are the same
         orig_src_names = [spec.src_name for spec in spectrum_arr]
         unique_src_names = np.unique(orig_src_names)
@@ -1457,7 +1539,7 @@ class Spectral_Catalogue:
         # open and crop catalogue
         # DJA_cat = utils.read_catalog(config['Spectra']['DJA_CAT_PATH'], format = "ascii.ecsv")
         DJA_cat = Table.read(
-            config["Spectra"]["DJA_CAT_PATH"].replace("v2", version)
+            config["Spectra"]["DJA_CAT_PATH"].replace("v4_4", version)
         )
         if filename_arr is None:
             if ra_range is not None:
@@ -1530,7 +1612,6 @@ class Spectral_Catalogue:
             mask = np.isin(np.array(DJA_cat["file"]), np.array(filename_arr))
             DJA_cat = DJA_cat[mask]
             # TODO: assertions that these follow the other rules
-
         if z_from_cat:
             return cls(
                 [
@@ -1571,7 +1652,7 @@ class Spectral_Catalogue:
     
     def plot(
         self: Self,
-        src: str = "msaexp"
+        src: str = "msaexp",
     ):
         """Plot every spectrum in the catalogue.
 

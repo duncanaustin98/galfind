@@ -854,6 +854,12 @@ class Catalogue_Creator:
         Whether to compute/apply a per-galaxy, per-band "has data" mask
         (see `make_gal_instr_mask`) when loading photometry, masks and
         depths. Default is `True`.
+    cache_fits_handle : `bool`, optional
+        Whether to keep a single FITS file handle open and reuse it for all
+        extension reads, instead of opening the file separately for each
+        extension. Significantly speeds up loading many galaxies from the
+        same catalogue by avoiding repeated file opens. Falls back to standard
+        reading if any errors occur. Default is `True`.
     simulated : `bool`, optional
         Whether the catalogue is simulated rather than observed. Default is
         `False`.
@@ -918,6 +924,7 @@ class Catalogue_Creator:
         load_selection_kwargs: Dict[str, Any] = {},
         load_SED_result_func: Optional[Callable] = None,
         apply_gal_instr_mask: bool = True,
+        cache_fits_handle: bool = True,
         simulated: bool = False,
     ):
         """Initialize the Catalogue_Creator with configuration for loading catalogues.
@@ -956,8 +963,10 @@ class Catalogue_Creator:
         self.load_selection_kwargs = load_selection_kwargs
         self.load_SED_result_func = load_SED_result_func
         self.apply_gal_instr_mask = apply_gal_instr_mask
+        self.cache_fits_handle = cache_fits_handle
         self.simulated = simulated
         self._tab_cache = {}
+        self._fits_handle = None
 
         self.load_crops(crops)
 
@@ -974,8 +983,15 @@ class Catalogue_Creator:
                 galfind_logger.critical(
                     f"{hdr['VERSION']=} != {self.version=}"
                 )
-    
-    
+
+    def __del__(self: Self) -> None:
+        """Close the cached FITS file handle when the object is destroyed."""
+        if self._fits_handle is not None:
+            try:
+                self._fits_handle.close()
+            except Exception:
+                pass  # Silently ignore errors on cleanup
+
     @classmethod
     def from_data(
         cls,
@@ -1161,6 +1177,9 @@ class Catalogue_Creator:
     def _open_tab(self: Self, cat_type: str) -> Any:
         """Open and cache a named catalogue table extension.
 
+        When `cache_fits_handle` is True, keeps a single FITS file handle open
+        and reads all extensions from it, avoiding repeated file opens.
+
         Parameters
         ----------
         cat_type : `str`
@@ -1172,7 +1191,35 @@ class Catalogue_Creator:
             The requested table extension, cached for future access.
         """
         if cat_type not in self._tab_cache:
-            self._tab_cache[cat_type] = self.open_cat(self.cat_path, cat_type)
+            if self.cache_fits_handle:
+                try:
+                    from astropy.io import fits
+                    # Open FITS file once and keep it open
+                    if self._fits_handle is None:
+                        self._fits_handle = fits.open(self.cat_path, memmap=True)
+
+                    # Read the requested extension from the open handle
+                    first_ext_keys = ["ID", "sky_coord", "phot", "mask", "depths"]
+                    if cat_type in first_ext_keys:
+                        # These are typically in the primary HDU
+                        hdu = self._fits_handle[0]
+                    else:
+                        # Look for the HDU by name
+                        hdu = self._fits_handle[cat_type]
+
+                    # Read with Table.read() to preserve metadata
+                    self._tab_cache[cat_type] = Table.read(hdu, format='fits')
+                except Exception as e:
+                    # Fall back to default behavior if caching fails
+                    galfind_logger.warning(
+                        f"FITS handle caching failed for {cat_type}: {e}. "
+                        f"Falling back to standard catalogue reading."
+                    )
+                    self._tab_cache[cat_type] = self.open_cat(self.cat_path, cat_type)
+            else:
+                # Use the original open_cat function (default behavior)
+                self._tab_cache[cat_type] = self.open_cat(self.cat_path, cat_type)
+
         return self._tab_cache[cat_type]
 
     def load_tab(
