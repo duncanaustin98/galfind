@@ -307,31 +307,37 @@ class EAZY(SED_code):
             return [gal.aper_phot[aper_diam].SED_results[self.label] for gal in cat]
 
     def _load_gal_property_labels(self):
-        gal_property_labels = {
-            **{"z": "zbest", "chi_sq": "chi2_best"},
-            **{
+        gal_property_labels = {"z": "zbest", "chi_sq": "chi2_best"}
+        if self.SED_fit_params.get("SAVE_UBVJ", True):
+            gal_property_labels.update({
                 f"{ubvj_filt}_flux": f"{ubvj_filt}_rf_flux"
                 for ubvj_filt in ["U", "B", "V", "J"]
-            },
-        }
+            })
         super()._load_gal_property_labels(gal_property_labels)
 
     def _load_gal_property_err_labels(self):
-        gal_property_err_labels = {
-            f"{ubvj_filt}_flux": [
-                f"{ubvj_filt}_rf_flux_err",
-                f"{ubvj_filt}_rf_flux_err",
-            ]
-            for ubvj_filt in ["U", "B", "V", "J"]
-        }
+        if self.SED_fit_params.get("SAVE_UBVJ", True):
+            gal_property_err_labels = {
+                f"{ubvj_filt}_flux": [
+                    f"{ubvj_filt}_rf_flux_err",
+                    f"{ubvj_filt}_rf_flux_err",
+                ]
+                for ubvj_filt in ["U", "B", "V", "J"]
+            }
+        else:
+            gal_property_err_labels = {}
         super()._load_gal_property_err_labels(gal_property_err_labels)
 
     def _load_gal_property_units(self) -> NoReturn:
-        # still need to double check the UBVJ units
         self.gal_property_units = {
-            **{gal_property: u.dimensionless_unscaled for gal_property in ["z", "chi_sq"]},
-            **{f"{ubvj_filt}_flux": u.nJy for ubvj_filt in ["U", "B", "V", "J"]},
+            gal_property: u.dimensionless_unscaled
+            for gal_property in ["z", "chi_sq"]
         }
+        if self.SED_fit_params.get("SAVE_UBVJ", True):
+            self.gal_property_units.update({
+                f"{ubvj_filt}_flux": u.nJy
+                for ubvj_filt in ["U", "B", "V", "J"]
+            })
 
     def _assert_SED_fit_params(self):
         default_strings = ["N_PROC", "Z_STEP", "Z_MIN", "Z_MAX", "SAVE_UBVJ"]
@@ -431,13 +437,11 @@ class EAZY(SED_code):
             funcs.make_dirs(in_path)
 
             # Make filter file
-            
             filt_codes = self._make_filter_file(
                 cat.filterset,
                 in_filt_name,
                 default_param_path = f"{config['EAZY']['EAZY_CONFIG_DIR']}/EAZY_UVJ.RES",
             )
-                
             # Make input file
             in_data = np.array(
                 [
@@ -579,7 +583,7 @@ class EAZY(SED_code):
         elif templates == "sfhz":
             params["TEMPLATES_FILE"] = (
                 f"{eazy_templates_path}/sfhz/corr_sfhz_13_galfind.param"
-            )  
+            )
         elif templates == "sfhz+carnall_eelg":
             params["TEMPLATES_FILE"] = (
                 f"{eazy_templates_path}/sfhz/carnall_sfhz_13_galfind.param"
@@ -603,7 +607,7 @@ class EAZY(SED_code):
         # JWST filter_file
         params["FILTERS_RES"] = in_filt_path
             #f"{config['EAZY']['EAZY_CONFIG_DIR']}/jwst_nircam_FILTER.RES"
-        
+
         # Errors
         params["WAVELENGTH_FILE"] = (
             f"{eazy_templates_path}/lambda.def"  # Wavelength grid definition file
@@ -1110,7 +1114,7 @@ class EAZY(SED_code):
 
     def _make_filter_file(
         self: Self,
-        filterset: Multiple_Filter, 
+        filterset: Multiple_Filter,
         filter_file: str,
         default_param_path: str
     ) -> NoReturn:
@@ -1149,7 +1153,7 @@ class EAZY(SED_code):
         with open(filter_file, 'a') as f:
             with open (f'{filter_file}.INFO', 'a') as f_info:
                 # work out whether we need to move to the next line - i.e is the current line got anything in it
-                
+
                 if not last_line.endswith('\n'):
                     f_info.write('\n')
 
@@ -1164,6 +1168,6 @@ class EAZY(SED_code):
 
                     for pos, (wav, trans) in enumerate(zip(filt.wav, filt.trans)):
                         f.write(f'{pos + 1} {wav.to(u.Angstrom).value} {trans}\n')
-                        
+
         return np.arange(nexisting + 1, nexisting + 1 + len(filterset))
 

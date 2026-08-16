@@ -732,6 +732,7 @@ class Band_Cutout(Band_Cutout_Base):
         band_data: Band_Data,
         sky_coord: SkyCoord,
         cutout_size: u.Quantity,
+        meta: Dict[str, Any] = {},
         overwrite: bool = False,
         **meta: Any,
     ) -> Self:
@@ -2209,7 +2210,7 @@ class Multiple_Band_Cutout(Multiple_Cutout_Base):
         """
         # make a cutout for each filter
         cutouts = [
-            Band_Cutout.from_data_skycoord(band_data, sky_coord, cutout_size, **meta)
+            Band_Cutout.from_data_skycoord(band_data, sky_coord, cutout_size)
             for band_data in data
         ]
         return cls(cutouts)
@@ -2239,10 +2240,10 @@ class Multiple_Band_Cutout(Multiple_Cutout_Base):
         """
         # make a cutout for each filter
         cutouts = [
-            Stacked_Band_Cutout.from_data_skycoord(
-                data, filt, sky_coords, cutout_size
+            Stacked_Band_Cutout.from_data_skycoords(
+                band_data, sky_coords, cutout_size
             )
-            for filt in data.filterset
+            for band_data in data
         ]
         return cls(cutouts)
 
