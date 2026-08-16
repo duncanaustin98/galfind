@@ -1,6 +1,8 @@
 
 from __future__ import annotations
 
+from tqdm import tqdm
+import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
 import os
@@ -581,8 +583,9 @@ class Galfit_Fitter(Morphology_Fitter):
                 *args,
                 **kwargs,
             )
-            for gal in cat
+            for gal in tqdm(cat, total = len(cat), desc = f"fitting/loading {repr(self)} for {repr(cat)}", disable = galfind_logger.getEffectiveLevel()> logging.INFO)
         ]
+
         # make output table
         out_path = f"{out_subdir}/{self.model}{fixed_param_str}/results.fits"
         if not Path(out_path).is_file():
@@ -632,7 +635,8 @@ class Galfit_Fitter(Morphology_Fitter):
             self._delete_temps(cutout, out_dir)
             self._move_constraints_to_in_dir(cutout, in_dir, out_dir)
             self._move_mask_to_in_dir(cutout, in_dir, out_dir)
-            galfind_logger.info(f"{repr(self)} run for {repr(cutout)}")
+            galfind_logger.info(f"{repr(cutout)} {repr(self)} run finished")
+        
         fitting_result, crashed = self._extract_results_from_file(cutout, in_dir, out_dir)
 
         if not Path(fitting_result.plot_path).is_file() and not crashed and plot:
@@ -1338,8 +1342,10 @@ class Galfit_Fitter(Morphology_Fitter):
         fit_hdul = fits.open(self._imgblock_out_path(cutout, out_dir))
         data = fit_hdul[1].data
         model = fit_hdul[2].data
-        #err = cutout.band_data.load_rms_err()
+        
+        err = cutout.band_data.load_rms_err()
 
+        mask = fits.open(Galfit_Fitter._mask_path(cutout, in_dir))[0].data
         pix_scale = cutout.meta["SIZE_AS"] / cutout.meta["SIZE_PIX"]
         # reconstruct Kron elliptical aperture
         kron_aper = EllipticalAperture(
@@ -1351,7 +1357,6 @@ class Galfit_Fitter(Morphology_Fitter):
         residuals = abs(data - model)
         model_kron = kron_aper.do_photometry(model)[0][0]
         residual_kron = kron_aper.do_photometry(residuals)[0][0]
-
         # open cutout segmentation map and mask all sources except those within Kron aperture
         mask = [hdu for hdu in fits.open(cutout.band_data.seg_path) if hdu.name == "SEG"][0].data
         mask[mask != 0] = 1
@@ -1390,3 +1395,49 @@ class Galfit_Fitter(Morphology_Fitter):
 
         rff = (residual_kron - 0.8 * depth_1sig * kron_aper.area) / model_kron
         return rff
+
+# def input_images(galaxy_path, save_path, id, field, band):
+#     if not os.path.exists(save_path):
+#         os.makedirs(save_path)
+#     galaxy = fits.open(f'{galaxy_path}/{id}.fits')
+#     err = fits.open(f'{galaxy_path}/{id}sigma.fits')
+#     mask = fits.open(f'{galaxy_path}/{id}mask_final.fits')
+#     psf = fits.open(f'{galaxy_path}/PSF_Resample_{band}_scaled.fits')
+
+
+#     fig, axs = plt.subplots(2,2, figsize=(10, 4))
+#     axs[0,0].imshow(galaxy[0].data, cmap='gray')
+#     axs[0,1].imshow(err[0].data, cmap='gray')
+#     axs[1,0].imshow(mask[0].data, cmap='gray')
+#     axs[1,1].imshow(psf[0].data, cmap='gray')
+
+#     axs[0,0].set_title('Science Image')
+#     axs[0,1].set_title('Weight Map')
+#     axs[1,0].set_title('Bad Pixel Mask')
+#     axs[1,1].set_title('PSF')
+
+#     for ax in axs.flat:
+#         ax.axis('off')  # Turn off the axis labels
+
+#     fig.suptitle(f'{field} {id} {band}')  # Add a title to the figure
+
+#     plt.savefig(f'{save_path}/{id}_{field}_input.png', dpi=200)
+#     #print(f'{id} input images saved')
+#     plt.close(fig)
+
+# deblends nearby sources!!!
+# def mask_creation(ring, band, output_path):
+#     science_image = imports.fits.open(f'{output_path}/{ring}_{band.lower()}_homog2.fits')[0].data
+#     error_image = imports.fits.open(f'{output_path}/{ring}_{band.lower()}_err.fits')[0].data
+#     threshold = 2 * error_image
+#     segment_map = imports.detect_sources(science_image, threshold, npixels=10)
+#     segmentation_deblend = imports.deblend_sources(science_image, segment_map, npixels=10, nlevels=32, contrast=0.125, progress_bar=True)  # Increase contrast value
+#     imports.fits.writeto(f'{output_path}/{ring}_{band.lower()}_segmap.fits', segmentation_deblend.data, overwrite=True)
+
+#     hdul = imports.fits.open(f'{output_path}/{ring}_{band.lower()}_segmap.fits')
+#     data = hdul[0].data
+#     x0 = int((data.shape[0]/2) - 1)
+#     y0 = x0
+#     data[data == data[x0,y0]] = 0  #change object to 0
+#     data[data > 0 ] = 1 #change other objects to 1
+#     imports.fits.writeto(f'{output_path}/{ring}_{band.lower()}_mask_final.fits', data, overwrite=True)
