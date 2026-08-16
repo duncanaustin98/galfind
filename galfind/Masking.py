@@ -4,7 +4,6 @@ import astropy.units as u
 import numpy as np
 from regions import Regions
 from astropy.io import fits
-from astroquery.gaia import Gaia
 from tqdm import tqdm
 from astropy.table import Column
 from pathlib import Path
@@ -251,6 +250,8 @@ def auto_mask(
     gaia_row_lim: int = 500,
     overwrite: bool = False,
 ):
+    from astroquery.gaia import Gaia
+    
     output_mask_path = f"{config['Masking']['MASK_DIR']}/{self.survey}" + \
         f"/auto/{self.version}/{self.filt_name}_auto.fits"
     funcs.make_dirs(output_mask_path)

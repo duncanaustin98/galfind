@@ -118,6 +118,7 @@ astropy_cosmo = FlatLambdaCDM(H0=70, Om0=0.3, Ob0=0.05, Tcmb0=2.725)
 wav_lyman_lim = 911.8  # * u.AA
 
 from . import useful_funcs_austind
+from . import utils
 from . import figs
 from . import decorators
 from . import SExtractor, Masking, Depths
@@ -164,6 +165,7 @@ from .Catalogue_Base import Catalogue_Base
 from .Multiple_Catalogue import Combined_Catalogue
 #from .Multiple_Data import Multiple_Data
 from .Catalogue import Catalogue, Catalogue_Creator
+from .Galaxy_Creator import Galaxy_Creator
 from .SED import (
     SED,
     SED_rest,

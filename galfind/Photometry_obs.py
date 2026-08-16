@@ -227,7 +227,7 @@ class Photometry_obs(Photometry):
                 ) for filt in self.filterset
             ]
 
-    @classmethod  # not a gal object here, more like a catalogue row
+    @classmethod # not a gal object here, more like a catalogue row
     def from_fits_cat(
         cls,
         fits_cat_row,
@@ -623,6 +623,8 @@ class Photometry_obs(Photometry):
                 
         if annotate:
             # x/y labels etc here
+            ax.set_xlabel(f"Wavelength ({wav_units})")
+            ax.set_ylabel(f"Flux Density ({mag_units})")
             ax.legend()
 
         return plot
@@ -630,6 +632,7 @@ class Photometry_obs(Photometry):
     def load_sextractor_ext_src_corrs(
         self: Self, 
         filt_names: Optional[List[str]] = None,
+        aper_corrs: Optional[Dict[str, float]] = None,
     ) -> NoReturn:
         if filt_names is None:
             filt_names = self.filterset.filt_names
@@ -638,25 +641,36 @@ class Photometry_obs(Photometry):
             unmasked_flux = self.flux.unmasked
         except:
             unmasked_flux = self.flux
+
+        if aper_corrs is None:
+            aper_corrs = self.aper_corrs
+        else:
+            aper_corrs = [aper_corrs[filt_name] for filt_name in self.filterset.filt_names]
+            assert len(aper_corrs) == len(self.filterset), galfind_logger.critical(
+                f"{len(aper_corrs)=} != {len(self.filterset)=}!"
+            )
+
         try:
             ext_src_corrs = {
                 filt_name: (self.sex_FLUX_AUTO[filt_name] \
                 / (unmasked_flux[i] * funcs.mag_to_flux_ratio(-aper_corr))) \
                 .to(u.dimensionless_unscaled) for i, (aper_corr, filt_name) \
-                in enumerate(zip(self.aper_corrs, self.filterset.filt_names)) \
+                in enumerate(zip(aper_corrs, self.filterset.filt_names)) \
                 if filt_name in filt_names or filt_names is None
             }
         except Exception as e:
             galfind_logger.critical(
-                f"Failed to compute ext_src_corrs with {e=}, {self.sex_FLUX_AUTO=}, {self.flux=}, {self.aper_corrs=}"
+                f"Failed to compute ext_src_corrs with {e=}, {self.sex_FLUX_AUTO=}, {self.flux=}, {aper_corrs=}"
             )
             breakpoint()
             raise e
+
         self.ext_src_corrs = {
             filt_name: ext_src_corr.value
-            if ext_src_corr.value > 1.0 else 1.0
+            if ext_src_corr.value > 1.0 or np.isnan(ext_src_corr.value) else 1.0
             for filt_name, ext_src_corr in ext_src_corrs.items()
         }
+
         for aper_diam, value in self.ext_src_corrs.items():
             setattr(
                 self,

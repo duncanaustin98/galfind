@@ -273,12 +273,12 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
         # update the relevant Photometry_rest object stored in the Galaxy
         assert self.aper_diam in gal.aper_phot.keys(), \
             galfind_logger.critical(
-                f"{self.aper_diam=} not in {gal.aper_phot.keys()}"
+                f"{self.aper_diam=} not in {'+'.join(list(gal.aper_phot.keys()))}"
             )
         assert self.SED_fit_label in gal.aper_phot[self.aper_diam].SED_results.keys(), \
             galfind_logger.critical(
                 f"{self.SED_fit_label=} not in " + \
-                gal.aper_phot[self.aper_diam].SED_results.keys()
+                "+".join(list(gal.aper_phot[self.aper_diam].SED_results.keys()))
             )
         if save_dir != "":
             save_dir += "/"

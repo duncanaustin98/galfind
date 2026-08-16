@@ -61,7 +61,7 @@ from astropy.io import fits
 from astropy.table import Column, Table, QTable, hstack, vstack
 from astropy.visualization.mpl_normalize import ImageNormalize
 from astropy.wcs import WCS
-from astroquery.gaia import Gaia
+#from astroquery.gaia import Gaia
 from joblib import Parallel, delayed, parallel_config
 from matplotlib.colors import LogNorm, Normalize
 from regions import Regions
@@ -448,8 +448,12 @@ class Band_Data_Base(ABC):
             breakpoint()
             raise e
         seg_hdul = fits.open(self.seg_path, ignore_missing_simple = True, **kwargs)
-        seg_data = seg_hdul[0].data
-        seg_header = seg_hdul[0].header
+        if np.sum(["SEG" in hdu.name.upper() for hdu in seg_hdul]) == 1:
+            seg_hdu = [hdu for hdu in seg_hdul if "SEG" in hdu.name.upper()][0]
+        else:
+            seg_hdu = seg_hdul[0]
+        seg_data = seg_hdu.data
+        seg_header = seg_hdu.header
         if incl_hdr:
             return seg_data, seg_header
         else:
@@ -3159,12 +3163,13 @@ class Data:
         return self[band].load_im(return_hdul)
 
     def load_wcs(
-        self, band: Union[int, str, Filter, List[Filter], Multiple_Filter]
+        self: Self,
+        band: Union[int, str, Filter, List[Filter], Multiple_Filter],
     ):
         return self[band].load_wcs()
 
     def load_wht(
-        self,
+        self: Self,
         band: Union[int, str, Filter, List[Filter], Multiple_Filter],
         output_hdr: bool = False,
     ):
@@ -3831,14 +3836,17 @@ class Data:
                 )
         if len(params) > 0:
             # Parallelise the calculation of depths for each band
-            with funcs.tqdm_joblib(
-                tqdm(desc="Calculating depths", total=len(params), disable = galfind_logger.getEffectiveLevel() > logging.INFO)
-            ) as progress_bar:
-                # TODO: Fix pointer parallelization issues
-                outputs = Parallel(n_jobs=n_jobs)(
-                    delayed(Depths.calc_band_depth)(param) for param in params
-                )
-                #self_band_data_arr = outputs
+            if n_jobs == 1:
+                outputs = [Depths.calc_band_depth(param) for param in params]
+            else:
+                with funcs.tqdm_joblib(
+                    tqdm(desc="Calculating depths", total=len(params), disable = galfind_logger.getEffectiveLevel() > logging.INFO)
+                ) as progress_bar:
+                    # TODO: Fix pointer parallelization issues
+                    outputs = Parallel(n_jobs=n_jobs)(
+                        delayed(Depths.calc_band_depth)(param) for param in params
+                    )
+                    #self_band_data_arr = outputs
             # save properties to individual band_data objects
             for band_data in self_band_data_arr:
                 [
@@ -4561,13 +4569,6 @@ class Data:
                 for region_selector_ in region_selector
             ])
 
-        if isinstance(mask_selector, tuple(Mask_Selector.__subclasses__())):
-            mask_selector_name = mask_selector.name
-        else:
-            mask_selector_name = f"{'+'.join(np.sort(mask_selector))}_{reg_name}"
-        
-        mask_save_name = "+".join(np.sort(mask_type))
-
         if isinstance(mask_selector, funcs.all_subclasses(Mask_Selector)):
             if "z" not in kwargs.keys():
                 galfind_logger.warning(
@@ -4583,9 +4584,11 @@ class Data:
                         f"Multiple or no zbins found for z={kwargs['z']}!"
                     )
                 zbin = zbin[0]
-                mask_selector_name = f"{mask_selector_name}_{zbin[0]:.2f}<z<{zbin[1]:.2f}"
         else:
             zbin = None
+        
+        mask_selector_name = self._get_mask_selector_name(mask_selector, reg_name, zbin)
+        mask_save_name = "+".join(np.sort(mask_type))
 
         if mask_selector_name not in self.unmasked_area.keys():
             self.unmasked_area[mask_selector_name] = {}
@@ -4650,3 +4653,25 @@ class Data:
             )
         unmasked_area = unmasked_area_tab[0] * area_tab["unmasked_area"].unit
         return unmasked_area
+
+    @staticmethod
+    def _get_mask_selector_name(
+        mask_selector: Type[Mask_Selector],
+        reg_name: str,
+        zbin: Optional[Tuple[float, float]] = None,
+    ) -> str:
+        from . import Mask_Selector
+        if isinstance(mask_selector, tuple(Mask_Selector.__subclasses__())):
+            mask_selector_name = mask_selector.name
+        else:
+            mask_selector_name = f"{'+'.join(np.sort(mask_selector))}_{reg_name}"
+        
+        if zbin is not None:
+            assert len(zbin) == 2, galfind_logger.critical(
+                f"zbin must be a tuple of (zbin_min, zbin_max), got {zbin=}"
+            )
+            assert zbin[0] < zbin[1], galfind_logger.critical(
+                f"zbin_min must be less than zbin_max, got {zbin=}"
+            )
+            mask_selector_name += f"_{zbin[0]:.2f}<z<{zbin[1]:.2f}"
+        return mask_selector_name

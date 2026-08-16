@@ -41,6 +41,13 @@ class Prior(ABC):
     # def latex_name(self: Self) -> str:
     #     """Return the LaTeX name of the prior."""
     #     pass
+
+    @abstractmethod
+    def get_initpos(
+        self: Self,
+    ) -> float:
+        """Return an initial position for the MCMC walkers."""
+        pass
     
     @abstractmethod
     def __call__(
@@ -87,6 +94,11 @@ class Flat_Prior(Prior):
         prior_params = {"lower_lim": prior_lims[0], "upper_lim": prior_lims[1]}
         super().__init__(name, prior_params, fiducial)
 
+    def get_initpos(
+        self: Self,
+    ) -> float:
+        return np.random.uniform(self.prior_params["lower_lim"], self.prior_params["upper_lim"], 1)
+
     def __call__(
         self: Self,
         param: float
@@ -116,6 +128,11 @@ class Gaussian_Prior(Prior):
             )
         prior_params = prior_lims
         super().__init__(name, prior_params, fiducial)
+
+    def get_initpos(
+        self: Self,
+    ) -> float:
+        return np.random.normal(self.prior_params["mu"], self.prior_params["sigma"], 1)
 
     def __call__(
         self: Self,
@@ -214,12 +231,17 @@ class Base_MCMC_Fitter(ABC):
         self.nwalkers = nwalkers
         if backend_filename is not None:
             if backend_filename.split(".")[-1] != "h5":
-                backend_filename = f"{backend_filename}.h5"
+                backend_filename += ".h5"
+            funcs.make_dirs(backend_filename)
             self.backend = emcee.backends.HDFBackend(backend_filename)
             try:
                 self.sampler = emcee.EnsembleSampler(self.nwalkers, self.ndim, self.log_likelihood, backend = self.backend) #, blobs_dtype = blobs_dtype, pool = pool)
-            except:
-                err_message = f"Could not load {backend_filename=}! Delete the file or choose a different name."
+            except Exception as e:
+                with h5py.File(backend_filename, "r") as f:
+                    print(list(f.keys()))
+                    for k in f["mcmc"]:
+                        print(k, f["mcmc"][k].shape)
+                err_message = f"{e}: Could not load {backend_filename=}! Delete the file or choose a different name."
                 galfind_logger.critical(err_message)
                 raise Exception(err_message)
         else:
@@ -276,7 +298,7 @@ class Base_MCMC_Fitter(ABC):
         galfind_logger.info(f"AIC: {AIC}")
         return AIC
     
-    def get_autocorr_time(self):
+    def get_autocorr_time(self) -> int:
         try:
             sampler_autocorr_time = self.sampler.get_autocorr_time()
             autocorr_time = np.nanmax(sampler_autocorr_time)
@@ -297,8 +319,7 @@ class Base_MCMC_Fitter(ABC):
         if not hasattr(self, "init_pos"):
             # init_pos = [self.fiducial_params + 1e-4 * np.random.uniform(0, 1, self.ndim) * \
             #         self.fiducial_params for i in range(self.nwalkers)]
-            init_pos = [np.array([np.random.uniform(prior.prior_params["lower_lim"], \
-                prior.prior_params["upper_lim"], 1)[0] for prior in self.priors]) \
+            init_pos = [np.array([prior.get_initpos()[0] for prior in self.priors]) \
                 for i in range(self.nwalkers)]
             self.init_pos = init_pos
 
@@ -306,10 +327,16 @@ class Base_MCMC_Fitter(ABC):
         self: Self,
         n_steps: int,
         n_processes: int = 1,
-    ) -> NoReturn:
+    ) -> None:
         if hasattr(self, "backend"):
             galfind_logger.info("Initial size: {0}".format(self.backend.iteration))
-            n_steps -= self.backend.iteration
+            if n_steps <= self.backend.iteration:
+                galfind_logger.warning(
+                    f"n_steps={n_steps=}<={self.backend.iteration=}"
+                )
+                return
+            else:
+                n_steps -= self.backend.iteration
         else:
             galfind_logger.info("Initial size: 0")
         with mp.Pool(processes=n_processes) as pool:
@@ -485,10 +512,23 @@ class Base_MCMC_Fitter(ABC):
         colour: str = "black",
         legend: bool = False,
         save: bool = True,
+        fid_colour: str = "C1",
+        discard: Optional[Union[int, str]] = "default",
+        thin: Optional[Union[int, str]] = "default",
         **plot_kwargs: Dict[str, Any]
     ) -> plt.Figure:
 
-        flat_samples = self.backend.get_chain(flat = True) #, discard=100, thin=15)
+        autocorr_time = self.get_autocorr_time()
+        get_chain_kwargs = {}
+        if discard == "default":
+            discard = int(autocorr_time * 2)
+        if discard is not None:
+            get_chain_kwargs["discard"] = discard
+        if thin == "default":
+            thin = int(autocorr_time / 2)
+        if thin is not None:
+            get_chain_kwargs["thin"] = thin
+        flat_samples = self.backend.get_chain(flat = True, **get_chain_kwargs) #discard = discard, thin = thin)
 
         if "labels" not in plot_kwargs.keys():
             plot_kwargs["labels"] = [prior.name for prior in self.priors]
@@ -527,7 +567,11 @@ class Base_MCMC_Fitter(ABC):
             default_plot_kwargs["show_titles"] = False
 
         fig_ = corner.corner(flat_samples, range = range, **default_plot_kwargs)
-        
+
+        # plot fiducial values
+        if fid_colour is not None:
+            corner.overplot_lines(fig_, self.fiducial_params, color = fid_colour)
+            corner.overplot_points(fig_, np.array(self.fiducial_params)[None], marker = "s", color = fid_colour)
         # calculate best fit values of the variables and their associated errors
         # means = []
         # l1_errs = []
@@ -819,6 +863,65 @@ class MCMC_Fitter(Base_MCMC_Fitter):
         removed_residuals = sigma_clip(self.get_residuals(self.get_params_med()), sigma = sigma, masked = True)
         kept_residuals = ~removed_residuals.mask
         return kept_residuals
+
+    @classmethod
+    def from_h5(cls: Type[Self], h5_path: str) -> Self:
+        galfind_logger.warning(
+            "Loading MCMC fitter from HDF5 is not implemented yet, if it works its a hack to get working for thesis!"
+        )
+        # construct priors from saved .h5 file
+        h5_file = h5py.File(h5_path, "r")
+        h5_priors = h5_file["priors"]
+        prior_types = {prior.__name__: prior for prior in Prior.__subclasses__()}
+        priors = Priors(
+            [
+                prior_types[str(h5_priors[prior_name]["prior_type"][()].decode("utf-8"))](
+                    prior_name, 
+                    [
+                        float(h5_priors[prior_name]["lower_lim"][()]),
+                        float(h5_priors[prior_name]["upper_lim"][()]),
+                    ],
+                    float(h5_priors[prior_name]["fiducial"][()])
+                )
+                for prior_name in [name.decode("utf-8") for name in h5_file["priors_names"][()]]
+            ]
+        )
+        # ensure these priors are the correct way round
+        x_data = h5_file["x_data"][()]
+        y_data = h5_file["y_data"][()]
+        y_data_errs = h5_file["y_data_errs"][()]
+        n_walkers = h5_file["nwalkers"][()]
+        backend_filename = h5_file["backend_filename"][()].decode("utf-8")
+        #init_pos = h5_file["init_pos"][()]
+        # TODO: load these in
+        #incl_scatter = h5_file["incl_scatter"][()]
+        #fixed_params = json.loads(h5_file["fixed_params"][()])#.decode("utf-8"))
+        h5_file.close()
+        return cls(priors, x_data, y_data, y_data_errs, n_walkers, backend_filename = backend_filename, fixed_params = {}) #, incl_scatter = incl_scatter)#, init_pos = init_pos)
+    
+    def save_h5(self: Self) -> str:
+        # open h5 file
+        h5_out_name = self.backend_filename.replace(".h5", "_fitter.h5")
+        out_file = h5py.File(h5_out_name, "w")
+        priors = out_file.create_group("priors")
+        for prior in self.priors:
+            prior_ = priors.create_group(prior.name)
+            prior_["lower_lim"] = prior.prior_params["lower_lim"]
+            prior_["upper_lim"] = prior.prior_params["upper_lim"]
+            prior_["fiducial"] = prior.fiducial
+            prior_["prior_type"] = prior.__class__.__name__
+        priors_names = [prior.name for prior in self.priors]
+        out_file.create_dataset("priors_names", data = np.array(priors_names, dtype = "S"))
+        out_file.create_dataset("x_data", data = self.x_data)
+        out_file.create_dataset("y_data", data = self.y_data)
+        out_file.create_dataset("y_data_errs", data = self.y_data_errs)
+        out_file.create_dataset("nwalkers", data = self.nwalkers)
+        out_file.create_dataset("fixed_params", data = json.dumps(self.fixed_params))
+        #out_file.create_dataset("incl_scatter", data = self.incl_scatter)
+        out_file.create_dataset("backend_filename", data = self.backend_filename)
+        out_file.close()
+        galfind_logger.info(f"Saved MCMC fitter to {h5_out_name}")
+        return h5_out_name
 
 # class Scattered_MCMC_Fitter(Base_MCMC_Fitter):
 
@@ -1138,64 +1241,6 @@ class Linear_Fitter(MCMC_Fitter):
             )
         self.scatter_type = scatter_type
         super().__init__(priors, x_data, y_data, y_data_errs, nwalkers, backend_filename, fixed_params)
-    
-    @classmethod
-    def from_h5(cls: Type[Self], h5_path: str) -> Self:
-        galfind_logger.warning(
-            "Loading MCMC fitter from HDF5 is not implemented yet, if it works its a hack to get working for thesis!"
-        )
-        # construct priors from saved .h5 file
-        h5_file = h5py.File(h5_path, "r")
-        h5_priors = h5_file["priors"]
-        prior_types = {prior.__name__: prior for prior in Prior.__subclasses__()}
-        priors = Priors(
-            [
-                prior_types[str(h5_priors[prior_name]["prior_type"][()].decode("utf-8"))](
-                    prior_name, 
-                    [
-                        float(h5_priors[prior_name]["lower_lim"][()]),
-                        float(h5_priors[prior_name]["upper_lim"][()]),
-                    ],
-                    float(h5_priors[prior_name]["fiducial"][()])
-                )
-                for prior_name in [name.decode("utf-8") for name in h5_file["priors_names"][()]]
-            ]
-        )
-        # ensure these priors are the correct way round
-        x_data = h5_file["x_data"][()]
-        y_data = h5_file["y_data"][()]
-        y_data_errs = h5_file["y_data_errs"][()]
-        n_walkers = h5_file["nwalkers"][()]
-        backend_filename = h5_file["backend_filename"][()].decode("utf-8")
-        #init_pos = h5_file["init_pos"][()]
-        # TODO: load these in
-        #incl_scatter = h5_file["incl_scatter"][()]
-        #fixed_params = json.loads(h5_file["fixed_params"][()])#.decode("utf-8"))
-        h5_file.close()
-        return cls(priors, x_data, y_data, y_data_errs, n_walkers, backend_filename = backend_filename, fixed_params = {}) #, incl_scatter = incl_scatter)#, init_pos = init_pos)
-    
-    def save_h5(self: Self) -> None:
-        # open h5 file
-        h5_out_name = self.backend_filename.replace(".h5", "_fitter.h5")
-        out_file = h5py.File(h5_out_name, "w")
-        priors = out_file.create_group("priors")
-        for prior in self.priors:
-            prior_ = priors.create_group(prior.name)
-            prior_["lower_lim"] = prior.prior_params["lower_lim"]
-            prior_["upper_lim"] = prior.prior_params["upper_lim"]
-            prior_["fiducial"] = prior.fiducial
-            prior_["prior_type"] = prior.__class__.__name__
-        priors_names = [prior.name for prior in self.priors]
-        out_file.create_dataset("priors_names", data = np.array(priors_names, dtype = "S"))
-        out_file.create_dataset("x_data", data = self.x_data)
-        out_file.create_dataset("y_data", data = self.y_data)
-        out_file.create_dataset("y_data_errs", data = self.y_data_errs)
-        out_file.create_dataset("nwalkers", data = self.nwalkers)
-        out_file.create_dataset("fixed_params", data = json.dumps(self.fixed_params))
-        #out_file.create_dataset("incl_scatter", data = self.incl_scatter)
-        out_file.create_dataset("backend_filename", data = self.backend_filename)
-        out_file.close()
-        galfind_logger.info(f"Saved MCMC fitter to {h5_out_name}")
 
     def _get_sigma_sq(
         self: Self,
@@ -1259,7 +1304,7 @@ class Linear_Fitter(MCMC_Fitter):
                 "color": "grey",
                 "alpha": 0.5,
                 "zorder": 100,
-                "path_effects": [pe.withStroke(linewidth = 2., foreground = "white")]
+                "path_effects": [pe.withStroke(linewidth = 2., foreground = "white")],
             }
             for key, val in scatter_kwargs.items():
                 def_scatter_kwargs[key] = val
@@ -1378,7 +1423,13 @@ class Power_Law_Fitter(MCMC_Fitter):
 
 
 def get_gal_bias_fitter(
-    fitter: Tuple[Schechter_Lum_Fitter, Schechter_Mag_Fitter, DPL_Lum_Fitter, DPL_Mag_Fitter]
+    fitter: Tuple[
+        Schechter_Lum_Fitter,
+        Schechter_Mag_Fitter,
+        DPL_Lum_Fitter,
+        DPL_Mag_Fitter
+    ],
+    sigma_dm_dict: Dict[str, float],
 ) -> Type[MCMC_Fitter]:
 
     """
@@ -1421,8 +1472,11 @@ def get_gal_bias_fitter(
                 galfind_logger.critical(
                     f"{len(self.surveys_arr)=}, {len(self.x_data)=}, {len(self.y_data)=}, {self.y_data_errs.shape[1]=}, must all be equal!"
                 )
-            self.sigma_dm_sq = 0.025 ** 2 # ish-correct for GOODS at z=7
-            
+            self.sigma_dm_dict = sigma_dm_dict
+            assert all([survey in self.sigma_dm_dict.keys() for survey in self.surveys_arr]), \
+                galfind_logger.critical(
+                    f"All surveys in {self.surveys_arr=} must be in {self.sigma_dm_dict.keys()=}"
+                )
 
         def _get_sigma_sq(
             self: Self,
@@ -1430,7 +1484,8 @@ def get_gal_bias_fitter(
             params: Dict[str, float],
         ) -> NDArray[float]:
             sigma_sq = super()._get_sigma_sq(residuals, params)
-            sigma_sq += self.sigma_dm_sq * (params["b_gal"] * self.y_data) ** 2
+            sigma_dm = np.array([self.sigma_dm_dict[survey] for survey in self.surveys_arr])
+            sigma_sq += (sigma_dm * params["b_gal"] * self.y_data) ** 2
             return sigma_sq
     
     return Galaxy_Bias_Fitter
