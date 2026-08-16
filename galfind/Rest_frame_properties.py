@@ -22,7 +22,7 @@ try:
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from . import galfind_logger, config, all_band_names, astropy_cosmo
+from . import galfind_logger, config, all_filt_names, astropy_cosmo
 from . import useful_funcs_austind as funcs
 from .decorators import ignore_warnings
 from . import Catalogue, Catalogue_Base, Galaxy, SED_code, Photometry_rest, PDF
@@ -95,7 +95,7 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
         self: Self,
         object: Union[Type[Catalogue_Base], Galaxy, Photometry_rest],
         n_chains: int = 10_000,
-        output: bool = False,
+        output: bool = True,
         overwrite: bool = False,
         n_jobs: int = 1,
     ) -> Optional[Union[Type[Catalogue_Base], Galaxy, Photometry_rest]]:
@@ -137,14 +137,19 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
                 f"/{self.SED_fit_label}/{self.name}"
         except:
             breakpoint()
-
         if n_jobs <= 1:
             # update properties for each galaxy in the catalogue
-            [self._call_gal(gal, n_chains = n_chains, output = False, \
-                overwrite = overwrite, save_dir = save_dir) \
-                for gal in tqdm(cat, total = len(cat), \
-                desc = f"Calculating {self.name}",
-                disable=galfind_logger.getEffectiveLevel() > logging.INFO)]
+            [
+                self._call_gal(
+                    gal, n_chains = n_chains, output = False, 
+                    overwrite = overwrite, save_dir = save_dir
+                ) for gal in tqdm(
+                    cat,
+                    total = len(cat), \
+                    desc = f"Calculating {self.name}",
+                    disable = galfind_logger.getEffectiveLevel() > logging.INFO
+                )
+            ]
         else:
             # TODO: should be set when serializing the object
             for gal in tqdm(cat, total = len(cat), disable=galfind_logger.getEffectiveLevel() > logging.INFO):
@@ -268,12 +273,12 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
         # update the relevant Photometry_rest object stored in the Galaxy
         assert self.aper_diam in gal.aper_phot.keys(), \
             galfind_logger.critical(
-                f"{self.aper_diam=} not in {gal.aper_phot.keys()}"
+                f"{self.aper_diam=} not in {'+'.join(list(gal.aper_phot.keys()))}"
             )
         assert self.SED_fit_label in gal.aper_phot[self.aper_diam].SED_results.keys(), \
             galfind_logger.critical(
                 f"{self.SED_fit_label=} not in " + \
-                gal.aper_phot[self.aper_diam].SED_results.keys()
+                "+".join(list(gal.aper_phot[self.aper_diam].SED_results.keys()))
             )
         if save_dir != "":
             save_dir += "/"
@@ -576,12 +581,12 @@ class beta_fit:
             if length != max_length:
                 wav_rest = np.concatenate([wav_rest, np.full(max_length - length, wav_rest[-1])])
                 trans = np.concatenate([trans, np.full(max_length - length, trans[-1])])
-            self.mid_wav_rest[filt.band_name] = filt.WavelengthCen.to(u.AA).value
-            self.wavelength_rest[filt.band_name] = wav_rest
-            self.transmission[filt.band_name] = trans
-            self.norm[filt.band_name] = np.trapz(
-                self.transmission[filt.band_name],
-                x=self.wavelength_rest[filt.band_name],
+            self.mid_wav_rest[filt.filt_name] = filt.WavelengthCen.to(u.AA).value
+            self.wavelength_rest[filt.filt_name] = wav_rest
+            self.transmission[filt.filt_name] = trans
+            self.norm[filt.filt_name] = np.trapz(
+                self.transmission[filt.filt_name],
+                x=self.wavelength_rest[filt.filt_name],
             )
 
     def __call__(self, _, A, beta):
@@ -591,7 +596,7 @@ class beta_fit:
             self.wavelength_rest,
             self.transmission,
             self.norm,
-            self.filterset.band_names
+            self.filterset.filt_names
         )
 
 @njit
@@ -686,10 +691,13 @@ class UV_Beta_Calculator(Rest_Frame_Property_Calculator):
         phot_rest: Photometry_rest
     ) -> Dict[str, Any]:
         # determine bands that fall within rest frame UV wavelength limits
+        # remove any nans from rest_UV_SNRs
+        nan_SNR_indices = np.isnan(phot_rest.flux / phot_rest.flux_errs)
         rest_frame_UV_indices = [
             i for i, filt in enumerate(phot_rest.filterset)
             if filt.WavelengthLower50 > self.global_kwargs["rest_UV_wav_lims"][0] * (1.0 + phot_rest.z.value)
             and filt.WavelengthUpper50 < self.global_kwargs["rest_UV_wav_lims"][1] * (1.0 + phot_rest.z.value)
+            and not nan_SNR_indices[i]
         ]
         if len(rest_frame_UV_indices) < 2:
             failure = True
@@ -703,13 +711,10 @@ class UV_Beta_Calculator(Rest_Frame_Property_Calculator):
             ) * u.AA
             phot_rest_UV = phot_rest[rest_frame_UV_indices]
             rest_UV_SNRs = phot_rest_UV.flux / phot_rest_UV.flux_errs
-            if any(np.isnan(SNR) for SNR in rest_UV_SNRs):
-                failure = True
-            else:
-                failure = False
-                # determine what percentage of scatters fall into the negative flux region
-                negative_flux_pc = (1. - np.prod([1. - norm.cdf(0., loc=mu, scale=std) for mu, std in \
-                    zip(phot_rest_UV.flux.value, phot_rest_UV.flux_errs.value)])) * 100.0
+            failure = False
+            # determine what percentage of scatters fall into the negative flux region
+            negative_flux_pc = (1. - np.prod([1. - norm.cdf(0., loc=mu, scale=std) for mu, std in \
+                zip(phot_rest_UV.flux.value, phot_rest_UV.flux_errs.value)])) * 100.0
         if failure:
             rest_frame_UV_indices = None
             rest_UV_band_wavs = None
@@ -754,8 +759,8 @@ class UV_Beta_Calculator(Rest_Frame_Property_Calculator):
         phot_rest: Photometry_rest
     ) -> Dict[str, Any]:
         return {
-            "rest_UV_band_names": "+".join(
-                np.array(phot_rest.filterset.band_names)
+            "rest_UV_filt_names": "+".join(
+                np.array(phot_rest.filterset.filt_names)
                 [self.obj_kwargs["keep_indices"]]),
             "n_UV_bands": len(self.obj_kwargs["keep_indices"]),
             "negative_flux_pc": self.obj_kwargs["negative_flux_pc"]
@@ -965,14 +970,13 @@ class mUV_Calculator(Rest_Frame_Property_Calculator):
 
     @property
     def name(self: Self) -> str:
-        ext_src_label = f"_extsrc_{self.global_kwargs['ext_src_corrs']}" \
-            if self.global_kwargs["ext_src_corrs"] is not None else ""
-        ext_src_lim_label = f"<{self.global_kwargs['ext_src_uplim']:.0f}" if \
-            self.global_kwargs["ext_src_uplim"] is not None and \
-            self.global_kwargs["ext_src_corrs"] is not None else ""
+        ext_src_label = funcs.get_ext_src_corr_label(
+            ext_src_key = self.global_kwargs["ext_src_corrs"],
+            ext_src_uplim = self.global_kwargs["ext_src_uplim"],
+        )
         return f"m{self.global_kwargs['ref_wav'].to(u.AA).value:.0f}_" + \
             rest_UV_wavs_name(self.pre_req_properties[0].global_kwargs \
-            ["rest_UV_wav_lims"]) + ext_src_label + ext_src_lim_label
+            ["rest_UV_wav_lims"]) + ext_src_label
 
     @property
     def plot_name(self: Self) -> str:
@@ -986,7 +990,7 @@ class mUV_Calculator(Rest_Frame_Property_Calculator):
         assert self.global_kwargs["top_hat_width"] > 0.0 * u.AA
         assert self.global_kwargs["resolution"] > 0.0 * u.AA
         if self.global_kwargs["ext_src_corrs"] is not None:
-            assert self.global_kwargs["ext_src_corrs"] in ["UV"] + all_band_names
+            assert self.global_kwargs["ext_src_corrs"] in ["UV"] + all_filt_names
         if self.global_kwargs["ext_src_uplim"] is not None:
             assert isinstance(self.global_kwargs["ext_src_uplim"], (int, float))
             assert self.global_kwargs["ext_src_uplim"] > 0.0
@@ -1054,21 +1058,12 @@ class mUV_Calculator(Rest_Frame_Property_Calculator):
             u.ABmag), axis = 1)
         # TODO: speed up implementation of extended source corrections
         if self.global_kwargs["ext_src_corrs"] is not None:
-            if self.global_kwargs["ext_src_corrs"] == "UV":
-                # calculate band nearest to the rest frame UV reference wavelength
-                band_wavs = [filt.WavelengthCen.to(u.AA).value \
-                    for filt in phot_rest.filterset] * u.AA / (1. + phot_rest.z.value)
-                ref_band = phot_rest.filterset.band_names[np.argmin(np.abs( \
-                    band_wavs - self.global_kwargs["ref_wav"]))]
-                ext_src_corr = phot_rest.ext_src_corrs[ref_band]
-            else: # band given
-                ext_src_corr = phot_rest.ext_src_corrs[self.global_kwargs["ext_src_corrs"]]
-            # apply limit to extended source correction
-            if self.global_kwargs["ext_src_uplim"] is not None:
-                if ext_src_corr > self.global_kwargs["ext_src_uplim"]:
-                    ext_src_corr = self.global_kwargs["ext_src_uplim"]
-            if ext_src_corr < 1.0:
-                ext_src_corr = 1.0
+            ext_src_corr = funcs.get_ext_src_corr(
+                phot_rest,
+                ext_src_key = self.global_kwargs["ext_src_corrs"],
+                ext_src_uplim = self.global_kwargs["ext_src_uplim"],
+                ref_wav = self.global_kwargs["ref_wav"],
+            )
             # apply extended source corrections
             mUV_arr = (mUV_arr.value + funcs.flux_to_mag_ratio(ext_src_corr)) * u.ABmag
         return mUV_arr
@@ -1123,7 +1118,7 @@ class MUV_Calculator(Rest_Frame_Property_Calculator):
     def __init__(
         self: Self, 
         aper_diam: u.Quantity, 
-        SED_fit_label: Union[str, Type[SED_code]], 
+        SED_fit_label: Union[str, Type[SED_code]],
         rest_UV_wav_lims: u.Quantity = [1_250.0, 3_000.0] * u.AA,
         ref_wav: u.Quantity = 1_500.0 * u.AA,
         top_hat_width: u.Quantity = 100.0 * u.AA,
@@ -1465,12 +1460,12 @@ class Optical_Continuum_Calculator(Rest_Frame_Property_Calculator):
         ]
         # ensure emission line actually falls within this band
         emission_bands = [
-            filt.band_name
+            filt.filt_name
             for filt in phot_rest.filterset
             if wavelength > filt.WavelengthLower50
             and wavelength < filt.WavelengthUpper50
         ]
-        if nearest_band.band_name not in emission_bands:
+        if nearest_band.filt_name not in emission_bands:
             emission_band = None
             cont_bands = None
             cont_band_indices = None
@@ -1574,7 +1569,7 @@ class Optical_Continuum_Calculator(Rest_Frame_Property_Calculator):
         phot_rest: Photometry_rest
     ) -> Dict[str, Any]:
         return {
-            "bands": "+".join([band.band_name for band in self.obj_kwargs["cont_bands"]]),
+            "bands": "+".join([band.filt_name for band in self.obj_kwargs["cont_bands"]]),
             "negative_flux_pc": self.obj_kwargs["negative_flux_pc"]
         }
     
@@ -1628,18 +1623,18 @@ class Optical_Line_EW_Calculator(Rest_Frame_Property_Calculator):
         ]
         # ensure emission line actually falls within this band
         emission_bands = [
-            filt.band_name
+            filt.filt_name
             for filt in phot_rest.filterset
             if wavelength > filt.WavelengthLower50
             and wavelength < filt.WavelengthUpper50
         ]
 
-        if nearest_band.band_name not in emission_bands:
+        if nearest_band.filt_name not in emission_bands:
             failure = True
         else:
             emission_band = nearest_band
             emission_band_index = int(np.where(np.array( \
-                phot_rest.filterset.band_names) == emission_band.band_name)[0][0])
+                phot_rest.filterset.filt_names) == emission_band.filt_name)[0][0])
             if np.isnan(phot_rest.depths[emission_band_index]):
                 failure = True
             else:
@@ -1718,7 +1713,7 @@ class Optical_Line_EW_Calculator(Rest_Frame_Property_Calculator):
                 self.obj_kwargs["emission_band"].WavelengthLower50
         ]
         return {
-            "band": self.obj_kwargs["emission_band"].band_name,
+            "band": self.obj_kwargs["emission_band"].filt_name,
             "contam_lines": "+".join(contam_lines)
         }
 
@@ -1919,8 +1914,8 @@ class Optical_Line_Flux_Calculator(Rest_Frame_Property_Calculator):
         phot_rest: Photometry_rest
     ) -> Dict[str, Any]:
         emission_band = phot_rest.property_kwargs[self.pre_req_properties[1].name]["band"]
-        if emission_band in phot_rest.filterset.band_names:
-            emission_band_index = int(np.where(np.array(phot_rest.filterset.band_names) == emission_band)[0][0])
+        if emission_band in phot_rest.filterset.filt_names:
+            emission_band_index = int(np.where(np.array(phot_rest.filterset.filt_names) == emission_band)[0][0])
             if np.isnan(phot_rest.depths[emission_band_index]):
                 band_wav = None
             else:

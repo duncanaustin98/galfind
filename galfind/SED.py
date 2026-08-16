@@ -104,6 +104,7 @@ class SED:
         label: Optional[str] = None,
         annotate: bool = True,
         save_name: Optional[str] = None,
+        save_dir: Optional[str] = f"{config['Other']['PLOT_DIR']}/SEDs",
         log_fluxes: bool = True,
         plot_kwargs: Dict[str, Any] = {},
         legend_kwargs: Dict[str, Any] = {},
@@ -138,15 +139,19 @@ class SED:
                     mag_units, True if mag_units != u.ABmag and log_fluxes else False
                 )
             )
-            
             ax.legend(**legend_kwargs)
         if save_name is not None:
             # save png by default
             if save_name.split(".")[-1] not in ["png", "pdf"]:
                 save_name = f"{'.'.join(save_name.split('.')[-1:])}.png"
-            funcs.make_dirs(save_name)
-            plt.savefig(save_name)
-            funcs.change_file_permissions(save_name)
+            if save_dir is not None:
+                save_path = f"{save_dir}/{save_name}"
+            else:
+                save_path = save_name
+            funcs.make_dirs(save_path)
+            plt.savefig(save_path)
+            funcs.change_file_permissions(save_path)
+            galfind_logger.info(f"Saved {repr(self)} plot to {save_path}")
         return plot
 
     def calc_bandpass_averaged_flux(
@@ -213,9 +218,9 @@ class SED:
         if plot:
             plt.plot(wavs_AA[feature_mask], flux_lambda[feature_mask])
             plt.show()
-        line_plus_cont_flux = np.trapz(
-            flux_lambda[feature_mask], x=wavs_AA[feature_mask]
-        )
+        # line_plus_cont_flux = np.trapz(
+        #     flux_lambda[feature_mask], x=wavs_AA[feature_mask]
+        # )
         # calculate continuum flux and mean continuum level
         cont_mask = np.logical_or.reduce(
             np.array(
@@ -273,6 +278,28 @@ class SED:
             self.line_fluxes[line_name] = line_flux
             self.line_cont[line_name] = mean_cont
         return line_EW
+
+    def calc_xi_ion(
+        self: Self,
+        line_name: str = "Halpha"
+    ) -> u.Quantity:
+        # Note that no dust correction is applied here
+        self.calc_line_EW(line_name, plot = False)
+        Ha_flux = self.line_fluxes[line_name]
+        # calculate mUV
+        mUV = self.calc_mUV()
+        # convert mUV to L_UV in erg/s/Hz
+        dL = astropy_cosmo.luminosity_distance(self.z).to(u.cm)
+        L_UV = 4 * np.pi * dL ** 2 \
+            * funcs.convert_mag_units(
+                funcs.wav_rest_to_obs(1_500.0 * u.AA, self.z),
+                mUV,
+                u.erg / (u.s * u.Hz * u.cm**2)
+            ) * (1.0 + self.z)
+        # convert Ha_flux to L_Ha in erg/s
+        L_Ha = 4 * np.pi * dL ** 2 * Ha_flux / (1.0 + self.z)
+        xi_ion = (L_Ha / (L_UV * 1.36e-12)).value * u.Hz / u.erg # assuming case B recombination, T = 10^4 K, n_e = 10^2 cm^-3
+        return xi_ion
 
     def calc_UVJ_colours(self, resolution=1.0 * u.AA):
         UVJ_filters = {
@@ -346,24 +373,20 @@ class SED_rest(SED):
             & (wavs < wav_range.to(wav_units).value[1])
         ]
         super().__init__(wavs, mags, wav_units, mag_units)
-
-    def crop_to_Calzetti94_filters(self, update=False):
-        wavs = self.wavs.to(u.AA)
-        Calzetti94_filter_indices = np.logical_or.reduce(
-            [
-                (wavs.value > low_lim) & (wavs.value < up_lim)
-                for low_lim, up_lim in zip(
-                    funcs.lower_Calzetti_filt, funcs.upper_Calzetti_filt
-                )
-            ]
+    
+    @classmethod
+    def from_SED_obs(cls, SED_obs, out_wav_units=u.AA, out_mag_units=u.ABmag):
+        wavs = funcs.convert_wav_units(
+            SED_obs.wavs / (1 + SED_obs.z), out_wav_units
         )
-        wavs = self.wavs[Calzetti94_filter_indices]
-        mags = self.mags[Calzetti94_filter_indices]
-        if update:
-            self.wavs = wavs
-            self.wav_units = u.AA  # should improve this functionality
-            self.mags = mags
-        return wavs, mags
+        mags = funcs.convert_mag_units(wavs, SED_obs.mags, out_mag_units)
+        return cls(
+            wavs.value,
+            mags.value,
+            wavs.unit,
+            mags.unit,
+            wav_range=[0, 10_000] * u.AA,
+        )
 
 
 class SED_obs(SED):
@@ -460,6 +483,38 @@ class SED_obs(SED):
             np.array(filters[1].WavelengthCen.value) * u.AA, red_flux, u.ABmag
         )
         return blue_flux_mAB - red_flux_mAB
+
+    def calc_mUV(
+        self: Self,
+        wav_range: u.Quantity = [1_450.0, 1_550.0] * u.AA,
+        wav_resolution: u.Quantity = 1.0 * u.AA,
+    ):
+        assert wav_range[0] < wav_range[1], \
+            galfind_logger.critical(
+                f"{wav_range[0]=}!<{wav_range[1]=}"
+            )
+        # create tophat filter in rest frame
+        from galfind import Tophat_Filter
+        obs_wav_range = wav_range * (1. + self.z)
+        #wavs = np.arange(obs_wav_range[0].value, obs_wav_range[1].value, wav_resolution.value) * wav_range.unit
+        mUV_filter = Tophat_Filter("mUV", obs_wav_range[0], obs_wav_range[1], wav_resolution)
+        UV_flux = self.calc_bandpass_averaged_flux(mUV_filter.wav, mUV_filter.trans) * u.erg / (u.s * (u.cm**2) * u.AA)
+        # convert to m_AB
+        return funcs.convert_mag_units(
+            mUV_filter.WavelengthCen,
+            UV_flux,
+            u.ABmag,
+        )
+
+    def calc_MUV(
+        self: Self,
+        wav_range: u.Quantity = [1_450.0, 1_550.0] * u.AA,
+        wav_resolution: u.Quantity = 1.0 * u.AA,
+    ):
+        mUV = self.calc_mUV(wav_range, wav_resolution)
+        dL = astropy_cosmo.luminosity_distance(self.z).to(u.pc).value
+        MUV = mUV.value - 5 * np.log10(dL / 10.0) + 2.5 * np.log10(1.0 + self.z)
+        return MUV # * u.ABmag
 
 
 class Mock_SED_rest(SED_rest):  # , Mock_SED):
@@ -640,7 +695,7 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
         return template_obj
 
     def normalize_to_m_UV(self, m_UV):
-        if not type(m_UV) == type(None):
+        if m_UV is not None:
             assert type(m_UV) in [u.Quantity, u.Magnitude]
             norm = (
                 funcs.convert_mag_units(1_500.0 * u.AA, m_UV, u.Jy).value
@@ -672,7 +727,7 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
     def calc_UV_slope(self, output_errs=False, method="Calzetti+94"):
         if method == "Calzetti+94":
             # crop to Calzetti+94 filters
-            wavs, mags = self.crop_to_Calzetti94_filters()
+            wavs, mags = funcs.crop_to_Calzetti94_filters(self.wavs, self.mags)
             # convert self.mags to f_λ if needed
             if mags.unit == u.ABmag:
                 mags = funcs.convert_mag_units(
@@ -788,10 +843,10 @@ class Mock_SED_obs(SED_obs):
     ):
         lum_distance = astropy_cosmo.luminosity_distance(z).to(u.pc)
         m_UV = (
-            M_UV
+            M_UV.to(u.ABmag).value
             - 2.5 * np.log10(1 + z)
             + 5 * np.log10(lum_distance.value / 10)
-        )
+        ) * u.ABmag
         mock_SED_rest = Mock_SED_rest.power_law_from_beta_m_UV(
             beta, m_UV, template_name=template_name
         )
@@ -839,9 +894,9 @@ class Mock_SED_obs(SED_obs):
             assert len(bands) == 2
             # requires colour to exist in the mock photometry
             for band in bands:
-                if band not in self.mock_photometry.filterset.band_names:
+                if band not in self.mock_photometry.filterset.filt_names:
                     galfind_logger.critical(
-                        f"self.mock_photometry includes the bands = {self.mock_photometry.filterset.band_names}, and {band} is not included!"
+                        f"self.mock_photometry includes the bands = {self.mock_photometry.filterset.filt_names}, and {band} is not included!"
                     )
                 assert self.mock_photometry[band].flux.unit == u.Jy
             # calculate colour in mags
@@ -1038,7 +1093,7 @@ class Mock_SED_rest_template_set(Mock_SED_template_set):
                         },
                     },
                 )
-                if type(m_UV_norm) != type(None):
+                if m_UV_norm is not None:
                     mock_sed_rest.normalize_to_m_UV(m_UV_norm)
                 mock_SED_rest_arr.append(mock_sed_rest)
         return cls(mock_SED_rest_arr)
@@ -1129,3 +1184,135 @@ class Mock_SED_obs_template_set(Mock_SED_template_set):
             )
         if show:
             plt.show()
+
+
+class SED_2D:
+
+    def __init__(
+        self: Self,
+        SED_arr: List[Type[SED]],
+    ):
+        sed_classes = np.unique([SED.__class__.__name__ for SED in SED_arr])
+        assert len(sed_classes) == 1, \
+            galfind_logger.critical(
+                f"SED_2D can only be created from a list of SEDs of the same class! Found {sed_classes}."
+            )
+        self.SED_arr = SED_arr
+
+    def __repr__(self: Self) -> str:
+        return f"{self.__class__.__name__}{len(self)}"
+
+    def __len__(self) -> int:
+        return len(self.SED_arr)
+
+    def __iter__(self):
+        self.iter = 0
+        return self
+
+    def __next__(self):
+        if self.iter > len(self) - 1:
+            raise StopIteration
+        else:
+            sed = self[self.iter]
+            self.iter += 1
+            return sed
+        
+    def __getitem__(self: Self, index: Any) -> Type[SED]:
+        if len(self) == 0:
+            raise IndexError(f"No SEDs in {self}!")
+        if isinstance(index, int):
+            return self.SED_arr[index]
+        else:
+            raise TypeError(
+                f"Indexing {self} with {type(index)} is not supported! Use an integer index."
+            )
+        
+    @property
+    def frame(self: Self) -> Optional[str]:
+        """Returns the frame of the SEDs in the SED_2D."""
+        possible_frames = ["rest", "obs"]
+        frame = self.SED_arr[0].__class__.__name__.split("_")[-1]
+        if frame in possible_frames:
+            return frame
+        else:
+            return None
+
+    def plot(
+        self: Self,
+        #fig: Optional[plt.Figure],
+        ax: Optional[plt.Axes] = None,
+        wav_units: u.Unit = u.AA,
+        mag_units: u.Unit = u.ABmag,
+        label: Optional[str] = None,
+        annotate: bool = True,
+        save_name: Optional[str] = None,
+        log_fluxes: bool = True,
+        plot_chains: bool = False,
+        plot_kwargs: Dict[str, Any] = {},
+        legend_kwargs: Dict[str, Any] = {},
+    ): # -> plt.Axes: #Tuple[plt.Figure, plt.Axes]:
+        
+        if ax is None:
+            fig, ax = plt.subplots()
+
+        wavs_arr = [
+            funcs.convert_wav_units(sed.wavs, wav_units)
+            for sed in self
+        ]
+        mags_arr = [
+            funcs.log_scale_fluxes(
+                funcs.convert_mag_units(sed.wavs, sed.mags, mag_units)
+            ) if mag_units != u.ABmag and log_fluxes else
+            funcs.convert_mag_units(sed.wavs, sed.mags, mag_units).value
+            for sed in self
+        ]
+
+        if label is not None and hasattr(self, "template_name"):
+            label = self.template_name
+
+        # interpolate mags onto common wavelength grid
+        #all_wavs = np.concatenate([wavs_arr_ for wavs_arr_ in wavs_arr])
+        wavs_interp = wavs_arr[0] #np.linspace(np.min(all_wavs), np.max(all_wavs), 10_000)
+        mags_interp = np.array([
+            interp1d(
+                wavs,
+                mags,
+                #bounds_error=False,
+                fill_value="extrapolate",
+            )(wavs_interp)
+            for wavs, mags in zip(wavs_arr, mags_arr)
+        ])
+
+        # determine 16th, 50th and 84th percentiles of the interpolated mags
+        mags_16 = np.percentile(mags_interp, 16, axis=0)
+        mags_50 = np.percentile(mags_interp, 50, axis=0)
+        mags_84 = np.percentile(mags_interp, 84, axis=0)
+        #breakpoint()
+        plot = ax.plot(wavs_interp.value, mags_50, label=label, **plot_kwargs)
+        ax.fill_between(wavs_interp.value, mags_16, mags_84, alpha=0.5, color=plot[0].get_color())
+
+        if annotate:
+            ax.set_xlabel(
+                funcs.label_wavelengths(
+                    wav_units,
+                    False,
+                    "" if self.frame is None else self.frame,
+                )
+            )
+            ax.set_ylabel(
+                funcs.label_fluxes(
+                    mag_units, True if mag_units != u.ABmag and log_fluxes else False
+                )
+            )
+            ax.legend(**legend_kwargs)
+
+        if save_name is not None:
+            # save png by default
+            if save_name.split(".")[-1] not in ["png", "pdf"]:
+                save_name = f"{'.'.join(save_name.split('.')[-1:])}.png"
+            funcs.make_dirs(save_name)
+            plt.savefig(save_name)
+            funcs.change_file_permissions(save_name)
+
+        return plot
+    

@@ -1,7 +1,6 @@
 
 from __future__ import annotations
 
-from BDFit import StarFit
 import numpy as np
 import astropy.units as u
 import h5py
@@ -23,6 +22,8 @@ from .SED import SED_obs
 
 class Template_Fitter(SED_code):
 
+    ID_label = "ID"
+
     def __init__(
         self: Self,
         SED_fit_params: Dict[str, Any],
@@ -35,9 +36,9 @@ class Template_Fitter(SED_code):
     def from_label(cls, label: str) -> Type[SED_code]:
         raise NotImplementedError()
 
-    @property
-    def ID_label(self) -> str:
-        return "ID"
+    # @property
+    # def ID_label(self) -> str:
+    #     return "ID"
 
     @property
     def label(self) -> str:
@@ -106,8 +107,10 @@ class Template_Fitter(SED_code):
         save_SEDs: bool = True,
         save_PDFs: bool = True,
         overwrite: bool = False,
+        verbose: bool = True,
         **kwargs: Dict[str, Any],
     ) -> NoReturn:
+        from BDFit import StarFit
         out_path = self._get_out_paths(cat, aper_diam)[1]
         if not Path(out_path).is_file() or overwrite:
             # convert cat.filterset to bands used in StarFit
@@ -123,14 +126,15 @@ class Template_Fitter(SED_code):
                     facilities_to_search[filt.facility_name] = []
                 facilities_to_search[filt.facility_name].append(filt.instrument.SVO_name)
             bands = [
-                f"{filt.instrument_name}.{filt.band_name}" 
-                if filt.instrument_name != "NIRCam" else filt.band_name 
+                f"{filt.instrument_name}.{filt.filt_name}" 
+                if filt.instrument_name != "NIRCam" else filt.filt_name 
                 for filt in fit_instrument_filterset
             ]
             starfit = StarFit(
                 facilities_to_search = facilities_to_search,
                 libraries = self.SED_fit_params["templates"],
                 compile_bands = bands,
+                verbose = verbose,
             )
             starfit.fit_catalog(
                 photometry_function = self._load_phot,
@@ -143,11 +147,11 @@ class Template_Fitter(SED_code):
                     "incl_units": True,
                     "input_filterset": fit_instrument_filterset,
                 },
-                sys_err = None, 
+                sys_err = None,
                 filter_mask = None,
                 subset = None,
             )
-            self.starfit = starfit
+            #self.starfit = starfit
             tab = starfit.make_cat()
             tab["ID"] = np.array(cat.ID)
             # save as a .fits file
@@ -235,7 +239,8 @@ class Brown_Dwarf_Fitter(Template_Fitter):
 
     @property
     def label(self) -> str:
-        return self.__class__.__name__
+        return "bd"
+        #return self.__class__.__name__
 
     @property
     def hdu_name(self) -> str:

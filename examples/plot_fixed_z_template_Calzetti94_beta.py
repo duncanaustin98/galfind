@@ -93,7 +93,7 @@ def calc_mock_beta_phot(
             m_UV_norm, template_set
         )
         beta_phot = {}
-        depths = [fixed_depth_mag for band_name in instrument.band_names]
+        depths = [fixed_depth_mag for filt_name in instrument.filt_names]
         with tqdm(
             total=len(rest_UV_wav_lims_arr)
             * len(mock_sed_rest_set)
@@ -136,7 +136,7 @@ def calc_mock_beta_phot(
         )
         out_tab.meta = {
             "Bands": "+".join(
-                [band.replace("f", "F") for band in instrument.band_names]
+                [band.replace("f", "F") for band in instrument.filt_names]
             ),
             "Beta_errs": False,
         }

@@ -6,6 +6,7 @@ from copy import deepcopy
 import matplotlib.pyplot as plt
 import astropy.units as u
 import numpy as np
+import re
 from pathlib import Path
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
@@ -14,7 +15,7 @@ from tqdm import tqdm
 import inspect
 import logging
 from numpy.typing import NDArray
-from typing import TYPE_CHECKING, Any, List, Dict, Union, Type, Optional, NoReturn
+from typing import TYPE_CHECKING, Any, List, Dict, Union, Optional, NoReturn, Tuple
 if TYPE_CHECKING:
     from . import Galaxy, Catalogue_Creator, Data, Selector, Property_Calculator_Base, Mask_Selector
 try:
@@ -65,7 +66,14 @@ class Catalogue_Base:
         output_str += f"DEC RANGE = {self.dec_range}\n"
         output_str += funcs.band_sep
         output_str += str(self.filterset)
-        # display what other things have previously been calculated for this catalogue, including templates and zmax_lowz
+        # display what other things have previously been calculated for this catalogue
+        if hasattr(self, "SED_results"):
+            output_str += "SED FITTING RESULTS:\n"
+            for aper_diam, SED_results in self.SED_results.items():
+                output_str += funcs.band_sep
+                output_str += f"{aper_diam}: {','.join([repr(SED_result) for SED_result in SED_results])}\n"
+            output_str += funcs.line_sep
+        # breakpoint()
         # output_str += "CAT STATUS = SEXTRACTOR, "
         # for i, (key, value) in enumerate(cat.meta.items()):
         #     if key in ["DEPTHS", "MASKED"] + [
@@ -77,11 +85,11 @@ class Catalogue_Base:
         #     if sel_criteria in cat.colnames:
         #         output_str += f"{sel_criteria} SELECTION, "
         # output_str += "\n"
-        # display total number of galaxies that satisfy the selection criteria previously performed
-        #if print_sel_criteria:
-        # for sel_criteria in display_selections:
-        #     if sel_criteria in cat.colnames:
-        #         output_str += f"N_GALS_{sel_criteria} = {len(cat[cat[sel_criteria]])}\n"
+        # # display total number of galaxies that satisfy the selection criteria previously performed
+        # if print_sel_criteria:
+        #     for sel_criteria in display_selections:
+        #         if sel_criteria in cat.colnames:
+        #             output_str += f"N_GALS_{sel_criteria} = {len(cat[cat[sel_criteria]])}\n"
         # output_str += funcs.band_sep
         # # display crops that have been performed on this specific object
         # if self.crops != []:
@@ -95,8 +103,8 @@ class Catalogue_Base:
         #             output_str += "Rest frame SED properties:\n"
         #             output_str += f"{key}: {str(properties)}\n"
         #             output_str += funcs.band_sep
-        #if print_cls_name:
-        #output_str += funcs.line_sep
+        # if print_cls_name:
+        #     output_str += funcs.line_sep
         return output_str
 
     def __len__(self):
@@ -165,9 +173,6 @@ class Catalogue_Base:
             # run selection if not already done
             if not all(index.name in gal.selection_flags for gal in self):
                 [index(gal, return_copy = False) for gal in self]
-            else:
-                pass
-                #breakpoint()
             keep_arr = [gal.selection_flags[index.name] for gal in self]
             return list(np.array(self.gals)[np.array(keep_arr)])
     
@@ -176,7 +181,12 @@ class Catalogue_Base:
         selector: Type[Selector],
     ) -> Self:
         if not any(crops._selection_name == selector._selection_name for crops in self.crops):
-            self.gals = np.array(self[selector])
+            if len(self) == 0:
+                galfind_logger.warning(
+                    f"No galaxies in {repr(self)} to crop!"
+                )
+            else:
+                self.gals = np.array(self[selector])
             self.cat_creator.crops.append(selector)
         return self
 
@@ -185,15 +195,9 @@ class Catalogue_Base:
         self: Self,
         property_name: str #, origin: Union[str, dict] = "gal"
     ) -> np.ndarray:
-        # get attributes from stored galaxy objects
-        # if property_name in self.__dict__.keys():
-        #     return self.__getattribute__(property_name)
-        # elif property_name in self.cat_creator.__dict__.keys():
-        #     return self.cat_creator.__getattribute__(property_name)
-        # else:
         if property_name in self.cat_creator.__dict__.keys():
             return getattr(self.cat_creator, property_name)
-        elif all(hasattr(gal, property_name) for gal in self):
+        elif all(hasattr(gal, property_name) for gal in self) and len(self) > 0:
             attr_arr = [getattr(gal, property_name) for gal in self]
             #attr_arr = [gal.__getattr__(property_name, origin) for gal in self]
             # ensure all units are the same
@@ -290,7 +294,6 @@ class Catalogue_Base:
         new_copies = []
         for o in other_copy_gals:
             other_copy = deepcopy(o)
-
             # Convert from list of SkyCoord to SkyCoord(arra)
             sky_coords_cat = SkyCoord(
                 self_copy.RA, self_copy.DEC, unit=(u.deg, u.deg), frame="icrs"
@@ -365,18 +368,16 @@ class Catalogue_Base:
                             other_copy.gals[indexes]
                         )
                         # Save indexes of other_gals in other_sky_coords
-                        other_gals_indexes = np.arange(len(other_sky_coords))[
-                            indexes
-                        ]
+                        other_gals_indexes = np.arange(len(other_sky_coords))[indexes]
 
                         bands_gal1 = np.array(
-                            coord_gal.phot.instrument.band_names
+                            coord_gal.phot.instrument.filt_names
                         )[coord_gal.phot.flux.mask]
 
                         chi_squareds = []
                         for other_gal in other_gals:
                             bands_gal2 = np.array(
-                                other_gal.phot.instrument.band_names
+                                other_gal.phot.instrument.filt_names
                             )[other_gal.phot.flux.mask]
                             matched_bands = list(
                                 set(bands_gal1).union(set(bands_gal2))
@@ -388,13 +389,13 @@ class Catalogue_Base:
                             indexes_bands = np.argwhere(
                                 [
                                     band in matched_bands
-                                    for band in coord_gal.phot.instrument.band_names
+                                    for band in coord_gal.phot.instrument.filt_names
                                 ]
                             )
                             indexes_other_bands = np.argwhere(
                                 [
                                     band in matched_bands
-                                    for band in other_gal.phot.instrument.band_names
+                                    for band in other_gal.phot.instrument.filt_names
                                 ]
                             )
                             coord_gal_fluxes = coord_gal.phot.flux[
@@ -440,6 +441,7 @@ class Catalogue_Base:
             gal_matched_cat = self_copy[cat_matches]
             # Use indexes instead
             other_cat_matches = np.array(other_cat_matches, dtype=int)
+            breakpoint()
             gal_matched_other = other_copy[other_cat_matches]
             print("Obtained matched galaxies")
             assert len(gal_matched_cat) == len(
@@ -469,14 +471,14 @@ class Catalogue_Base:
                         desc="Filtering best galaxy for matches",
                     ):
                         # Compare the two galaxies and choose the better one
-                        bands_gal1 = np.array(gal1.phot.instrument.band_names)[
+                        bands_gal1 = np.array(gal1.phot.instrument.filt_names)[
                             gal1.phot.flux.mask
                         ]
-                        bands_gal2 = np.array(gal2.phot.instrument.band_names)[
+                        bands_gal2 = np.array(gal2.phot.instrument.filt_names)[
                             gal2.phot.flux.mask
                         ]
 
-                        band_names_union = list(
+                        filt_names_union = list(
                             set(bands_gal1).union(set(bands_gal2))
                         )
 
@@ -491,15 +493,15 @@ class Catalogue_Base:
                             # gal1.phot.depths is just an array. Need to slice by position
                             indexes_gal1 = np.argwhere(
                                 [
-                                    band in band_names_union
-                                    for band in gal1.phot.instrument.band_names
+                                    band in filt_names_union
+                                    for band in gal1.phot.instrument.filt_names
                                 ]
                             )
                             depths_gal1 = gal1.phot.depths[indexes_gal1]
                             indexes_gal2 = np.argwhere(
                                 [
-                                    band in band_names_union
-                                    for band in gal2.phot.instrument.band_names
+                                    band in filt_names_union
+                                    for band in gal2.phot.instrument.filt_names
                                 ]
                             )
                             depths_gal2 = gal2.phot.depths[indexes_gal2]
@@ -574,6 +576,42 @@ class Catalogue_Base:
         else:
             return self.cat_creator.get_selection_labels(tab)
 
+    # TODO: Time this function with decorator
+    def cross_match(
+        self: Self,
+        other: Type[Catalogue_Base],
+        max_sep: u.Quantity,
+    ) -> Dict[Galaxy, List[Tuple[float, Galaxy]]]:
+        assert max_sep is not None, \
+            galfind_logger.critical(
+                "No max_sep provided for cross-match!"
+            )
+        galfind_logger.info(
+            f"Cross-matching {repr(self)} with {repr(other)} within {max_sep}!"
+        )
+        max_sep = funcs.validate_quantity(max_sep, "angle")
+        # make sky coordinates of self and other
+        self_coords = SkyCoord(self.RA, self.DEC, frame="icrs")
+        other_coords = SkyCoord(other.RA, other.DEC, frame="icrs")
+        # match and populate dict
+        idx_self, idx_other, sep2d, _ = self_coords.search_around_sky(other_coords, max_sep)
+        matches = {}
+        self_gals_copy = deepcopy(self.gals)
+        other_gals_copy = deepcopy(other.gals)
+        sep2d = sep2d.to(u.arcsec)
+        for i_src, i_match, sep in zip(idx_self, idx_other, sep2d):
+            try:
+                key = self_gals_copy[i_match]
+                item = (sep, other_gals_copy[i_src])
+                if not key in matches.keys():
+                    matches[key] = [item]
+                else:
+                    matches[key].extend([item])
+            except:
+                breakpoint()
+
+        return matches
+
     # TODO: should be __sub__ instead
     def remove_gal(self, index=None, id=None):
         if index is not None:
@@ -627,10 +665,16 @@ class Catalogue_Base:
     #         )
     #     return cat_copy
 
-    def open_cat(self, cropped: bool = False, hdu: Optional[str, Type[SED_code]] = None):
+    def open_cat(
+        self: Self,
+        cropped: bool = False,
+        hdu: Optional[str, Type[SED_code]] = None
+    ) -> Optional[Table]:
         if hdu is None:
             fits_cat = Table.read(
-                self.cat_path, character_as_bytes=False, memmap=True
+                self.cat_path,
+                character_as_bytes=False,
+                memmap=True,
             )
         else:
             if isinstance(hdu, SED_code):
@@ -643,7 +687,10 @@ class Catalogue_Base:
                 raise ValueError(err_message)
             if self.check_hdu_exists(hdu_name):
                 fits_cat = Table.read(
-                    self.cat_path, character_as_bytes=False, memmap=True, hdu=hdu_name
+                    self.cat_path,
+                    character_as_bytes=False,
+                    memmap=True,
+                    hdu=hdu_name,
                 )
             else:
                 galfind_logger.warning(
@@ -651,14 +698,66 @@ class Catalogue_Base:
                 )
                 return None
         if cropped:
-            ID_tab = Table({"IDs_temp": self.ID}, dtype=[int])
+            if len(self) == 0:
+                galfind_logger.debug(
+                    f"No galaxies in {repr(self)} to crop the catalogue with! " + \
+                    "Cropping from .fits table!"
+                )
+                # load selection table
+                select_cat = self.open_cat(cropped = False, hdu = "SELECTION")
+                if any(crop.name not in select_cat.colnames for crop in self.crops):
+                    err_message = f"Not all crops in {self.crops} have been performed on {repr(self)}! " + \
+                        "Cropping from .fits table not possible!"
+                    galfind_logger.critical(err_message)
+                    breakpoint()
+                    raise Exception(err_message)
+                crop_mask = np.array(
+                    np.logical_and.reduce(
+                        [select_cat[crop.name] for crop in self.crops]
+                    )
+                )
+                IDs_temp = np.array(select_cat[self.cat_creator.ID_label])[crop_mask]
+            else:
+                IDs_temp = self.ID
+            ID_tab = Table({"IDs_temp": IDs_temp}, dtype=[int])
             if hdu is None:
                 keys_left = self.cat_creator.ID_label
-            elif hdu_name.upper() in ["OBJECTS"]:  # , "GALFIND_CAT"]:
+            elif hdu_name.upper() in ["OBJECTS", "SELECTION"]:  # , "GALFIND_CAT"]:
                 keys_left = self.cat_creator.ID_label
+            elif "PROPERTIES" in hdu_name.upper():
+                keys_left = "ID"
             elif isinstance(hdu, SED_code):
                 keys_left = hdu.ID_label
+            elif hdu_name.split("_")[0].upper() in [
+                subcls.__name__.upper()
+                for subcls in funcs.all_subclasses(SED_code)
+            ]:
+                keys_left = [
+                    subcls for subcls in funcs.all_subclasses(SED_code)
+                    if subcls.__name__.upper() == hdu_name.split("_")[0].upper()
+                ][0].ID_label
+            elif any(
+                hdu_name_.upper() == subcls.__name__.upper()
+                for subcls in funcs.all_subclasses(SED_code)
+                for hdu_name_ in hdu_name.split("_")
+            ):
+                keys_left = [
+                    subcls for subcls in funcs.all_subclasses(SED_code)
+                    if any(
+                        hdu_name_.upper() == subcls.__name__.upper()
+                        for hdu_name_ in hdu_name.split("_")
+                    )
+                ][0].ID_label
+            elif hdu_name in [
+                subcls.__name__.upper() for subcls in funcs.all_subclasses(SED_code)
+            ]:
+                keys_left = [
+                    subcls for subcls in funcs.all_subclasses(SED_code)
+                    if subcls.__name__.upper() == hdu_name.upper()
+                ][0].ID_label
             else:
+                print(hdu, hdu_name)
+                breakpoint()
                 raise NotImplementedError()
             # convert ID column to appropriate units if not already
             if fits_cat[keys_left].dtype != int:
@@ -676,30 +775,75 @@ class Catalogue_Base:
         hdul = fits.open(self.cat_path)
         return [hdu_.name for hdu_ in hdul if hdu_.name != "PRIMARY"]
 
-    def check_hdu_exists(self, hdu_name: str):
+    def check_hdu_exists(self: Self, hdu_name: str) -> bool:
         # check whether the hdu extension exists
         hdul = fits.open(self.cat_path)
         return any(hdu_.name == hdu_name for hdu_ in hdul)
 
     @staticmethod
-    def write_cat(tab_arr, tab_names, cat_path: str):
-        hdu_list = fits.HDUList()
-        [
-            hdu_list.append(
-                fits.BinTableHDU(
-                    data=tab.as_array(),
-                    header=fits.Header(tab.meta),
-                    name=name,
+    def write_cat(
+        tab_arr: List[Table],
+        tab_names: List[str],
+        cat_path: str,
+    ) -> None:
+        try:
+            hdu_list = fits.HDUList()
+            [
+                hdu_list.append(
+                    fits.BinTableHDU(
+                        data = tab.as_array(),
+                        header = fits.Header(tab.meta),
+                        name = name,
+                    )
                 )
-            )
-            for (tab, name) in zip(tab_arr, tab_names)
-        ]
+                for (tab, name) in zip(tab_arr, tab_names)
+            ]
+        except:
+            galfind_logger.critical("Failed to write .fits table!")
+            breakpoint()
+            raise
         funcs.make_dirs(cat_path)
         hdu_list.writeto(cat_path, overwrite=True)
         funcs.change_file_permissions(cat_path)
         galfind_logger.info(f"Writing table to {cat_path}")
 
-    def write_hdu(self, tab: Table, hdu: str):
+    @staticmethod
+    def update_fits_cat(
+        new_tab: Table,
+        cat_path: str,
+        hdu_name: str,
+    ) -> None:
+        # retain any pre-existing column and meta names
+        orig_tab = Table.read(cat_path, hdu = hdu_name)
+        # update original table with new master table columns
+        for col in new_tab.colnames:
+            out_colname = funcs.truncate_colname(col)
+            if out_colname in orig_tab.colnames:
+                orig_tab[out_colname] = new_tab[col]
+            else:
+                orig_tab.add_column(new_tab[col], name=out_colname)
+        orig_meta = orig_tab.meta
+        orig_meta.update(new_tab.meta)
+        # retain all fits extensions
+        hdul = fits.open(cat_path, memmap=False)
+        non_objects_hdul = [
+            hdul[i] for i in range(len(hdul))
+            if hdul[i].name not in ["PRIMARY", hdu_name]
+        ]
+        # write the fits table
+        out_hdul = fits.HDUList(
+            [
+                fits.PrimaryHDU(),
+                fits.BinTableHDU(orig_tab, name=hdu_name)
+            ] + non_objects_hdul
+        )
+        out_hdul.writeto(cat_path, overwrite=True)
+        funcs.change_file_permissions(cat_path)
+        galfind_logger.info(
+            f"Updated {hdu_name} in {cat_path} with new table!"
+        )
+    
+    def write_hdu(self: Self, tab: Table, hdu: str) -> None:
         # if hdu exists, overwrite it
         if self.check_hdu_exists(hdu):
             tab_arr = [
@@ -748,7 +892,12 @@ class Catalogue_Base:
                 f"{hdu.upper()=} does not exist in {self.cat_path=}, could not delete!"
             )
 
-    def del_cols_hdrs_from_fits(self, col_names=[], hdr_names=[], hdu=None):
+    def del_cols_hdrs_from_fits(
+        self: Self,
+        col_names: List[str] = [],
+        hdr_names: List[str] = [],
+        hdu: Optional[str] = None
+    ) -> NoReturn:
         # open up all fits extensions
         tab_arr = []
         tab_names = []
@@ -777,42 +926,52 @@ class Catalogue_Base:
         fig: Optional[plt.Figure] = None,
         ax: Optional[plt.Axes] = None,
         log: bool = False,
-        n_bins: int = 50, 
+        #n_bins: int = 50, 
         save: bool = True,
         show: bool = False,
         overwrite: bool = True,
-        colour: Optional[str] = None,
+        from_pdf: bool = True,
+        **plot_kwargs: Dict[str, Any],
     ) -> NoReturn:
         save_path = f"{config['DEFAULT']['GALFIND_WORK']}/Plots/{self.version}/" + \
             f"{self.filterset.instrument_name}/{self.survey}/hist/" + \
             f"{self.crop_name}/{x_calculator.name}.png"
         if not Path(save_path).is_file() or overwrite:
             galfind_logger.info(
-                f"Making histogram for {x_calculator.name}!"
+                f"Making histogram for {x_calculator.name}{' from PDFs' if from_pdf else ''}!"
             )
+            if any(fig_ax is None for fig_ax in [fig, ax]):
+                fig, ax = plt.subplots()
             from . import Property_Calculator_Base
             if isinstance(x_calculator, tuple(Property_Calculator_Base.__subclasses__())):
-                # calculate x values
-                unit = x_calculator.extract_vals(self).unit
-                x = np.array([x_.input_arr for x_ in x_calculator.extract_PDFs(self)]).flatten() * unit
-                # remove nans
-                x = np.array([x_.value for x_ in x if not np.isnan(x_)])
-                x_label = x_calculator.name
+                if from_pdf:
+                    # sample x values from PDFs
+                    #unit = x_calculator.extract_vals(self).unit
+                    x = np.array([x_.input_arr for x_ in x_calculator.extract_PDFs(self)]).flatten() #* unit
+                    # remove nans
+                    x = np.array([x_ for x_ in x if not np.isnan(x_)]) # .value
+                    x_label = f"{x_calculator.name} PDF samples"
+                    n_bins = 50
+                else:
+                    x = x_calculator.extract_vals(self).value
+                    x = np.array([x_ for x_ in x if not np.isnan(x_)]) #.value * x.unit
+                    x_label = x_calculator.name
+                    n_bins = int(np.sqrt(len(x)))
             else:
                 raise NotImplementedError
             if log:
                 x = np.log10(x)
                 #x_name = f"log({x_name})"
                 x_label = f"log({x_label})"
-            if any(fig_ax is None for fig_ax in [fig, ax]):
-                fig, ax = plt.subplots()
-            ax.hist(x, bins = n_bins, color = colour)
-            ax.set_xlabel(x_label)
+            ax.hist(x, bins = n_bins, label = x_label, **plot_kwargs)
             #ax.set_ylabel("Number of Galaxies")
             #ax.set_title(f"{x_label} histogram")
             if save:
+                ax.legend()
+                ax.set_xlabel(x_calculator.plot_name)
                 funcs.make_dirs(save_path)
                 plt.savefig(save_path)
+                galfind_logger.info(f"Saved histogram to {save_path}!")
                 funcs.change_file_permissions(save_path)
             if show:
                 plt.show()
@@ -1130,14 +1289,15 @@ class Catalogue_Base:
         if plot_type.lower() != "contour":
             return plot
 
-    def get_vmax_ecsv_path(
+    def get_Vmax_ecsv_path(
         self: Self,
         data: Data,
+        Vmax_method: str = "uniform_depth",
     ) -> str:
         full_data_name = funcs.get_full_survey_name(data.survey, data.version, data.filterset)
         save_path = f"{config['NumberDensityFunctions']['VMAX_DIR']}/" + \
             f"{self.version}/{self.filterset.instrument_name}/" + \
-            f"{self.survey}/{self.crop_name}/Vmax_field={full_data_name}.ecsv"
+            f"{self.survey}/{self.crop_name}/{Vmax_method}/Vmax_field={full_data_name}.ecsv"
         funcs.make_dirs(save_path)
         return save_path
 
@@ -1149,13 +1309,17 @@ class Catalogue_Base:
         SED_fit_code: SED_code,
         z_step: float = 0.01,
         unmasked_area: Union[str, List[str], u.Quantity, Type[Mask_Selector]] = "selection",
+        Vmax_method: str = "uniform_depth",
+        n_jobs: int = 1,
     ) -> Dict[str, NDArray[float]]:
+
         assert len(z_bin) == 2
         assert z_bin[0] < z_bin[1]
         assert isinstance(SED_fit_code, tuple(SED_code.__subclasses__()))
         assert all(SED_fit_code.label in gal.aper_phot[aper_diam].SED_results.keys() for gal in self)
+        assert isinstance(n_jobs, int) and n_jobs >= 1
 
-        save_path = self.get_vmax_ecsv_path(data)
+        save_path = self.get_Vmax_ecsv_path(data, Vmax_method = Vmax_method)
         # if this file already exists
         if Path(save_path).is_file():
             # open file
@@ -1170,96 +1334,191 @@ class Catalogue_Base:
         # self.gals = np.array([gal for gal in self if gal.ID not in update_gals_ids])
         # update_gals = []
         if len(update_gals) > 0:
-            breakpoint()
             full_survey_name = funcs.get_full_survey_name(self.survey, self.version, self.filterset)
             full_data_name = funcs.get_full_survey_name(data.survey, data.version, data.filterset)
+
+            # load in area-depth curves before parallelization
+            #if Vmax_method.lower() == "area_depth_scaled_split_region":
+            z_arr = np.arange(z_bin[0], z_bin[1] + z_step, z_step)
+            if hasattr(data, "region_selector"):
+                region_selector = data.region_selector
+                invert_region = [True, False] #region != self.data.region_selector.name
+            else:
+                region_selector = None
+                invert_region = [False]
+                setattr(data, "regions", ["all"])
+            for invert_region_ in invert_region:
+                for z in z_arr:
+                    # compute area depth for all relevant redshift bin areas
+                    data.calc_area_depth(
+                        aper_diam = aper_diam,
+                        mask_selector = unmasked_area,
+                        #mask_type = mask_type,
+                        region_selector = region_selector,
+                        invert_region = invert_region_,
+                        z = z,
+                        plot = True,
+                    )
+
             # calculate Vmax's and append them to Vmax ecsv
-            [
-                gal.calc_Vmax(
-                    data,
-                    z_bin,
-                    aper_diam,
-                    SED_fit_code,
-                    self.cat_creator.crops,
-                    z_step,
-                    unmasked_area = unmasked_area
-                )
-                for gal in tqdm(
-                    self,
-                    total=len(self),
-                    desc=f"Calculating {full_survey_name} Vmax's in {full_data_name}",
-                    disable = galfind_logger.getEffectiveLevel() > logging.INFO,
-                )
-            ]
-            #breakpoint()
-            # make/update file to store data
-            Vmax_arr = self._make_Vmax_ecsv(
-                data,
-                update_gals,
-                aper_diam,
-                SED_fit_code,
-            )
-        else:  # Vmax table already opened
-            # if isinstance(self, Combined_Catalogue):
-            #     IDs = self._get_unique_IDs()
-            # else:
-            #     IDs = self.ID
-            #breakpoint()
-            #try:
-            Vmax_arr = self._load_Vmax_from_ecsv(old_tab, aper_diam, SED_fit_code, data.full_name)
-            #except:
-            #    breakpoint()
-        return Vmax_arr
-    
-    def _make_Vmax_ecsv(
-        self: Self,
-        data: Data,
-        update_gals: List[Galaxy],
-        aper_diam: u.Quantity,
-        SED_fit_code: SED_code,
-    ) -> NDArray[float]:
-        save_path = self.get_vmax_ecsv_path(data)
-        # extract relevant properties
-        Vmax_arr = np.array(
-            [
-                gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
-                V_max[self.crop_name.split("/")[-1]][data.full_name].to(u.Mpc**3).value
-                for gal in update_gals
-            ]
-        ) * u.Mpc ** 3
-        obs_zmin = np.array(
-            [
-                gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
-                obs_zrange[self.crop_name.split("/")[-1]][data.full_name][0]
-                for gal in update_gals
-            ]
-        )
-        obs_zmax = np.array(
-            [
-                gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
-                obs_zrange[self.crop_name.split("/")[-1]][data.full_name][1]
-                for gal in update_gals
-            ]
-        )
-        data = {
-            "ID": np.array([gal.ID for gal in update_gals]),
-            "survey": np.array([gal.survey for gal in update_gals]),
-            "Vmax": Vmax_arr,
-            "obs_zmin": obs_zmin,
-            "obs_zmax": obs_zmax,
-        }
-        new_tab = Table(data, dtype=[int, str, float, float, float])
-        new_tab.meta = {"Vmax_invalid_val": -1.0}
+            if n_jobs == 1:
+                Vmax_outputs = [
+                    gal.calc_Vmax(
+                        data,
+                        z_bin,
+                        aper_diam,
+                        SED_fit_code,
+                        self.cat_creator.crops,
+                        z_step,
+                        unmasked_area = unmasked_area,
+                        Vmax_method = Vmax_method,
+                    )
+                    for gal in tqdm(
+                        update_gals, 
+                        total=len(update_gals),
+                        desc=f"Calculating {full_survey_name} Vmax's in {full_data_name}",
+                        disable = galfind_logger.getEffectiveLevel() > logging.INFO,
+                    )
+                ]
+            else:
+                params_arr = [
+                    (
+                        gal,
+                        data,
+                        z_bin,
+                        aper_diam,
+                        SED_fit_code,
+                        self.cat_creator.crops,
+                        z_step,
+                        unmasked_area,
+                        Vmax_method,
+                    ) 
+                    for gal in update_gals
+                ]
+                from joblib import Parallel, delayed, parallel_config
+                with funcs.tqdm_joblib(tqdm(
+                        desc = f"Calculating {full_survey_name} Vmax's in {full_data_name}",
+                        total = len(update_gals),
+                        disable = galfind_logger.getEffectiveLevel() > logging.INFO,
+                    )
+                ) as progress_bar:
+                    with parallel_config(backend='loky', n_jobs=n_jobs):
+                        Vmax_outputs = Parallel()(delayed( \
+                            self._calc_Vmax_multi_process)(params) \
+                            for params in params_arr
+                        )
 
-        self._save_ecsv(save_path, new_tab)
-
-        return Vmax_arr
+            # prepare ecsv data
+            region_keys = [key for key in Vmax_outputs[0][0].keys()]
+            assert region_keys == data.regions, \
+                galfind_logger.critical(
+                    f"{region_keys=} from Vmax calculation does not match {data.regions}!"
+                )
+            assert all(len(Vmax_output[0]) == len(data.regions) for Vmax_output in Vmax_outputs), \
+                galfind_logger.critical(
+                    f"{len(Vmax_output[0])=} != {len(data.regions)=}"
+                )
+            zbin_keys = [key for key in Vmax_outputs[0][1][region_keys[0]].keys()]
+            # assert all([Vmax_output[1][region_keys[0]].keys() == zbin_keys for Vmax_output in Vmax_outputs]), \
+            #     galfind_logger.critical(
+            #         "z_bin keys from Vmax calculation do not match across galaxies!"
+            #     )
+            meta = Vmax_outputs[0][2]
+            # TODO: check meta data consistency across galaxies
+            # tricky due to dict element assertion requirements
+            # assert all(Vmax_output[2] == meta for Vmax_output in Vmax_outputs), \
+            #     galfind_logger.critical(
+            #         "meta data from Vmax calculation do not match across galaxies!"
+            #     )
+            Vmax = np.zeros((len(update_gals), len(region_keys), len(zbin_keys)))
+            kwargs = {}
+            for i, Vmax_output in enumerate(Vmax_outputs):
+                for j, region in enumerate(region_keys):
+                    for k, zbin in enumerate(zbin_keys):
+                        try:
+                            Vmax[i, j, k] = Vmax_output[0][region][zbin]
+                            if isinstance(Vmax_output[1][region][zbin], (list, np.ndarray)):
+                                for h, kwarg in enumerate(Vmax_output[1][region][zbin]):
+                                    if isinstance(kwarg, dict):
+                                        for key, value in kwarg.items():
+                                            key = f"{key}_{str(h+1)}"
+                                            if key not in kwargs.keys():
+                                                kwargs[key] = [value]
+                                            else:
+                                                kwargs[key].extend([value])
+                                    else:
+                                        raise NotImplementedError(
+                                            "Vmax output kwarg is not dict!"
+                                        )
+                            elif isinstance(Vmax_output[1][region][zbin], dict):
+                                for key, value in Vmax_output[1][region][zbin].items():
+                                    if key not in kwargs.keys():
+                                        kwargs[key] = [value]
+                                    else:
+                                        kwargs[key].extend([value])
+                            else:
+                                raise NotImplementedError(
+                                    "Vmax output kwarg is not list, ndarray or dict!"
+                                )
+                        except Exception as e:
+                            galfind_logger.critical(
+                                f"Error when assigning Vmax for galaxy ID {update_gals[i].ID}! Error={e}"
+                            )
+                            breakpoint()
+                            raise e
+            IDs = np.repeat(np.array([gal.ID for gal in update_gals]), len(zbin_keys) * len(region_keys))
+            regions = np.tile(np.repeat(data.regions, len(zbin_keys)), len(update_gals))
+            zbin_labels = np.tile(zbin_keys, len(region_keys) * len(update_gals))
+            surveys = np.repeat(np.array([gal.survey for gal in update_gals]), len(zbin_keys) * len(region_keys))
+            aper_diams = np.full(len(IDs), aper_diam.value)
+            SED_fit_codes = np.full(len(IDs), SED_fit_code.label)
+            ecsv_data = {
+                "ID": IDs,
+                "survey": surveys,
+                "region": regions,
+                "aper_diam": aper_diams,
+                "SED_fit_code": SED_fit_codes,
+                "zbin_label": zbin_labels,
+                "Vmax_total": Vmax.flatten(),
+                **kwargs,
+            }
+            try:
+                new_tab = Table(ecsv_data, dtype = [int, str, str, float, str, str, float] + [str] * len(kwargs))
+            except Exception as e:
+                galfind_logger.critical(
+                    f"Error when creating Vmax ecsv table! Error={e}"
+                )
+                breakpoint()
+                raise e
+            new_tab.meta = {"Vmax_invalid_val": -1.0, **meta}
+            out_tab = self._save_ecsv(save_path, new_tab)
+            self._load_Vmax_from_ecsv(out_tab, data.survey, aper_diam, SED_fit_code, data.full_name)
+        else:
+            if len(self) != 0:
+                old_tab = Table.read(save_path)
+                self._load_Vmax_from_ecsv(old_tab, data.survey, aper_diam, SED_fit_code, data.full_name)
     
+    @staticmethod
+    def _calc_Vmax_multi_process(
+        params: Dict[str, Any]
+    ) -> Tuple[Dict[str, float], Dict[str, Any], Dict[str, Any]]:
+        gal, data, z_bin, aper_diam, SED_fit_code, crops, z_step, unmasked_area, Vmax_method = params
+        return gal.calc_Vmax(
+            data,
+            z_bin,
+            aper_diam,
+            SED_fit_code,
+            crops,
+            z_step,
+            unmasked_area = unmasked_area,
+            Vmax_method = Vmax_method,
+        )
+
     def _save_ecsv(
         self: Self,
         save_path: str,
         tab: Table
-    ) -> NoReturn:
+    ) -> Table:
         if Path(save_path).is_file(): # update and save table
             old_tab = Table.read(save_path)
             out_tab = vstack([old_tab, tab])
@@ -1267,25 +1526,22 @@ class Catalogue_Base:
         else: # save table
             out_tab = tab
         out_tab.write(save_path, overwrite=True)
+        return out_tab
     
     def _load_Vmax_from_ecsv(
         self: Self,
         tab: Table,
+        data_survey: str,
         aper_diam: u.Quantity,
         SED_fit_code: SED_code,
         full_survey_name: str,
-    ) -> NDArray[float]:
+    ) -> None:
         if any(gal.survey == full_survey_name.split("_")[0] for gal in self):
             load_gals_arr = [gal for gal in self if gal.survey == full_survey_name.split("_")[0]]
         else:
             load_gals_arr = self.gals
-        from . import Combined_Catalogue
         # save appropriate Vmax properties
-        Vmax_arr = np.zeros(len(load_gals_arr))
+        #Vmax_arr = np.zeros(len(load_gals_arr))
         for i, gal in enumerate(load_gals_arr):
-            Vmax = float(tab[np.logical_and((tab["ID"] == gal.ID), (tab["survey"] == gal.survey))]["Vmax"])
-            gal._make_Vmax_storage(aper_diam, SED_fit_code, self.crop_name.split("/")[-1])
-            gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
-                V_max[self.crop_name.split("/")[-1]][full_survey_name] = Vmax * u.Mpc ** 3
-            Vmax_arr[i] = Vmax
-        return Vmax_arr
+            Vmax_rows = tab[np.logical_and((tab["ID"] == gal.ID), (tab["survey"] == gal.survey))]
+            gal.set_Vmax(Vmax_rows, data_survey = data_survey)

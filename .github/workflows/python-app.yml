@@ -31,7 +31,8 @@ jobs:
         pip install ruff pytest
     - name: Test with pytest
       run: |
-        pytest
+        pytest --cov=galfind testing
+    #--cov-report=html
     # - uses: chartboost/ruff-action@v1  # Lint with Ruff
     #   with:
     #     version: 0.6.4

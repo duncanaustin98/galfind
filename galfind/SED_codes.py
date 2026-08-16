@@ -15,11 +15,13 @@ import astropy.units as u
 import itertools
 import logging
 import numpy as np
+from copy import deepcopy
+from numpy.typing import NDArray
 from astropy.table import Table, join
 from tqdm import tqdm
 from typing import TYPE_CHECKING, NoReturn, Tuple, Union, List, Dict, Any, Optional
 if TYPE_CHECKING:
-    from . import Catalogue, Multiple_Filter, SED_obs, PDF
+    from . import Catalogue, Spectral_Catalogue, Multiple_Filter, SED_obs, PDF
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -48,10 +50,10 @@ class SED_code(ABC):
     def from_label(cls, label: str) -> Type[SED_code]:
         pass
 
-    @property
-    @abstractmethod
-    def ID_label(self) -> str:
-        pass
+    # @property
+    # @abstractmethod
+    # def ID_label(self) -> str:
+    #     pass
 
     @property
     @abstractmethod
@@ -91,6 +93,9 @@ class SED_code(ABC):
         else:
             return f"_{'_'.join(self.SED_fit_params['excl_bands'])}"
 
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({self.tab_suffix})"
+
     #@abstractmethod
     def _load_gal_property_labels(self, gal_property_labels: Dict[str, str]) -> NoReturn:
         self.gal_property_labels = {key: f"{item}_{self.tab_suffix}" 
@@ -123,7 +128,7 @@ class SED_code(ABC):
         save_PDFs: bool = True,
         overwrite: bool = False,
         **kwargs: Dict[str, Any],
-    ) -> NoReturn:
+    ) -> None:
         pass
 
     @abstractmethod
@@ -205,10 +210,24 @@ class SED_code(ABC):
             output_str += f"{key}: {unit}\n"
         output_str += funcs.line_sep
         return output_str
+    
+    def __deepcopy__(self, memo):
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for key, value in self.__dict__.items():
+            try:
+                setattr(result, key, deepcopy(value, memo))
+            except:
+                galfind_logger.critical(
+                    f"deepcopy({repr(self)}) {key}: {value} FAIL!"
+                )
+                breakpoint()
+        return result
 
     def __call__(
         self: Self,
-        cat: Catalogue,
+        cat: Union[Catalogue, Spectral_Catalogue],
         aper_diam: u.Quantity,
         save_PDFs: bool = True,
         save_SEDs: bool = True,
@@ -216,9 +235,10 @@ class SED_code(ABC):
         load_SEDs: bool = True,
         timed: bool = True,
         overwrite: bool = False,
-        update: bool = False,
+        update: bool = True,
         **fit_kwargs
     ) -> List[SED_result]:
+
         if timed:
             start = time.time()
 
@@ -259,108 +279,136 @@ class SED_code(ABC):
             mid = time.time()
             print(f"Running SED fitting took {(mid - start):.1f}s")
 
-        SED_fit_cat = cat.open_cat(cropped=True, hdu=self)
-        aper_phot_IDs = [gal.ID for gal in cat]
-        phot_arr = [gal.aper_phot[aper_diam] for gal in cat]
-        # assume properties all come from the same table if only a single catalogue is given
-        SED_fit_IDs = SED_fit_cat[self.ID_label]
-        assert all(aper_phot_ID == SED_fit_ID for aper_phot_ID, SED_fit_ID \
-            in zip(aper_phot_IDs, SED_fit_IDs)), galfind_logger.critical(
-            f"IDs in SED_fit_cat do not match those in the catalogue"
+        if update:
+            SED_fit_cat = cat.open_cat(cropped=True, hdu=self)
+            aper_phot_IDs = [gal.ID for gal in cat]
+            phot_arr = [gal.aper_phot[aper_diam] for gal in cat]
+            # assume properties all come from the same table if only a single catalogue is given
+            SED_fit_IDs = SED_fit_cat[self.ID_label]
+            assert all(aper_phot_ID == SED_fit_ID for aper_phot_ID, SED_fit_ID \
+                in zip(aper_phot_IDs, SED_fit_IDs)), galfind_logger.critical(
+                f"IDs in SED_fit_cat do not match those in the catalogue"
             )
-        cat_properties = [{gal_property: SED_fit_cat[label][i] * \
-            self.gal_property_units[gal_property] if gal_property in \
-            self.gal_property_units.keys() else SED_fit_cat[label][i] * \
-            u.dimensionless_unscaled for gal_property, label in \
-            self.gal_property_labels.items()} for i in range(len(aper_phot_IDs))]
-        
-        # TODO: When instantiating the class, ensure that all errors have an associated property
-        assert all(
-            err_key in self.gal_property_labels.keys()
-            for err_key in self.gal_property_err_labels.keys()
-        )
-
-        # adjust errors if required (i.e. if 16th and 84th percentiles rather than errors)
-        cat_property_errs = {
-            gal_property: list(
-                funcs.adjust_errs(
-                    np.array(SED_fit_cat[self.gal_property_labels[gal_property]]),
-                    np.array(
-                        [
-                            np.array(SED_fit_cat[err_labels[0]]),
-                            np.array(SED_fit_cat[err_labels[1]]),
-                        ]
-                    ),
-                )[1]
+            cat_properties = [{gal_property: SED_fit_cat[label][i] * \
+                self.gal_property_units[gal_property] if gal_property in \
+                self.gal_property_units.keys() else SED_fit_cat[label][i] * \
+                u.dimensionless_unscaled for gal_property, label in \
+                self.gal_property_labels.items()} for i in range(len(aper_phot_IDs))]
+            
+            # TODO: When instantiating the class, ensure that all errors have an associated property
+            assert all(
+                err_key in self.gal_property_labels.keys()
+                for err_key in self.gal_property_err_labels.keys()
             )
-            if self.are_errs_percentiles
-            else [list(SED_fit_cat[err_labels[0]]), list(SED_fit_cat[err_labels[1]])]
-            for gal_property, err_labels in self.gal_property_err_labels.items()
-        }
 
-        cat_property_errs = [
-            {
-                key: [value[0][i], value[1][i]]
-                for key, value in cat_property_errs.items()
+            # adjust errors if required (i.e. if 16th and 84th percentiles rather than errors)
+            cat_property_errs = {
+                gal_property: list(
+                    funcs.adjust_errs(
+                        np.array(SED_fit_cat[self.gal_property_labels[gal_property]]),
+                        np.array(
+                            [
+                                np.array(SED_fit_cat[err_labels[0]]),
+                                np.array(SED_fit_cat[err_labels[1]]),
+                            ]
+                        ),
+                    )[1]
+                )
+                if self.are_errs_percentiles
+                else [list(SED_fit_cat[err_labels[0]]), list(SED_fit_cat[err_labels[1]])]
+                for gal_property, err_labels in self.gal_property_err_labels.items()
             }
-            for i in range(len(aper_phot_IDs))
-        ]
 
-        if timed:
-            mid = time.time()
-            print(
-                f"Loading properties and associated errors took {(mid - start):.1f}s"
-            )
+            cat_property_errs = [
+                {
+                    key: [value[0][i], value[1][i]]
+                    for key, value in cat_property_errs.items()
+                }
+                for i in range(len(aper_phot_IDs))
+            ]
+
+            if timed:
+                mid = time.time()
+                print(
+                    f"Loading properties and associated errors took {(mid - start):.1f}s"
+                )
 
         # save PDF and SED paths in galfind catalogue object
         #cat.save_phot_PDF_paths(PDF_paths)
         #cat.save_phot_SED_paths(SED_paths)
 
-        if load_PDFs:
-            galfind_logger.info(
-                f"Loading {self.hdu_name} property PDFs into " + \
-                f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
-            )
-            cat_property_PDFs = self.load_cat_property_PDFs(PDF_paths, aper_phot_IDs)
-            galfind_logger.info(
-                f"Finished loading {self.hdu_name} property PDFs into " + \
-                f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
-            )
-        else:
-            galfind_logger.info(
-                f"Not loading {self.hdu_name} property PDFs into " + \
-                f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
-            )
-            cat_property_PDFs = np.array(
-                list(itertools.repeat(None, len(cat_properties)))
-            )
+            if load_PDFs:
+                galfind_logger.info(
+                    f"Loading {self.hdu_name} property PDFs into " + \
+                    f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
+                )
+                cat_property_PDFs = self.load_cat_property_PDFs(PDF_paths, aper_phot_IDs)
+                galfind_logger.info(
+                    f"Finished loading {self.hdu_name} property PDFs into " + \
+                    f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
+                )
+            else:
+                galfind_logger.info(
+                    f"Not loading {self.hdu_name} property PDFs into " + \
+                    f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
+                )
+                cat_property_PDFs = np.array(
+                    list(itertools.repeat(None, len(cat_properties)))
+                )
 
-        if load_SEDs:
-            galfind_logger.info(
-                f"Loading {self.hdu_name} SEDs into " + \
-                f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
-            )
-            cat_SEDs = self.extract_SEDs(aper_phot_IDs, SED_paths, cat = cat, aper_diam = aper_diam)
-            galfind_logger.info(
-                f"Finished loading {self.hdu_name} SEDs into " + \
-                f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
-            )
-        else:
-            galfind_logger.info(
-                f"Not loading {self.hdu_name} SEDs into " + \
-                f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
-            )
-            cat_SEDs = np.array(
-                list(itertools.repeat(None, len(cat_properties)))
-            )
+            if load_SEDs:
+                galfind_logger.info(
+                    f"Loading {self.hdu_name} SEDs into " + \
+                    f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
+                )
+                if all("z" in pdf.keys() if pdf is not None else False for pdf in cat_property_PDFs):
+                    zPDFs = [pdf["z"] for pdf in cat_property_PDFs]
+                else:
+                    zPDFs = None
+                cat_SEDs = self.extract_SEDs(aper_phot_IDs, SED_paths, cat = cat, aper_diam = aper_diam, zPDFs = zPDFs)
+                galfind_logger.info(
+                    f"Finished loading {self.hdu_name} SEDs into " + \
+                    f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
+                )
+            else:
+                galfind_logger.info(
+                    f"Not loading {self.hdu_name} SEDs into " + \
+                    f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
+                )
+                cat_SEDs = np.array(
+                    list(itertools.repeat(None, len(cat_properties)))
+                )
+            cat_SED_results = [
+                SED_result(
+                    deepcopy(self),
+                    phot,
+                    properties,
+                    property_errs,
+                    property_PDFs,
+                    SED,
+                ) for phot, properties, property_errs, property_PDFs, SED in tqdm(
+                    zip(
+                        phot_arr,
+                        cat_properties,
+                        cat_property_errs,
+                        cat_property_PDFs,
+                        cat_SEDs
+                    ),
+                    desc=f"Creating {repr(self)} cat_SED_results for {repr(cat)}",
+                    total=len(cat),
+                    disable=galfind_logger.getEffectiveLevel() > logging.INFO,
+                )
+            ]
 
-        cat_SED_results = [SED_result(self, phot, properties, property_errs, property_PDFs, SED) \
-            for phot, properties, property_errs, property_PDFs, SED in \
-            zip(phot_arr, cat_properties, cat_property_errs, cat_property_PDFs, cat_SEDs)]
+            cat.update_SED_results(cat_SED_results, timed = timed)
+            if not hasattr(cat, "SED_results"):
+                cat.SED_results = {}
+            if not aper_diam in cat.SED_results.keys():
+                cat.SED_results[aper_diam] = []
+            cat.SED_results[aper_diam].append(self)
 
-        if update:
-            cat.update_SED_results(cat_SED_results, timed=timed)
-        return cat_SED_results
+        #return cat_SED_results
+            
 
     def _load_phot(self,
         cat: Catalogue,
@@ -370,13 +418,12 @@ class SED_code(ABC):
         upper_sigma_lim: Optional[Dict[str, Union[float, int]]] = None,
         input_filterset: Optional[Multiple_Filter] = None,
         incl_units: bool = False,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> Tuple[NDArray[float], NDArray[float]]:
         if input_filterset is None:
             input_filterset = cat.filterset
-        breakpoint()
-        input_filterset.filters = np.array([filt for filt in input_filterset if filt.band_name not in self.SED_fit_params["excl_bands"]])
+
+        input_filterset.filters = np.array([filt for filt in input_filterset if filt.filt_name not in self.SED_fit_params["excl_bands"]])
         galfind_logger.info(f"Excluded bands: {self.excl_bands_label}")
-        #breakpoint()
         # load in raw photometry from the galaxies in the catalogue and convert to appropriate units
         phot = np.array(
             [gal.aper_phot[aper_diam].flux.to(out_units) for gal in cat], dtype=object
@@ -388,6 +435,10 @@ class SED_code(ABC):
                 dtype=object,
             )  # [:, :, 0]
         else:
+            galfind_logger.warning(
+                "Photometry is in ABmag, but errors are not scaled asymmetrically. " +
+                "This is not recommended!"
+            )
             # Not correct in general! Only for high S/N! Fails to scale mag errors asymetrically from flux errors
             phot_err = np.array(
                 [
@@ -398,14 +449,14 @@ class SED_code(ABC):
                 ],
                 dtype=object,
             )  # [:, :, 0]
-        breakpoint()
+
         # include upper limits if wanted
         if upper_sigma_lim is not None:
             # determine relevant indices
             upper_lim_indices = [
                 [i, j]
                 for i, gal in enumerate(cat)
-                for j, depth in enumerate(gal.phot[0].depths)
+                for j, depth in enumerate(gal.aper_phot[aper_diam].depths)
                 if funcs.n_sigma_detection(
                     depth,
                     (phot[i][j] * out_units).to(u.ABmag).value
@@ -413,11 +464,13 @@ class SED_code(ABC):
                     u.Jy.to(u.ABmag),
                 )
                 < upper_sigma_lim["threshold"]
+                or not np.isfinite(phot[i][j])
             ]
             phot = np.array(
                 [
                     funcs.five_to_n_sigma_mag(
-                        loc_depth, upper_sigma_lim["value"]
+                        loc_depth,
+                        upper_sigma_lim["value"]
                     )
                     if [i, j] in upper_lim_indices
                     else phot[i][j]
@@ -432,28 +485,36 @@ class SED_code(ABC):
                     for j, loc_depth in enumerate(gal.aper_phot[aper_diam].depths)
                 ]
             ).reshape(phot_shape)
-
         # insert 'no_data_val' from SED_input_bands with no data in the catalogue
         phot_in = np.zeros((len(cat), len(input_filterset)))
         phot_err_in = np.zeros((len(cat), len(input_filterset)))
         load_message = f"Loading photometry for {cat.survey} {cat.version} for {self.label} SED fitting"
         galfind_logger.info(load_message)
         for i, gal in tqdm(
-            enumerate(cat), desc=load_message, total=len(cat), disable=galfind_logger.getEffectiveLevel() > logging.INFO
+            enumerate(cat),
+            desc=load_message,
+            total=len(cat),
+            disable=galfind_logger.getEffectiveLevel() > logging.INFO,
         ):
-            for j, (band_name, band_instrument) in enumerate(zip(input_filterset.band_names, input_filterset.instrument_names)):
-                if band_name in gal.aper_phot[aper_diam].filterset.band_names:  # Check mask?
+            for j, (filt_name, band_instrument) in enumerate(zip(input_filterset.filt_names, input_filterset.instrument_names)):
+                if filt_name in gal.aper_phot[aper_diam].filterset.filt_names:  # Check mask?
                     index = np.where(
-                        (band_name == np.array(gal.aper_phot[aper_diam].filterset.band_names)) \
+                        (filt_name == np.array(gal.aper_phot[aper_diam].filterset.filt_names)) \
                             & (band_instrument == np.array(gal.aper_phot[aper_diam].filterset.instrument_names))
                     )[0]
                     assert len(index) == 1, galfind_logger.critical(
-                        f"Multiple indices found for {band_name} in {gal.aper_phot[aper_diam].filterset.band_names}"
+                        f"Multiple indices found for {filt_name} in {gal.aper_phot[aper_diam].filterset.filt_names}"
                     )
                     index = index[0]
+                    
+                    new_phot_in = np.array(phot[i].data)[index]
+                    new_phot_err_in = np.array(phot_err[i].data)[index]
+                    if not (np.isfinite(new_phot_in) and np.isfinite(new_phot_err_in)):
+                        new_phot_in = no_data_val
+                        new_phot_err_in = no_data_val
 
-                    phot_in[i, j] = np.array(phot[i].data)[index]
-                    phot_err_in[i, j] = np.array(phot_err[i].data)[index]
+                    phot_in[i, j] = new_phot_in
+                    phot_err_in[i, j] = new_phot_err_in
                 else:
                     phot_in[i, j] = no_data_val
                     phot_err_in[i, j] = no_data_val

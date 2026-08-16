@@ -12,7 +12,9 @@ import time
 import warnings
 
 import yagmail
-from astropy.units import u
+from astropy import units as u
+
+from . import galfind_logger
 
 
 def run_in_dir(path):
@@ -26,6 +28,39 @@ def run_in_dir(path):
             return_value = func(*args, **kwargs)
             os.chdir(cwd)
             #print(f"Changed directory back to {cwd}")
+            return return_value
+        return wrapper
+    return decorated
+
+def run_in_self_dir(get_dir):
+    def decorator(func):
+        def wrapper(self, *args, **kwargs):
+            dir = get_dir(self)  # Access self attribute at call time
+            cwd = os.getcwd()
+            if not os.path.exists(dir):
+                os.makedirs(dir)
+            os.chdir(dir)
+            return_value = func(self, *args, **kwargs)
+            os.chdir(cwd)
+            return return_value
+        return wrapper
+    return decorator
+
+
+def log_time(logging_level, out_unit: u.Quantity = u.hour):
+    def decorated(func):
+        def wrapper(*args, **kwargs):
+            galfind_logger.info(
+                f"Running {func.__name__}!"
+            )
+            start_time = time.time()
+            return_value = func(*args, **kwargs)
+            end_time = time.time()
+            # log at required level
+            galfind_logger.log(
+                logging_level,
+                f"{func.__name__} executed in {((end_time - start_time) * u.s).to(out_unit):.1f}!"
+            )
             return return_value
 
         return wrapper

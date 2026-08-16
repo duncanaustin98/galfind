@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from galfind.Data import Band_Data_Base
 import numpy as np
 import astropy.units as u
 from copy import deepcopy
@@ -8,6 +9,7 @@ from astropy.nddata import Cutout2D
 from pathlib import Path
 import sys
 import itertools
+import matplotlib.image as mpimg
 import json
 from astropy.stats import mad_std
 import matplotlib.patheffects as pe
@@ -53,7 +55,7 @@ try:
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from . import Filter, Band_Data
+from . import Filter, Band_Data, Stacked_Band_Data, Depths
 from . import config, galfind_logger, astropy_cosmo, figs
 from . import useful_funcs_austind as funcs
 
@@ -73,7 +75,7 @@ class Cutout_Base(ABC):
     @abstractmethod
     def load(
         self: Self,
-        hdu_name: str = "SCI"
+        hdu_name: str = "SCI",
     ) -> Union[Dict[str, Tuple[Dict[str, Any], np.ndarray]], Tuple[Dict[str, Any], np.ndarray]]:
         pass
 
@@ -81,12 +83,87 @@ class Cutout_Base(ABC):
     def plot(self) -> plt.Axes:
         pass
 
+    def _plot_regions(
+        self: Self,
+        ax: plt.Axes,
+        plot_regions: List[Dict[str, Any]] = [],
+        def_plot_region_kwargs: Dict[str, Any] = {
+            "fill": False,
+            "color": "white",
+            "linestyle": "--",
+            "linewidth": 1,
+            "zorder": 20,
+        },
+    ) -> NoReturn:
+        if len(plot_regions) > 0:
+            # add circles to show extraction aperture and sextractor FLUX_RADIUS
+            xpos = np.mean(ax.get_xlim())
+            ypos = np.mean(ax.get_ylim())
+            for plot_region in plot_regions:
+                skip_region = False
+                if isinstance(plot_region, dict):
+                    assert "aper_diam" in plot_region.keys()
+                    pix_scale = (
+                        self.meta["SIZE_AS"]
+                        * u.arcsec
+                        / self.meta["SIZE_PIX"]
+                    )
+                    radius = (
+                        (plot_region["aper_diam"] / (2.0 * pix_scale))
+                        .to(u.dimensionless_unscaled)
+                        .value
+                    )
+                    # add region kwargs to default values
+                    plot_region_kwargs = deepcopy(plot_region)
+                    plot_region_kwargs.pop("aper_diam")
+
+                    for key, value in plot_region_kwargs.items():
+                        def_plot_region_kwargs[key] = value
+                    # make circular region with given radius
+                    region = patches.Circle(
+                        (xpos, ypos),
+                        radius,
+                        **def_plot_region_kwargs,
+                    )
+                elif isinstance(plot_region, tuple([patches.Ellipse] + patches.Ellipse.__subclasses__())):
+                    region = plot_region
+                    if region.center == (-99., -99.):
+                        region.set_center((xpos, ypos))
+                    # update default kwargs with pre-set ones
+                    blank_patch = Patch()
+                    kwarg_names = ArtistInspector(blank_patch).get_setters()
+                    kwarg_names.remove("transform")
+                    blank_kwargs = {key: value for key, value in \
+                        ArtistInspector(blank_patch).properties().items() \
+                        if key in kwarg_names}
+                    reg_kwargs = {key: value for key, value in \
+                        ArtistInspector(region).properties().items() \
+                        if key in kwarg_names}
+                    assert len(blank_kwargs) == len(reg_kwargs)
+                    added_reg_kwargs = {key: value for key, value in \
+                        reg_kwargs.items() if value != blank_kwargs[key]}
+                    for key, value in added_reg_kwargs.items():
+                        def_plot_region_kwargs[key] = value
+                    # set region kwargs
+                    region.set(**def_plot_region_kwargs)
+                else:
+                    skip_region = True
+                    galfind_logger.warning(
+                        f"{plot_region=} does not contain " + \
+                        f"'aper_diam' or {type(plot_region)=} not in " + \
+                        tuple([patches.Ellipse] + patches.Ellipse.__subclasses__()) + \
+                        ", skipping!"
+                    )
+                if not skip_region:
+                    ax.add_patch(region)
+
 
 class Band_Cutout_Base(Cutout_Base, ABC):
+
     def __init__(
         self: Self, 
         cutout_path: str, 
-        band_data: Band_Data, 
+        band_data: Band_Data,
         cutout_size: u.Quantity
     ) -> Self:
         assert Path(cutout_path).is_file(), \
@@ -163,7 +240,8 @@ class Band_Cutout_Base(Cutout_Base, ABC):
     @property
     def sky_coord(self) -> SkyCoord:
         return SkyCoord(
-            ra=self.meta["RA"] * u.deg, dec=self.meta["DEC"] * u.deg
+            ra=self.meta["RA"] * u.deg,
+            dec=self.meta["DEC"] * u.deg,
         )
     
     @property
@@ -180,31 +258,48 @@ class Band_Cutout_Base(Cutout_Base, ABC):
 
     @staticmethod
     def _get_save_path(
-        band_data: Band_Data, 
+        band_data_base: Type[Band_Data_Base], 
         cutout_size: u.Quantity, 
         ID: str, 
         instr_name: Optional[str],
-        data_type: str
+        data_type: str,
     ) -> str:
-        assert data_type in ["data", "png"], \
+        assert data_type in ["data", "png", "svg", "pdf"], \
             galfind_logger.critical(f"Invalid {data_type=}")
         if data_type == "data":
             ext = ".fits"
         elif data_type == "png":
             ext = ".png"
+        elif data_type == "svg":
+            ext = ".svg"
+        elif data_type == "pdf":
+            ext = ".pdf"
         if instr_name is None:
             instr_name = ""
         else:
             instr_name = f"{instr_name}/"
-        save_path = f"{config['Cutouts']['CUTOUT_DIR']}/{band_data.version}/" + \
-            f"{band_data.survey}/{instr_name}{cutout_size.to(u.arcsec).value:.2f}as/" + \
-            f"{band_data.filt_name}/{data_type}/{ID}{ext}"
+        # get forced phot subdir
+        if not hasattr(band_data_base, "aper_diams") or not hasattr(band_data_base, "forced_phot_args"):
+            galfind_logger.debug(
+                f"{band_data_base=} does not have aper_diams or " +
+                "forced_phot_args attributes needed to get forced phot subdir!"
+            )
+            subdir = ""
+        else:
+            subdir = f"/{Depths.get_forced_phot_subdir(band_data_base.aper_diams, band_data_base.forced_phot_args)}"
+        save_dir = f"{config['Cutouts']['CUTOUT_DIR']}/{band_data_base.version}/" + \
+            f"{band_data_base.survey}/{instr_name}{cutout_size.to(u.arcsec).value:.2f}as/" + \
+            f"{band_data_base.filt_name}{subdir}/{data_type}"
+        if band_data_base.is_native:
+            save_dir += "_native"
+        save_name = f"{ID}{ext}"
+        save_path = f"{save_dir}/{save_name}"
         funcs.make_dirs(save_path)
         return save_path
 
     def load(
         self: Self, 
-        hdu_name: str = "SCI"
+        hdu_name: str = "SCI",
     ) -> Union[Dict[str, Tuple[Dict[str, Any], np.ndarray]], Tuple[Dict[str, Any], np.ndarray]]:
         if hdu_name is None:
             hdul = fits.open(self.cutout_path, ignore_missing_simple = True)
@@ -236,6 +331,8 @@ class Band_Cutout_Base(Cutout_Base, ABC):
         scalebars: Optional[Dict] = [],
         show: bool = False,
         save: bool = True,
+        *args,
+        **kwargs,
     ) -> NoReturn:
         #        high_dyn_range: bool = False,
         #        SNR: Optional[float] = None,
@@ -257,6 +354,14 @@ class Band_Cutout_Base(Cutout_Base, ABC):
         for key, value in imshow_kwargs.items():
             def_imshow_kwargs[key] = value
         # plot cutout
+        if plot_type == "SEG":
+            # colour by unique values set to be between 0 and 1 to increase the imshow contrast
+            unique_ids = np.unique(cutout_data.copy())
+            assert unique_ids[0] == 0, galfind_logger.warning(
+                f"Unique IDs in SEG cutout should start at 0, but got {unique_ids[0]}!"
+            )
+            mapping = {uid: i / (len(unique_ids) - 1) for i, uid in enumerate(unique_ids)}
+            cutout_data = np.vectorize(mapping.get)(cutout_data)
         ax.imshow(cutout_data, **def_imshow_kwargs)
         # sort label kwargs
         def_label_kwargs = {
@@ -268,90 +373,25 @@ class Band_Cutout_Base(Cutout_Base, ABC):
             "va": "top",
             "zorder": 10,
             "fontweight": "bold",
-            }
+        }
         for key, value in label_kwargs.items():
             def_label_kwargs[key] = value
-        text_unpack_kwargs = deepcopy(def_label_kwargs)
-        text_unpack_kwargs.pop("xpos")
-        text_unpack_kwargs.pop("ypos")
-        # plot text for band label
-        ax.text(
-            def_label_kwargs["xpos"],
-            def_label_kwargs["ypos"],
-            self.filt_name,
-            transform=ax.transAxes,
-            **text_unpack_kwargs
-        )
+        label = def_label_kwargs.pop("label", None)
+        if label is not None:
+            text_unpack_kwargs = deepcopy(def_label_kwargs)
+            text_unpack_kwargs.pop("xpos")
+            text_unpack_kwargs.pop("ypos")
+            # plot text for band label
+            ax.text(
+                def_label_kwargs["xpos"],
+                def_label_kwargs["ypos"],
+                label,
+                transform = ax.transAxes,
+                **text_unpack_kwargs
+            )
 
         # plot any regions wanted
-        if len(plot_regions) > 0:
-            # add circles to show extraction aperture and sextractor FLUX_RADIUS
-            xpos = np.mean(ax.get_xlim())
-            ypos = np.mean(ax.get_ylim())
-            for plot_region in plot_regions:
-                skip_region = False
-                def_plot_region_kwargs = {
-                    "fill": False,
-                    "color": "white",
-                    "linestyle": "--",
-                    "linewidth": 1,
-                    "zorder": 20,
-                }
-                if isinstance(plot_region, dict):
-                    assert "aper_diam" in plot_region.keys()
-                    pix_scale = (
-                        self.meta["SIZE_AS"]
-                        * u.arcsec
-                        / self.meta["SIZE_PIX"]
-                    )
-                    radius = (
-                        (plot_region["aper_diam"] / (2.0 * pix_scale))
-                        .to(u.dimensionless_unscaled)
-                        .value
-                    )
-                    # add region kwargs to default values
-                    plot_region_kwargs = deepcopy(plot_region)
-                    plot_region_kwargs.pop("aper_diam")
-
-                    for key, value in plot_region_kwargs.items():
-                        def_plot_region_kwargs[key] = value
-                    # make circular region with given radius
-                    region = patches.Circle(
-                        (xpos, ypos),
-                        radius,
-                        **def_plot_region_kwargs,
-                    )
-                elif isinstance(plot_region, tuple([patches.Ellipse] + patches.Ellipse.__subclasses__())):
-                    region = plot_region
-                    if region.center == (-99., -99.):
-                        region.set_center((xpos, ypos))
-                    # update default kwargs with pre-set ones
-                    blank_patch = Patch()
-                    kwarg_names = ArtistInspector(blank_patch).get_setters()
-                    kwarg_names.remove("transform")
-                    blank_kwargs = {key: value for key, value in \
-                        ArtistInspector(blank_patch).properties().items() \
-                        if key in kwarg_names}
-                    reg_kwargs = {key: value for key, value in \
-                        ArtistInspector(region).properties().items() \
-                        if key in kwarg_names}
-                    assert len(blank_kwargs) == len(reg_kwargs)
-                    added_reg_kwargs = {key: value for key, value in \
-                        reg_kwargs.items() if value != blank_kwargs[key]}
-                    for key, value in added_reg_kwargs.items():
-                        def_plot_region_kwargs[key] = value
-                    # set region kwargs
-                    region.set(**def_plot_region_kwargs)
-                else:
-                    skip_region = True
-                    galfind_logger.warning(
-                        f"{plot_region=} does not contain " + \
-                        f"'aper_diam' or {type(plot_region)=} not in " + \
-                        tuple([patches.Ellipse] + patches.Ellipse.__subclasses__()) + \
-                        ", skipping!"
-                    )
-                if not skip_region:
-                    ax.add_patch(region)
+        self._plot_regions(ax, plot_regions)
 
         # add scalebars
         if len(scalebars) > 0:
@@ -402,7 +442,8 @@ class Band_Cutout_Base(Cutout_Base, ABC):
                     ax.add_artist(scalebar)
         # option to save here
         if save:
-            save_path = self._get_save_path(self.band_data, self.cutout_size, self.ID, self.instr_name, "png")
+            save_path = self._get_save_path(self.band_data, self.cutout_size, self.ID, self.instr_name, "svg")
+            funcs.make_dirs(save_path)
             plt.savefig(save_path)
             funcs.change_file_permissions(save_path)
             galfind_logger.info(f"Saved png cutout to: {save_path}")
@@ -461,6 +502,7 @@ class Band_Cutout_Base(Cutout_Base, ABC):
 
 
 class Band_Cutout(Band_Cutout_Base):
+
     @classmethod
     def from_gal_band_data(
         cls: Type[Self],
@@ -475,7 +517,7 @@ class Band_Cutout(Band_Cutout_Base):
         meta = {"ID": gal.ID, "INSTR": gal.cat_filterset.instrument_name}
         meta_keys = ["Re", "FLUX_AUTO", "MAG_AUTO", "KRON_RADIUS", "A_IMAGE", "B_IMAGE", "THETA_IMAGE", "A_IMAGE_AS", "B_IMAGE_AS"]
         suffixes = ["_AS", "_JY", "", "", "", "", "", "", ""]
-        filt_name = band_data.filt.band_name
+        filt_name = band_data.filt.filt_name
         for meta_key, suffix in zip(meta_keys, suffixes):
             meta_key = f"sex_{meta_key}"
             if hasattr(gal, meta_key):
@@ -494,9 +536,9 @@ class Band_Cutout(Band_Cutout_Base):
         return cls.from_data_skycoord(
             band_data, 
             sky_coord, 
-            cutout_size, 
-            meta = meta, 
-            overwrite = overwrite
+            cutout_size,
+            overwrite = overwrite,
+            **meta,
         )
 
     @classmethod
@@ -507,6 +549,7 @@ class Band_Cutout(Band_Cutout_Base):
         cutout_size: u.Quantity,
         meta: Dict[str, Any] = {},
         overwrite: bool = False,
+        **meta: Any,
     ) -> Self:
         # make cutout from data at the sky co-ordinate and save
         meta = {
@@ -521,9 +564,15 @@ class Band_Cutout(Band_Cutout_Base):
         }
         ID = cls._get_ID(meta)
         instr_name = cls._get_instr_name(meta)
-        save_path = cls._get_save_path(band_data, cutout_size, ID, instr_name, data_type="data")
+        save_path = cls._get_save_path(
+            band_data,
+            cutout_size,
+            ID,
+            instr_name,
+            data_type = "data",
+        )
         cls._make_cutout(band_data, sky_coord, cutout_size, save_path, meta, overwrite)
-        band_data = cls._update_band_data(band_data, save_path)
+        band_data = cls._update_band_data_base(band_data, save_path)
         return cls(save_path, band_data, cutout_size)
 
     # def set_cutout_size(
@@ -595,7 +644,7 @@ class Band_Cutout(Band_Cutout_Base):
                                 cutout.data, header=im_header, name=label_i
                             )
                         )
-                        galfind_logger.info(
+                        galfind_logger.debug(
                             f"Created cutout for {label_i} in {band_data.filt_name}"
                         )
                     else:
@@ -604,36 +653,46 @@ class Band_Cutout(Band_Cutout_Base):
                         )
             funcs.make_dirs(save_path)
             fits_hdul = fits.HDUList(hdul)
-            fits_hdul.writeto(save_path, overwrite=True)
+            fits_hdul.writeto(save_path, overwrite = True)
             funcs.change_file_permissions(save_path)
             galfind_logger.info(f"Saved fits cutout to: {save_path}")
         else:
             ID = Band_Cutout_Base._get_ID(meta)
             galfind_logger.debug(
                 f"Already made fits cutout for {band_data.survey}" + \
-                f" {band_data.version} {ID} {band_data.filt_name}"
+                f" {band_data.version} {ID} {band_data.filt_name} at {save_path=}"
             )
 
     @staticmethod
-    def _update_band_data(
-        band_data: Band_Data,
+    def _update_band_data_base(
+        band_data_base: Type[Band_Data_Base],
         cutout_path: str,
     ) -> Band_Data:
-        new_band_data = Band_Data(
-            band_data.filt, 
-            band_data.survey, 
-            band_data.version, 
+        if isinstance(band_data_base, Band_Data):
+            filt = band_data_base.filt
+        else:
+            assert isinstance(band_data_base, Stacked_Band_Data), \
+                galfind_logger.critical(
+                    f"band_data_base must be Band_Data or Stacked_Band_Data, not {type(band_data_base)=}"
+                )
+            filt = band_data_base.filterset
+        new_band_data = band_data_base.__class__(
+            filt, 
+            band_data_base.survey, 
+            band_data_base.version, 
             cutout_path, 
             1,
             cutout_path,
             3,
             cutout_path,
             4,
-            pix_scale=band_data.pix_scale,
+            pix_scale = band_data_base.pix_scale,
             rms_err_ext_name = "RMS_ERR",
-            )
+            psf = band_data_base.psf,
+        )
+        new_band_data.is_native = band_data_base.is_native
         new_band_data.seg_path = cutout_path
-        new_band_data.seg_args = band_data.seg_args
+        new_band_data.seg_args = band_data_base.seg_args
         return new_band_data
 
 
@@ -674,8 +733,15 @@ class Stacked_Band_Cutout(Band_Cutout_Base):
         cutout_size: u.Quantity,
         overwrite: bool = False
     ) -> Self:
+        
+        # load sextractor parameters for metadata inclusion
+        cat.load_sextractor_auto_mags()
+        cat.load_sextractor_auto_fluxes()
+        cat.load_sextractor_kron_radii()
+        cat.load_sextractor_Re()
+
         if isinstance(filt, Filter):
-            filt = filt.band_name
+            filt = filt.filt_name
         # make every individual cutout from the catalogue
         cutouts = [
             Band_Cutout.from_gal_band_data(gal, cat.data[filt], cutout_size, overwrite = overwrite)
@@ -809,7 +875,7 @@ class Stacked_Band_Cutout(Band_Cutout_Base):
             3,
             pix_scale=band_data_arr[0].pix_scale,
             rms_err_ext_name = "RMS_ERR",
-            )
+        )
         new_band_data.seg_path = cutout_path
         new_band_data.seg_args = {key: "+".join(np.unique([band_data.seg_args[key] \
             for band_data in band_data_arr])) for key in band_data_arr[0].seg_args.keys()}
@@ -819,17 +885,17 @@ class Stacked_Band_Cutout(Band_Cutout_Base):
 class RGB_Base(Cutout_Base, ABC):
     def __init__(
         self: Type[Self], 
-        cutouts: Dict[str, List[Type[Band_Cutout_Base]]]
+        cutouts: Dict[str, List[Type[Band_Cutout_Base]]],
     ) -> Self:
         # ensure cutouts have ['B', 'G', 'R'] keys
         assert list(cutouts.keys()) == ["B", "G", "R"]
         # ensure all cutouts are from different filters
-        cutout_band_names = [
+        cutout_filt_names = [
             cutout.band_data.filt_name
             for colour in ["B", "G", "R"]
             for cutout in cutouts[colour]
         ]
-        assert len(np.unique(cutout_band_names)) == len(cutout_band_names)
+        assert len(np.unique(cutout_filt_names)) == len(cutout_filt_names)
         self.cutouts = cutouts
 
     def __len__(self) -> int:
@@ -847,7 +913,7 @@ class RGB_Base(Cutout_Base, ABC):
             colour = [
                 col
                 for col in ["B", "G", "R"]
-                if i in [cutout.filt.band_name for cutout in self[col]]
+                if i in [cutout.filt.filt_name for cutout in self[col]]
             ]
             assert len(colour) == 1, galfind_logger.critical(
                 f"band={i} in != 1 of ['B', 'G', 'R']"
@@ -877,21 +943,42 @@ class RGB_Base(Cutout_Base, ABC):
 
     @property
     def ID(self) -> str:
-        ID_list = [cutout.ID for cutout in self.cutouts]
+        ID_list = [cutout.ID for cutout in np.array([val for val in self.cutouts.values()]).flatten()]
         assert all([ID == ID_list[0] for ID in ID_list])
         return ID_list[0]
 
     @property
+    def survey(self) -> str:
+        survey_list = [cutout.survey for cutout in np.array([val for val in self.cutouts.values()]).flatten()]
+        assert all([survey == survey_list[0] for survey in survey_list])
+        return survey_list[0]
+    
+    @property
+    def version(self) -> str:
+        version_list = [cutout.version for cutout in np.array([val for val in self.cutouts.values()]).flatten()]
+        assert all([version == version_list[0] for version in version_list])
+        return version_list[0]
+
+    @property
+    def cutout_size(self) -> u.Quantity:
+        cutout_size_list = [cutout.cutout_size for cutout in np.array([val for val in self.cutouts.values()]).flatten()]
+        assert all([cutout_size == cutout_size_list[0] for cutout_size in cutout_size_list])
+        return cutout_size_list[0]
+
+    @property
     def meta(self) -> dict:
-        meta_list = [cutout.meta for cutout in self.cutouts]
-        # ensure the same meta for all cutouts
-        assert all(meta[key] == val for meta in meta_list for key, val in meta_list[0].items())
+        meta_list = [cutout.meta for cutout in np.array([val for val in self.cutouts.values()]).flatten()]
+        # TODO: ensure the same meta for all cutouts
+        # try:
+        #     assert all(meta[key] == val for meta in meta_list for key, val in meta_list[0].items())
+        # except AssertionError:
+        #     breakpoint()
         return meta_list[0]
 
     @property
     def name(self):
         return ",".join(
-            f"{colour}={'+'.join(self.get_colour_band_names[colour])}"
+            f"{colour}={'+'.join(self.get_colour_filt_names(colour))}"
             for colour in ["B", "G", "R"]
         )
 
@@ -911,10 +998,26 @@ class RGB_Base(Cutout_Base, ABC):
             )
             for colour, cutouts in self.items()
         }
+    
+    @property
+    def instr_name(self) -> Optional[str]:
+        return self.cutouts["B"][0].instr_name
 
-    def get_colour_band_names(self, colour: str) -> List[str]:
+    def get_colour_filt_names(self: Self, colour: str) -> List[str]:
         assert colour in ["B", "G", "R"]
-        return [cutout.filt.band_name for cutout in self[colour]]
+        return [cutout.band_data.filt.filt_name for cutout in self[colour]]
+
+    def _get_save_path(self: Self) -> str:
+        if self.instr_name is None:
+            instr_name = ""
+        else:
+            instr_name = f"{self.instr_name}/"
+        subdir = self["B"][0].cutout_path.split("/")[-3] # get subdir from first cutout
+        save_path = f"{config['Cutouts']['CUTOUT_DIR']}/{self.version}/" + \
+            f"{self.survey}/{instr_name}{self.cutout_size.to(u.arcsec).value:.2f}as/" + \
+            f"{self.name}/{subdir}/pdf/{self.ID}.pdf"
+        funcs.make_dirs(save_path)
+        return save_path
 
     def load(
         self: Self,
@@ -929,64 +1032,131 @@ class RGB_Base(Cutout_Base, ABC):
         ax: Optional[plt.Axes] = None, 
         method: str = "lupton",
         plot_type: str = "SCI",
+        unit: Optional[u.Unit] = u.uJy,
         rgb_kwargs: Dict[str, Any] = {},
+        plot_regions: List[Dict[str, Any]] = [],
+        save: bool = False,
         show: bool = False,
-    ) -> NoReturn:
+        overwrite: bool = False,
+        imshow_kwargs: Dict[str, Any] = {},
+        *args,
+        **kwargs,
+    ) -> Optional[List[plt.Text]]:
         method = method.lower()  # make method lowercase
         # construct out_path
-        # save_path = f"{config['Cutouts']['CUTOUT_DIR']}/{data.version}/{data.survey}/{self.name}/{method}/{self.ID}.png"
+        # save_path = f"{config['Cutouts']['CUTOUT_DIR']}/{data.version}/{data.survey}/{self.name}/{method}/{self.ID}.pdf"
         # funcs.make_dirs(save_path)
         if method == "trilogy":
+            galfind_logger.warning("trilogy plots do not currently support image unit conversion!")
+            save_path = self._get_save_path()
             # Write trilogy.in
-            in_path = save_path.replace(".png", "_trilogy.in")
-            with open(in_path, "w") as f:
-                for colour, cutout_list in self.items():
-                    f.write(f"{colour}\n")
-                    for cutout in cutout_list:
-                        f.write(f"{cutout.cutout_path}[1]\n")
-                    f.write("\n")
-                f.write("indir  /\n")
-                f.write(
-                    f"outname  {funcs.split_dir_name(save_path, 'name').replace('.png', '')}\n"
-                )
-                f.write(f"outdir  {funcs.split_dir_name(save_path, 'dir')}\n")
-                f.write("samplesize 20000\n")
-                f.write("stampsize  2000\n")
-                f.write("showstamps  0\n")
-                f.write("satpercent  0.001\n")
-                f.write("noiselum    0.10\n")
-                f.write("colorsatfac  1\n")
-                f.write("deletetests  1\n")
-                f.write("testfirst   0\n")
-                f.write("sampledx  0\n")
-                f.write("sampledy  0\n")
+            in_path = save_path.replace(".pdf", "_trilogy.in")
+            if not Path(in_path).is_file() or overwrite:
+                with open(in_path, "w") as f:
+                    for colour, cutout_list in self.cutouts.items():
+                        f.write(f"{colour}\n")
+                        for cutout in cutout_list:
+                            f.write(f"{cutout.cutout_path}[1]\n")
+                        f.write("\n")
+                    f.write("indir  /\n")
+                    f.write(
+                        f"outname  {funcs.split_dir_name(save_path, 'name').replace('.pdf', '_trilogy')}\n"
+                    )
+                    f.write(f"outdir  {funcs.split_dir_name(save_path, 'dir')}\n")
+                    stamp_size = int(self.cutout_size.to(u.arcsec) / self["B"][0].band_data.pix_scale)
+                    f.write(f"samplesize {stamp_size // 2}\n")
+                    f.write(f"stampsize  {stamp_size}\n")
+                    f.write("showstamps  0\n")
+                    f.write("satpercent  0.001\n")
+                    f.write("noiselum    0.10\n")
+                    f.write("colorsatfac  1\n")
+                    f.write("deletetests  1\n")
+                    f.write("testfirst   0\n")
+                    f.write("sampledx  0\n")
+                    f.write("sampledy  0\n")
 
-            funcs.change_file_permissions(in_path)
-            # Run trilogy
-            sys.path.insert(
-                1, "/nvme/scratch/software/trilogy"
-            )  # Not sure why this path doesn't work: config["Other"]["TRILOGY_DIR"]
-            from trilogy3 import Trilogy
-
-            galfind_logger.info(f"Making trilogy cutout RGB at {save_path}")
-            Trilogy(in_path, images=None).run()
+                funcs.change_file_permissions(in_path)
+                # Run trilogy
+                sys.path.insert(1, "/nvme/scratch/software/trilogy")
+                from trilogy3 import Trilogy
+                galfind_logger.info(f"Making trilogy cutout RGB at {save_path}")
+                Trilogy(in_path, images=None).run()
 
         elif method == "lupton":
             if ax is None:
                 fig, ax = plt.subplots()
-            data = {colour: [cutout.load(plot_type)[1] \
-                for cutout in self[colour]] for colour in ["B", "G", "R"]}
-            red_mad_std = mad_std(data["R"][0])
-            scale = 0.3 / (5. * red_mad_std)
-            offset = 0.2
-            r = data["R"][0] * scale + offset
-            g = data["G"][0] * scale * 1.3 + offset
-            b = data["B"][0] * scale * 1.6 + offset
+            data = {
+                colour: [
+                    funcs.flux_image_to_Jy(
+                        cutout.load(plot_type)[1],
+                        cutout.band_data.ZP
+                    ).to(unit).value for cutout in self[colour]
+                ] for colour in ["B", "G", "R"]
+            }
+            # red_mad_std = mad_std(data["R"][0])
+            # scale = 0.3 / (5. * red_mad_std)
+            # offset = 0.2
+            r = data["R"][0] #* scale + offset
+            g = data["G"][0] #* scale * 1.3 + offset
+            b = data["B"][0] #* scale * 1.6 + offset
+            #from astropy.visualization import PercentileInterval
+            #stretch_percentile = PercentileInterval(99.9)
+            #r = stretch_percentile(r)
+            #g = stretch_percentile(g)
+            #b = stretch_percentile(b)
+            # r = self.channel_scale(r, satpercent = rgb_kwargs.pop("satpercent", 0.001))
+            # g = self.channel_scale(g, satpercent = rgb_kwargs.pop("satpercent", 0.001))
+            # b = self.channel_scale(b, satpercent = rgb_kwargs.pop("satpercent", 0.001))
             rgb_img = make_lupton_rgb(r, g, b, **rgb_kwargs)
-            norm = ImageNormalize(vmin=-scale*red_mad_std, vmax=scale*red_mad_std, stretch=SqrtStretch())
-            ax.imshow(rgb_img, origin = "lower")#, norm = norm)
+            #norm = ImageNormalize(vmin=-scale*red_mad_std, vmax=scale*red_mad_std, stretch=SqrtStretch())
+            ax.imshow(rgb_img, origin = "lower", **imshow_kwargs) #, norm = norm)
+            # turn off grid
+            ax.grid(False, which = "both")
+            # turn off ticks
+            ax.set_xticks([])
+            ax.set_yticks([])
+            # label RGB filters
+            all_texts = []
+            for i, (colour, plt_colour) in enumerate(
+                zip(["B", "G", "R"], ["blue", "green", "red"])
+            ):
+                filt_name = "+".join(self.get_colour_filt_names(colour))
+                txt = ax.text(
+                    0.15 + i * 0.35,
+                    0.1,
+                    filt_name,
+                    color = plt_colour,
+                    fontweight = "bold",
+                    fontsize = 8.0,
+                    ha = "center",
+                    va = "center",
+                    path_effects = [
+                        pe.withStroke(linewidth = 2.0, foreground = "white")
+                    ],
+                    transform = ax.transAxes,
+                    zorder = 10_000,
+                )
+                all_texts.append(txt)
+            # plot regions
+            self._plot_regions(ax, plot_regions)
+
+            if save:
+                save_path = self._get_save_path()
+                funcs.make_dirs(save_path)
+                plt.savefig(save_path)
+                funcs.change_file_permissions(save_path)
+                galfind_logger.info(f"Saved png cutout to: {save_path}")
+
             if show:
                 plt.show()
+            
+            return all_texts
+    
+    @staticmethod
+    def channel_scale(arr, satpercent = 0.001):
+        vmax = np.nanpercentile(arr, 100 - satpercent)
+        vmin = np.nanpercentile(arr, 10)
+        return (arr - vmin) / (vmax - vmin)
 
 class RGB(RGB_Base):
     @classmethod
@@ -998,8 +1168,13 @@ class RGB(RGB_Base):
         cutout_size: u.Quantity,
         overwrite: bool = False,
     ) -> Self:
-        rgb_bands = {key: [val] if isinstance(val, str) else val \
-            for key, val in rgb_bands.items() if key in ["B", "G", "R"]}
+        rgb_bands = {
+            key: [val] if isinstance(val, str) else val
+            for key, val in rgb_bands.items() if key in ["B", "G", "R"]
+        }
+        assert gal.survey == data.survey, galfind_logger.critical(
+            f"{gal.survey=}!={data.survey=}!"
+        )
         # make a cutout for each filter
         cutouts = {
             colour: [Band_Cutout.from_gal_band_data
@@ -1020,10 +1195,30 @@ class RGB(RGB_Base):
         cutouts = {
             colour: Band_Cutout.from_data_skycoord(data, filt, sky_coord)
             for filt in data.filterset
-            if filt.band_name in rgb_bands[colour]
+            if filt.filt_name in rgb_bands[colour]
             for colour in ["B", "G", "R"]
         }
         return cls(cutouts)
+    
+    @property
+    def ID(self) -> str:
+        ID_list = [
+            cutout.ID for cutout in \
+            np.array([val for val in self.cutouts.values()]).flatten()
+        ]
+        assert all([ID == ID_list[0] for ID in ID_list])
+        return ID_list[0]
+
+    @property
+    def survey(self) -> str:
+        surveys = np.unique([
+            cutout.band_data.survey for cutout in 
+            np.array([val for val in self.cutouts.values()]).flatten()
+        ])
+        assert len(surveys) == 1, galfind_logger.critical(
+            f"Multiple surveys found in RGB cutout: {surveys}"
+        )
+        return surveys[0]
 
 
 class Stacked_RGB(RGB_Base):
@@ -1049,6 +1244,7 @@ class Stacked_RGB(RGB_Base):
         Returns:
             Self: An instance of the class with the generated stacked cutouts.
         """
+        
         # make a stacked cutout for each filter
         stacked_cutouts = {
             colour: [
@@ -1095,8 +1291,13 @@ class Stacked_RGB(RGB_Base):
 
 
 class Multiple_Cutout_Base(ABC):
-    def __init__(self, cutouts: List[Type[Cutout_Base]]) -> Self:
+    def __init__(
+        self: Self,
+        cutouts: List[Type[Cutout_Base]],
+        name: Optional[str] = None,
+    ) -> Self:
         self.cutouts = cutouts
+        self.name = name
 
     def __len__(self) -> int:
         return len(self.cutouts)
@@ -1141,6 +1342,21 @@ class Multiple_Cutout_Base(ABC):
         assert all([cutout.cutout_size == self[0].cutout_size for cutout in self])
         return self[0].cutout_size
 
+    @property
+    def survey(self) -> str:
+        assert all([cutout.survey == self[0].survey for cutout in self])
+        return self[0].survey
+    
+    @property
+    def version(self) -> str:
+        assert all([cutout.version == self[0].version for cutout in self])
+        return self[0].version
+
+    @property
+    def instr_name(self) -> str:
+        assert all([cutout.instr_name == self[0].instr_name for cutout in self])
+        return self[0].instr_name
+
     # @property
     # def filterset(self) -> Multiple_Filter:
     #     _filterset = []
@@ -1156,6 +1372,7 @@ class Multiple_Cutout_Base(ABC):
     def plot(
         self: Self,
         fig: Optional[plt.Figure] = None,
+        ax_arr: Optional[np.ndarray] = None,
         n_rows: int = 1,
         fig_scaling: float = 1.5,
         split_by_instr: bool = False,
@@ -1165,10 +1382,15 @@ class Multiple_Cutout_Base(ABC):
         scalebars: Optional[Dict] = [],
         mask: Optional[List[bool]] = None,
         instr_split_cmap: str = "Spectral_r",
+        incl_title: bool = False,
+        overwrite: bool = False,
         show: bool = False,
         save: bool = True,
+        save_path: Optional[str] = None,
         close_fig: bool = False,
-    ) -> plt.Figure:
+        *args,
+        **kwargs,
+    ) -> List[plt.Figure, plt.Axes]:
         
         assert n_rows > 0
         if n_rows > len(self):
@@ -1176,20 +1398,20 @@ class Multiple_Cutout_Base(ABC):
         else:
             n_y = n_rows
         n_x = len(self) // n_y
-
         if len(self) % n_y != 0:
             n_x += 1
-        if fig is not None:
-            # Delete everything on the figure
-            fig.clf()
-        else:
-            fig = figs.make_fig(n_x, n_y, scaling = fig_scaling)
 
+        if fig is None: # not None:
+        #     # Delete everything on the figure
+        #     fig.clf()
+        # else:
+            fig = figs.make_fig(n_x, n_y, scaling = fig_scaling)
         # make appropriate axes from the figure and ax_ratio
-        ax_arr = figs.make_ax(fig, n_x, n_y)
-        # remove blank axes
-        n_blank_ax = n_x * n_y - len(self)
-        [fig.delaxes(ax_arr[-(i + 1)]) for i in range(n_blank_ax)]
+        if ax_arr is None:
+            ax_arr = figs.make_cutout_ax(fig, n_x, n_y)
+            # remove blank axes
+            n_blank_ax = n_x * n_y - len(self)
+            [fig.delaxes(ax_arr[-(i + 1)]) for i in range(n_blank_ax)]
 
         if split_by_instr:
             instr_names, n_bands = np.unique([cutout.band_data.instr_name \
@@ -1229,36 +1451,64 @@ class Multiple_Cutout_Base(ABC):
         if scalebars == []:
             scalebars = list(itertools.repeat([], len(self)))
         assert len(scalebars) == len(self)
+        # get shared attributes
+        attrs = ["survey", "ID", "filt_name"]
+        shared_attrs = {
+            name: np.unique([
+                getattr(cutout, name, "") for cutout in self
+                if hasattr(cutout, name)
+            ])[0] for name in attrs 
+            if len(np.unique([
+                getattr(cutout, name, "") for cutout in self
+                if hasattr(cutout, name)
+            ])) == 1
+        }
+        
+        if incl_title:
+            # determine title from shared attributes
+            title = ""
+        else:
+            title = None
         for i, (ax, cutout, scalebars_band) in enumerate(
             zip(ax_arr, self, scalebars)
         ):
-            filt_name = cutout.band_data.filt_name
-            if filt_name in plot_regions.keys():
-                plot_regions_band = plot_regions[filt_name]
-            else:
+            if isinstance(cutout, RGB):
                 plot_regions_band = []
-            if isinstance(cutout, tuple(Band_Cutout_Base.__subclasses__())):
-                cutout.plot(
-                    ax,
-                    imshow_kwargs=imshow_kwargs,
-                    norm_kwargs=norm_kwargs,
-                    plot_regions=plot_regions_band,
-                    scalebars=scalebars_band,
-                    show=False,
-                    save=False,
-                )
             else:
-                cutout.plot(
-                    ax,
-                    imshow_kwargs=imshow_kwargs,
-                    norm_kwargs=norm_kwargs,
-                    plot_regions=plot_regions_band,
-                    scalebars=scalebars_band,
-                    show=False,
-                    save=False,
-                )
+                filt_name = cutout.band_data.filt_name
+                if filt_name in plot_regions.keys():
+                    plot_regions_band = plot_regions[filt_name]
+                else:
+                    plot_regions_band = []
+
+            label_kwargs = {
+                "label": "\n".join([
+                    str(getattr(cutout, name, "")) for name in attrs
+                    if name not in shared_attrs.keys()
+                    and hasattr(cutout, name)
+                ]),
+            }
+            
+            cutout.plot(
+                ax,
+                imshow_kwargs = imshow_kwargs,
+                norm_kwargs = norm_kwargs,
+                plot_regions = plot_regions_band,
+                scalebars = scalebars_band,
+                label_kwargs = label_kwargs,
+                rgb_kwargs = kwargs.get("rgb_kwargs", {}),
+                overwrite = overwrite,
+                show = False,
+                save = False,
+            )
+
+        if title is not None:
+            fig.suptitle(title)
+
         if save:
-            save_path = self._get_save_path()
+            if save_path is None:
+                save_path = self._get_save_path()
+            funcs.make_dirs(save_path)
             plt.savefig(save_path, bbox_inches = "tight")
             funcs.change_file_permissions(save_path)
             galfind_logger.info(f"Saved cutout plot to: {save_path}")
@@ -1266,7 +1516,7 @@ class Multiple_Cutout_Base(ABC):
             plt.show()
         if close_fig:
             plt.close(fig)
-        return fig, ax
+        return fig, ax_arr
 
 
 # Galaxy_Cutouts
@@ -1312,6 +1562,7 @@ class Multiple_Band_Cutout(Multiple_Cutout_Base):
         data: Data,
         sky_coord: SkyCoord,
         cutout_size: u.Quantity,
+        **meta,
     ) -> Self:
         # make a cutout for each filter
         cutouts = [
@@ -1337,34 +1588,20 @@ class Multiple_Band_Cutout(Multiple_Cutout_Base):
         return cls(cutouts)
 
     @property
-    def survey(self) -> str:
-        assert all([cutout.survey == self[0].survey for cutout in self])
-        return self[0].survey
-    
-    @property
-    def version(self) -> str:
-        assert all([cutout.version == self[0].version for cutout in self])
-        return self[0].version
-    
-    @property
     def ID(self) -> str:
         assert all([cutout.ID == self[0].ID for cutout in self])
         return self[0].ID
-
-    @property
-    def instr_name(self) -> str:
-        assert all([cutout.instr_name == self[0].instr_name for cutout in self])
-        return self[0].instr_name
 
     def _get_save_path(self: Self) -> str:
         if self.instr_name is None:
             instr_name = ""
         else:
             instr_name = f"{self.instr_name}/"
+        subdir = self[0].cutout_path.split("/")[-3] # get subdir from first cutout
         save_path = f"{config['Cutouts']['CUTOUT_DIR']}/{self.version}/" + \
             f"{self.survey}/{instr_name}{self.cutout_size.to(u.arcsec).value:.2f}as/" + \
-            f"multi_band/png/{self.ID}.png"
-        # '+'.join(filt.band_name for filt in self.filterset)
+            f"multi_band/{subdir}/png/{self.ID}.pdf"
+        # '+'.join(filt.filt_name for filt in self.filterset)
         funcs.make_dirs(save_path)
         return save_path
 
@@ -1394,7 +1631,7 @@ class Catalogue_Cutouts(Multiple_Cutout_Base):
         overwrite: bool = False
     ) -> Self:
         if isinstance(filt, Filter):
-            filt = filt.band_name
+            filt = filt.filt_name
         cutouts = [Band_Cutout.from_gal_band_data
             (gal, cat.data[filt], cutout_size, overwrite) for gal in cat]
         
@@ -1402,15 +1639,19 @@ class Catalogue_Cutouts(Multiple_Cutout_Base):
     
     @property
     def survey(self) -> str:
+        unique_surveys = np.unique([cutout.survey for cutout in self])
+        return "+".join(unique_surveys)
         # NOT GENERAL
-        assert all([cutout.survey == self[0].survey for cutout in self])
-        return self[0].survey
+        #assert all([cutout.survey == self[0].survey for cutout in self])
+        #return self[0].survey
     
     @property
     def version(self) -> str:
+        unique_versions = np.unique([cutout.version for cutout in self])
+        return "+".join(unique_versions)
         # NOT GENERAL
-        assert all([cutout.version == self[0].version for cutout in self])
-        return self[0].version
+        #assert all([cutout.version == self[0].version for cutout in self])
+        #return self[0].version
 
     @property
     def instr_name(self) -> str:
@@ -1425,8 +1666,8 @@ class Catalogue_Cutouts(Multiple_Cutout_Base):
             instr_name = f"{self.instr_name}/"
         save_path = f"{config['Cutouts']['CUTOUT_DIR']}/{self.version}/" + \
             f"{self.survey}/{instr_name}{self.cutout_size.to(u.arcsec).value:.2f}as/" + \
-            f"{self[0].band_data.filt_name}/png/{self.ID}.png"
-        # '+'.join(filt.band_name for filt in self.filterset)
+            f"{self[0].band_data.filt_name}/pdf/{self.ID}.pdf"
+        # '+'.join(filt.filt_name for filt in self.filterset)
         funcs.make_dirs(save_path)
         return save_path
     
@@ -1441,6 +1682,9 @@ class Catalogue_Cutouts(Multiple_Cutout_Base):
         mask: Optional[List[bool]] = None,
         show: bool = False,
         save: bool = True,
+        save_path: Optional[str] = None,
+        *args,
+        **kwargs,
     ) -> plt.Figure:
         n_rows = np.sqrt(2 * len(self))
         n_rows = int(n_rows // 1)
@@ -1458,6 +1702,7 @@ class Catalogue_Cutouts(Multiple_Cutout_Base):
             mask = mask,
             show = show,
             save = save,
+            save_path = save_path,
         )
 
 
@@ -1466,11 +1711,21 @@ class Multiple_RGB(Multiple_Cutout_Base):
 
     @classmethod
     def from_cat(
-        cls: Type[Self], cat: Catalogue, rgb_bands: Dict[str, List[str]]
+        cls: Type[Self],
+        cat: Catalogue,
+        rgb_bands: Dict[str, List[str]],
+        cutout_size: u.Quantity,
     ) -> Self:
         # make a cutout for each filter
-        cutouts = [RGB.from_gal(cat.data, rgb_bands) for gal in cat]
-        return cls(cutouts)
+        cutouts = [
+            RGB.from_gal_data(
+                gal,
+                cat.data,
+                rgb_bands,
+                cutout_size
+            ) for gal in cat
+        ]
+        return cls(cutouts, cat.crop_name)
 
     @classmethod
     def from_data_skycoords(
@@ -1510,7 +1765,118 @@ class Multiple_RGB(Multiple_Cutout_Base):
         ]
         return cls(cutouts)
 
-    # part of __getattr__?
-    # @property
-    # def IDs(self) -> List[str]:
-    #     return [cutout.ID for cutout in self.cutouts]
+    @property
+    def rgb_bands(self: Self) -> Dict[str, List[str]]:
+        assert all([cutout.rgb_bands == rgb_bands for cutout in self]), \
+            galfind_logger.critical(
+                "All cutout rgb_bands must be the same!"
+            )
+        rgb_bands = self[0].rgb_bands
+        return rgb_bands
+
+    def _get_save_path(self: Self) -> str:
+        if self.instr_name is None:
+            instr_name = ""
+        else:
+            instr_name = f"{self.instr_name}/"
+        subdir = self[0]["B"][0].cutout_path.split("/")[-3] # get subdir from first cutout
+        save_path = f"{config['Cutouts']['CUTOUT_DIR']}/{self.version}/" + \
+            f"{self.survey}/{instr_name}{self.cutout_size.to(u.arcsec).value:.2f}as/" + \
+            f"{self[0].name}/{subdir}.pdf" # /png/{self.ID}
+        if self.name is not None:
+            save_path = save_path.replace(".pdf", f"_{self.name}.pdf")
+        funcs.make_dirs(save_path)
+        return save_path
+
+    def plot(
+        self: Self,
+        method: str = "trilogy",
+        plot_regions: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+        save: bool = True,
+        overwrite: bool = False,
+        gridspec_kwargs: Dict[str, Any] = {},
+        imshow_kwargs: Dict[str, Any] = {"rasterized": True},
+        *args,
+        **kwargs,
+    ) -> Tuple[plt.Figure, plt.Axes]:
+        
+        if method == "trilogy":
+            # make axes
+            fig, axs = figs.make_rectangular_fig(
+                len(self),
+                xy_ratio = 2/3,
+                **gridspec_kwargs,
+            )
+            # plot each cutout
+            for ax, cutout in zip(axs, self):
+                try:
+                    failed = False
+                    cutout.plot(method = "trilogy", overwrite = overwrite)
+                except:
+                    failed = True
+                save_path = cutout._get_save_path()
+                trilogy_path = save_path.replace(".pdf", "_trilogy.png")
+                if not Path(trilogy_path).is_file():
+                    galfind_logger.error(f"Trilogy failed to produce output for cutout ID={cutout.ID} at {trilogy_path}")
+                    failed = True
+                if not failed:
+                    # Write trilogy.in
+                    img = mpimg.imread(trilogy_path)
+                    ax.imshow(img, origin = "lower", **imshow_kwargs)
+                    if plot_regions is not None:
+                        cutout._plot_regions(ax, plot_regions)
+                    for i, (colour, plt_colour) in enumerate(
+                        zip(["B", "G", "R"], ["blue", "green", "red"])
+                    ):
+                        filt_name = "+".join(cutout.get_colour_filt_names(colour))
+                        ax.text(
+                            0.05,
+                            0.2 - i * 0.075,
+                            filt_name,
+                            color = plt_colour,
+                            fontweight = "bold",
+                            fontsize = 10.0,
+                            ha = "left",
+                            va = "center",
+                            path_effects = [
+                                pe.withStroke(linewidth = 2.0, foreground = "white")
+                            ],
+                            transform = ax.transAxes,
+                        )
+                else:
+                    # plot a large red cross to indicate failure
+                    ax.plot([0, 1], [0, 1], transform = ax.transAxes, color = "red", linewidth = 5.0)
+                ax.text(
+                    0.05,
+                    0.95,
+                    f"{cutout.survey};" + "\n" + f"ID={cutout.ID}",
+                    transform = ax.transAxes,
+                    color = "white",
+                    fontweight = "bold",
+                    fontsize = 11.0,
+                    ha = "left",
+                    va = "top",
+                    path_effects = [
+                        pe.withStroke(linewidth = 2.0, foreground = "black")
+                    ],
+                )
+            # remove unused axes
+            for i in range(len(self), len(axs)):
+                fig.delaxes(axs[i])
+                
+            # save plot
+            if save:
+                save_path = self._get_save_path().replace(".pdf", "_trilogy.pdf")
+                funcs.make_dirs(save_path)
+                plt.savefig(save_path, bbox_inches = "tight")
+                funcs.change_file_permissions(save_path)
+                galfind_logger.info(f"Saved trilogy RGB cutout plot to: {save_path}")
+            return fig, axs
+        else:
+            return super().plot(
+                plot_regions = plot_regions,
+                save = save,
+                overwrite = overwrite,
+                *args,
+                **kwargs,
+            )

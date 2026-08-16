@@ -24,6 +24,10 @@ build
 configs/galfind_config_goolsby.ini
 configs/james_galfind_config.ini
 galfind/configs
+htmlcov
+.coverage
+.pytest_cache
+configs/DJA_spectral_catalogues
+configs/EAZY_templates/templates/PEGASE2.0
 configs/DJA_spectral_catalogues/DJA_v4_2.csv
-testing/test_work
 examples/ACS_SBC_testing.py

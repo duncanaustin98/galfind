@@ -52,7 +52,7 @@ filterset = filterset + filterset_mc + filterset_hsc
 
 
 # Set our depths
-depths = [26] + [28] * len(filterset.band_names[1:])
+depths = [26] + [28] * len(filterset.filt_names[1:])
 
 
 folder = '/raid/scratch/data/JAGUAR/Full_Spectra'
@@ -63,7 +63,7 @@ redshift_bins = [(0.2, 1), (1, 1.5), (1.5, 2), (2, 3), (3, 4), (4, 5), (5, 15)]
 filenames = [f'{folder}/JADES_SF_mock_r{realization}_v1.2_spec_5A_30um_z_{str(z1).replace(".", "p")}_{str(z2).replace(".", "p")}.fits' for z1, z2 in redshift_bins]
 
 out_filename = f'{out_folder}/JADES_SF_mock_r{realization}_v1.2_{filterset.instrument_name}_phot_new.fits'
-out_colnames = [f'{filter.instrument_name}_{filter.band_name}_fnu' for filter in filterset.filters]
+out_colnames = [f'{filter.instrument_name}_{filter.filt_name}_fnu' for filter in filterset.filters]
 out_colnames=['ID', 'redshift', 'RA', 'DEC'] + out_colnames
 
 
@@ -112,7 +112,7 @@ def jaguar_phot_labels(
 ):
     assert "min_flux_pc_err" in kwargs.keys(), "min_flux_pc_err must be provided"
     phot_labels = { aper_diam * aper_diams.unit: [
-                f'{filt.instrument_name}_{filt.band_name}_fnu'
+                f'{filt.instrument_name}_{filt.filt_name}_fnu'
                 for filt in filterset
             ] for aper_diam in aper_diams.value
     }
@@ -153,7 +153,7 @@ def load_depth_func(catalog, depth_labels, depths, **kwargs):
 
 def get_depth_labels(filterset, aper_diams):
     depth_labels = { aper_diam * aper_diams.unit: [
-                f'{filt.instrument_name}_{filt.band_name}_fnu'
+                f'{filt.instrument_name}_{filt.filt_name}_fnu'
                 for filt in filterset
             ] for aper_diam in aper_diams.value
     }

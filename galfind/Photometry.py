@@ -42,9 +42,9 @@ class Photometry:
         self.flux = flux
         self.flux_errs = flux_errs
         if isinstance(depths, dict):
-            assert all(filt_name in depths.keys() for filt_name in filterset.band_names), \
+            assert all(filt_name in depths.keys() for filt_name in filterset.filt_names), \
                 galfind_logger.critical(
-                    f"not all {filterset.band_names} in {depths.keys()=}"
+                    f"not all {filterset.filt_names} in {depths.keys()=}"
                 )
            
             depths = [depths[filt.filt_name] for filt in filterset]
@@ -103,7 +103,7 @@ class Photometry:
         elif isinstance(i, str):
             i = i.split("+")
             indices = np.sort(np.array([np.where( \
-                np.array(self.filterset.band_names) \
+                np.array(self.filterset.filt_names) \
                 == i_)[0][0] for i_ in i]))
         else:
             raise (
@@ -129,7 +129,7 @@ class Photometry:
     #     )
     #     if origin == "phot":
     #         split_property_name = property_name.split("_")
-    #         if split_property_name[0] in self.instrument.band_names:
+    #         if split_property_name[0] in self.instrument.filt_names:
     #             band = split_property_name[0]
     #             property_name = "_".join(split_property_name[1:])
     #             if property_name in [
@@ -145,7 +145,7 @@ class Photometry:
     #                 "mag_u1",
     #                 "mag_errs",
     #             ] or ("depth" == property_name.split("_")[0]):
-    #                 index = self.instrument.index_from_band_name(band)
+    #                 index = self.instrument.index_from_filt_name(band)
     #                 wav = self.instrument[index].WavelengthCen
     #                 units = {
     #                     "flux_nu": u.Jy,
@@ -223,16 +223,16 @@ class Photometry:
     # @classmethod
     # def from_fits_cat(cls, fits_cat_row, instrument, cat_creator):
     #     fluxes, flux_errs = cat_creator.load_photometry(
-    #         fits_cat_row, instrument.band_names
+    #         fits_cat_row, instrument.filt_names
     #     )
     #     try:
     #         # local depths only currently works for one aperture diameter
     #         loc_depths = np.array(
     #             [
-    #                 fits_cat_row[f"loc_depth_{band_name}"].T[
+    #                 fits_cat_row[f"loc_depth_{filt_name}"].T[
     #                     cat_creator.aper_diam_index
     #                 ]
-    #                 for band_name in instrument.band_names
+    #                 for filt_name in instrument.filt_names
     #             ]
     #         )
     #     except:
@@ -266,7 +266,7 @@ class Photometry:
         if isinstance(other, tuple(Filter.__subclasses__())) or isinstance(other, Filter):
             filterset_copy = deepcopy(self.filterset)
             filterset_copy -= other
-            old_index = np.where(np.array(self.filterset.band_names) == other.band_name)[0][0]
+            old_index = np.where(np.array(self.filterset.filt_names) == other.filt_name)[0][0]
             self.filterset = filterset_copy
             new_fluxes = np.delete(self.flux, old_index)
             new_flux_errs = np.delete(self.flux_errs, old_index)
@@ -300,6 +300,7 @@ class Photometry:
             "marker": "o",
             "ms": 4.0,
             "zorder": 100.0,
+            "elinewidth": 1.5,
             "path_effects": [pe.withStroke(linewidth=2.0, foreground="white")],
         },
         filled: bool = True,
@@ -323,12 +324,14 @@ class Photometry:
         if uplim_sigma is None:
             uplims = list(np.full(len(self.flux), False))
             if plot_errs["y"]:
-                yerr = funcs.convert_mag_err_units(
-                    self.wav,
-                    self.flux,
-                    [self.flux_errs, self.flux_errs],
-                    mag_units,
-                )
+                yerr = np.array(
+                    funcs.convert_mag_err_units(
+                        self.wav,
+                        self.flux,
+                        [self.flux_errs, self.flux_errs],
+                        mag_units,
+                    )
+                ) * mag_units
             else:
                 yerr = None
         else:
@@ -495,6 +498,7 @@ class Photometry:
         else:
             plot_limits = {"uplims": uplims}
 
+        # TODO: make nans very large and exclude from autoscaling
         plot = ax.errorbar(
             wavs_to_plot,
             mags_to_plot,
@@ -591,15 +595,15 @@ class Multiple_Photometry(ABC):
     @classmethod
     def from_fits_cat(cls, fits_cat, instrument, cat_creator):
         flux_arr, flux_errs_arr, gal_bands = cat_creator.load_photometry(
-            fits_cat, instrument.band_names
+            fits_cat, instrument.filt_names
         )
         # local depths not yet loaded in
         depths_arr = cat_creator.load_depths(
-            fits_cat, instrument.band_names, gal_bands
+            fits_cat, instrument.filt_names, gal_bands
         )
         instrument_arr = [
             deepcopy(instrument).remove_bands(
-                [band for band in instrument if band.band_name not in bands]
+                [band for band in instrument if band.filt_name not in bands]
             )
             for bands in gal_bands
         ]

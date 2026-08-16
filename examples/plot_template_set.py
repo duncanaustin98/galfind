@@ -36,7 +36,7 @@ instrument = NIRCam(
         "F480M",
     ]
 )
-depths = [30.0 for band_name in instrument.band_names]
+depths = [30.0 for filt_name in instrument.filt_names]
 min_pc_err = 10
 z = 0.0
 template_set = "fsps_larson"

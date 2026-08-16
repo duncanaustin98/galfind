@@ -7,6 +7,7 @@ from astropy.utils.masked import Masked
 import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
 import numpy as np
+from numpy.typing import NDArray
 from tqdm import tqdm
 from copy import deepcopy
 import logging
@@ -16,7 +17,7 @@ from photutils.aperture import (
 )
 from typing import TYPE_CHECKING, Union, List, Dict, NoReturn, Optional
 if TYPE_CHECKING:
-    from . import Multiple_Filter, Multiple_Band_Cutout
+    from . import Multiple_Filter, Multiple_Band_Cutout, PSF_Base
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -35,6 +36,12 @@ class Photometry_obs(Photometry):
         flux_errs: Masked[u.Quantity],
         depths: Union[Dict[str, float], List[float]],
         aper_diam: u.Quantity,
+        psfs: Optional[
+            Union[
+                List[Optional[Type[PSF_Base]]],
+                NDArray[Optional[Type[PSF_Base]]]
+            ]
+        ] = None,
         SED_results: Dict[str, SED_result] = {},
         simulated: bool = False,
         timed: bool = False,
@@ -42,12 +49,16 @@ class Photometry_obs(Photometry):
         if timed:
             start = time.time()
         self.aper_diam = aper_diam
+        self.psfs = psfs
         self.SED_results = SED_results
         self.simulated = simulated
         super().__init__(filterset, flux, flux_errs, depths)
+        self._assert_psfs()
         if timed:
             end = time.time()
-            print(end - start)
+            galfind_logger.debug(
+                f"Initialized {repr(self)} in {end - start:.2f} seconds!"
+            )
 
     def __repr__(self):
         sed_result_str = ','.join(list(self.SED_results.keys()))
@@ -81,7 +92,7 @@ class Photometry_obs(Photometry):
     #             return self.__getattribute__(property_name)
     #         # elif (
     #         #     "aper_corr" in property_name
-    #         #     and property_name.split("_")[-1] in self.instrument.band_names
+    #         #     and property_name.split("_")[-1] in self.instrument.filt_names
     #         # ):
     #         #     # return band aperture corrections
     #         #     return self.aper_corrs[property_name.split("_")[-1]]
@@ -197,13 +208,26 @@ class Photometry_obs(Photometry):
 
     @property
     def aper_corrs(self):
-        if self.simulated:
-            return [np.nan for filt in self.filterset]
-        else:
-            return [filt.instrument.aper_corrs[filt.band_name] \
-                [self.aper_diam] for filt in self.filterset]
+        if self.simulated or self.psfs is None:
+            return [
+                np.nan for filt in self.filterset
+            ]
+        elif isinstance(self.psfs, (list, np.ndarray)):
+            return [
+                psf.get_aper_corrs(
+                    self.aper_diam,
+                    out_type = "mag",
+                ) for psf in self.psfs
+            ]
+        else: # isinstance(self.psfs, dict):
+            return [
+                self.psfs[filt.filt_name].get_aper_corrs(
+                    self.aper_diam,
+                    out_type = "mag",
+                ) for filt in self.filterset
+            ]
 
-    @classmethod  # not a gal object here, more like a catalogue row
+    @classmethod # not a gal object here, more like a catalogue row
     def from_fits_cat(
         cls,
         fits_cat_row,
@@ -238,7 +262,7 @@ class Photometry_obs(Photometry):
         phot,
         aper_diam: u.Quantity,
         min_flux_pc_err: Union[int, float],
-        SED_results: dict = {},
+        SED_results: Dict[str, SED_result] = {},
     ):
         return cls(
             phot.instrument,
@@ -267,10 +291,31 @@ class Photometry_obs(Photometry):
             aper_phot_filt = aperture_photometry(data, aperture, error = rms_err)
             breakpoint()
 
+    def _assert_psfs(self):
+        if self.psfs is not None:
+            if isinstance(self.psfs, (list, np.ndarray)):
+                assert len(self.psfs) == len(self.filterset), \
+                    galfind_logger.critical(
+                        f"{len(self.psfs)=} != {len(self.filterset)=}!"
+                    )
+            elif isinstance(self.psfs, dict):
+                assert all(filt.filt_name in self.psfs.keys() for filt in self.filterset), \
+                    galfind_logger.critical(
+                        f"Some of {[filt.filt_name for filt in self.filterset]} not in {self.psfs.keys()=}"
+                    )
+            else:
+                galfind_logger.critical(
+                    f"{type(self.psfs)=} not in [list, np.ndarray, dict] and is not None!"
+                )
+        else:
+            galfind_logger.debug(
+                f"No PSFs provided for {repr(self)}! Passed assertions!"
+            )
+
     def update_SED_result(
         self: Self, 
         gal_SED_result: SED_result
-    ) -> NoReturn:
+    ) -> None:
         if isinstance(gal_SED_result.SED_code, str):
             label = gal_SED_result.SED_code
         else:
@@ -280,6 +325,13 @@ class Photometry_obs(Photometry):
             self.SED_results = {**self.SED_results, **gal_SED_result_dict}
         else:
             self.SED_results = gal_SED_result_dict
+
+    def update_SED_result_lowz_zmax_info(
+        self: Self,
+        SED_result_key: str,
+        zmax_info: Dict[str, Dict[str, Union[float, u.Quantity, u.Magnitude, u.Dex]]],
+    ) -> None:
+        return self.SED_results[SED_result_key].update_lowz_zmax_properties(zmax_info)
 
     def get_SED_fit_params_arr(self, code) -> list:
         return [
@@ -571,37 +623,66 @@ class Photometry_obs(Photometry):
                 
         if annotate:
             # x/y labels etc here
+            ax.set_xlabel(f"Wavelength ({wav_units})")
+            ax.set_ylabel(f"Flux Density ({mag_units})")
             ax.legend()
 
         return plot
     
     def load_sextractor_ext_src_corrs(
         self: Self, 
-        aper_corrs: Optional[Dict[str, float]] = None
+        filt_names: Optional[List[str]] = None,
+        aper_corrs: Optional[Dict[str, float]] = None,
     ) -> NoReturn:
-        if aper_corrs is None:
-            [filt.instrument._load_aper_corrs() for filt in self.filterset]
-            aper_corrs = {filt.band_name: filt.instrument. \
-                aper_corrs[filt.band_name][self.aper_diam] for filt in self.filterset}
-        assert all(filt_name in aper_corrs.keys() \
-            for filt_name in self.filterset.band_names)
+        if filt_names is None:
+            filt_names = self.filterset.filt_names
 
-        ext_src_corrs = {filt_name: (self.sex_FLUX_AUTO[filt_name] \
-            / (self.flux[i] * funcs.mag_to_flux_ratio(-aper_corrs[filt_name]))) \
-            .to(u.dimensionless_unscaled).unmasked for i, filt_name \
-            in enumerate(self.filterset.band_names)}
+        try:
+            unmasked_flux = self.flux.unmasked
+        except:
+            unmasked_flux = self.flux
+
+        if aper_corrs is None:
+            aper_corrs = self.aper_corrs
+        else:
+            aper_corrs = [aper_corrs[filt_name] for filt_name in self.filterset.filt_names]
+            assert len(aper_corrs) == len(self.filterset), galfind_logger.critical(
+                f"{len(aper_corrs)=} != {len(self.filterset)=}!"
+            )
+
+        try:
+            ext_src_corrs = {
+                filt_name: (self.sex_FLUX_AUTO[filt_name] \
+                / (unmasked_flux[i] * funcs.mag_to_flux_ratio(-aper_corr))) \
+                .to(u.dimensionless_unscaled) for i, (aper_corr, filt_name) \
+                in enumerate(zip(aper_corrs, self.filterset.filt_names)) \
+                if filt_name in filt_names or filt_names is None
+            }
+        except Exception as e:
+            galfind_logger.critical(
+                f"Failed to compute ext_src_corrs with {e=}, {self.sex_FLUX_AUTO=}, {self.flux=}, {aper_corrs=}"
+            )
+            breakpoint()
+            raise e
+
         self.ext_src_corrs = {
             filt_name: ext_src_corr.value
-            if ext_src_corr.value > 1.0 else 1.0
+            if ext_src_corr.value > 1.0 or np.isnan(ext_src_corr.value) else 1.0
             for filt_name, ext_src_corr in ext_src_corrs.items()
         }
+
+        for aper_diam, value in self.ext_src_corrs.items():
+            setattr(
+                self,
+                f"ext_src_corr_{aper_diam}",
+                value,
+            )
         # propagate ext_src_corrs to SED_results[key].phot_rest
         for key in self.SED_results.keys():
-            self.SED_results[key].phot_rest. \
-                ext_src_corrs = self.ext_src_corrs
+            self.SED_results[key].phot_rest.ext_src_corrs = self.ext_src_corrs
 
     # def load_local_depths(self, sex_cat_row, instrument, aper_diam_index):
-    #    self.depths = np.array([sex_cat_row[f"loc_depth_{band}"].T[aper_diam_index] for band in instrument.band_names])
+    #    self.depths = np.array([sex_cat_row[f"loc_depth_{band}"].T[aper_diam_index] for band in instrument.filt_names])
 
     # def SNR_crop(self, band, sigma_detect_thresh):
     #     index = self.instrument.band_from_index(band)
@@ -704,10 +785,10 @@ class Multiple_Photometry_obs:
         cls, fits_cat, instrument, cat_creator, SED_fit_params_arr, timed=False
     ):
         flux_arr, flux_errs_arr, gal_band_mask = cat_creator.load_photometry(
-            fits_cat, instrument.band_names, timed=timed
+            fits_cat, instrument.filt_names, timed=timed
         )
         depths_arr = cat_creator.load_depths(
-            fits_cat, instrument.band_names, gal_band_mask, timed=timed
+            fits_cat, instrument.filt_names, gal_band_mask, timed=timed
         )
         instrument_arr = cat_creator.load_instruments(
             instrument, gal_band_mask

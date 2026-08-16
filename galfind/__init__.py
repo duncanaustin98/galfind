@@ -118,6 +118,7 @@ astropy_cosmo = FlatLambdaCDM(H0=70, Om0=0.3, Ob0=0.05, Tcmb0=2.725)
 wav_lyman_lim = 911.8  # * u.AA
 
 from . import useful_funcs_austind
+from . import utils
 from . import figs
 from . import decorators
 from . import SExtractor, Masking, Depths
@@ -131,14 +132,14 @@ instr_to_name_dict = {name: globals()[name]() for name in json.loads(config.get(
 from .Filter import Filter, Multiple_Filter, Tophat_Filter, U, V, J
 
 # sort bands blue -> red based on central wavelength
-all_band_names = [filt.band_name for filt in sorted(Multiple_Filter.from_instruments \
+all_filt_names = [filt.filt_name for filt in sorted(Multiple_Filter.from_instruments \
     (list(json.loads(config.get("Other", "INSTRUMENT_NAMES")))), \
     key=lambda band: band.WavelengthCen.to(u.AA).value)]
-config.set("Other", "ALL_BANDS", json.dumps(all_band_names))
+config.set("Other", "ALL_BANDS", json.dumps(all_filt_names))
 
 from .PDF import PDF, SED_fit_PDF, Redshift_PDF, PDF_nD
 
-from .Data import Band_Data_Base, Band_Data, Stacked_Band_Data, Data
+from .Data import Band_Data_Base, Band_Data, Stacked_Band_Data, Multiple_Band_Data_Base, Data
 from .Cutout import Cutout_Base, Band_Cutout, Band_Cutout_Base, Stacked_Band_Cutout, RGB, Stacked_RGB, Multiple_Band_Cutout, Multiple_RGB, Catalogue_Cutouts
 
 from .Photometry import Photometry, Multiple_Photometry, Mock_Photometry
@@ -165,7 +166,15 @@ from .Catalogue_Base import Catalogue_Base
 from .Multiple_Catalogue import Combined_Catalogue
 #from .Multiple_Data import Multiple_Data
 from .Catalogue import Catalogue, Catalogue_Creator
-from .SED import SED, SED_rest, SED_obs, Mock_SED_rest, Mock_SED_obs
+from .Galaxy_Creator import Galaxy_Creator
+from .SED import (
+    SED,
+    SED_rest,
+    SED_obs,
+    Mock_SED_rest,
+    Mock_SED_obs,
+    SED_2D,
+)
 from .SED import (
     Mock_SED_template_set,
     Mock_SED_rest_template_set,
@@ -211,6 +220,7 @@ from .Selector import (
     Robust_zPDF_Selector,
     Re_Selector,
     EPOCHS_Selector,
+    EPOCHS_unmasked_criteria,
     Redshift_Limit_Selector,
     Redshift_Bin_Selector,
     Rest_Frame_Property_Limit_Selector,
@@ -219,6 +229,9 @@ from .Selector import (
     Brown_Dwarf_Selector,
     Hainline24_TY_Brown_Dwarf_Selector_1,
     Hainline24_TY_Brown_Dwarf_Selector_2,
+    Redshift_Selector,
+    Stacked_Blue_Lya_Non_Detect_Selector,
+    Compactness_Selector,
 )
 
 from .Emission_lines import Emission_line, wav_lyman_alpha, line_diagnostics
@@ -234,7 +247,19 @@ from .Spectrum import (
     Spectral_Filter,
     Spectral_Grating,
 )
-from .MCMC import Prior, Flat_Prior, Priors, MCMC_Fitter, Schechter_Mag_Fitter, Schechter_Lum_Fitter, Linear_Fitter, Power_Law_Fitter, Scattered_Linear_Fitter
+from .MCMC import (
+    Prior,
+    Flat_Prior,
+    Gaussian_Prior,
+    Priors,
+    MCMC_Fitter,
+    Schechter_Mag_Fitter,
+    Schechter_Lum_Fitter,
+    DPL_Mag_Fitter,
+    DPL_Lum_Fitter,
+    Linear_Fitter,
+    Power_Law_Fitter,
+)
 from .Number_Density_Function import (
     Base_Number_Density_Function,
     Number_Density_Function,
@@ -276,3 +301,7 @@ from .Rest_frame_properties import (
 )
 
 from .Morphology import Morphology_Result, Morphology_Fitter, Galfit_Fitter
+
+from .SFH import SFH
+
+from .NIRCam_reduction import Raw_JWST_Data
