@@ -1,7 +1,7 @@
 
 from __future__ import annotations
 
-from galfind import Data
+from galfind.imaging.Data import Data
 import numpy as np
 import h5py as h5
 from numpy.typing import NDArray

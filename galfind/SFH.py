@@ -21,7 +21,7 @@ try:
 except ImportError:
     from typing_extensions import Self #, Type  # python > 3.7 AND python < 3.11
 
-from . import galfind_logger
+from .. import galfind_logger
 
 class SFH:
     """Container for a (possibly posterior-sampled) star-formation history.

@@ -16,7 +16,7 @@ from galfind import (
     Photometry_rest,
     config,
 )
-from galfind.Emission_lines import line_diagnostics, strong_optical_lines
+from galfind.spectra.Emission_lines import line_diagnostics, strong_optical_lines
 
 plt.style.use(f"{config['DEFAULT']['GALFIND_DIR']}/galfind_style.mplstyle")
 

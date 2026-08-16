@@ -1,7 +1,7 @@
 
 import astropy.units as u
 
-from galfind.Data import morgan_version_to_dir
+from galfind.imaging.Data import morgan_version_to_dir
 from galfind import PSF_Cutout, Filter, Galfit_Fitter, Catalogue, EPOCHS_Selector, EAZY, Brown_Dwarf_Fitter, Brown_Dwarf_Selector
 
 # Load in a JOF data object

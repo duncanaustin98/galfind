@@ -5,7 +5,7 @@ from scipy.stats import gaussian_kde
 import numpy as np
 
 from galfind import Catalogue, EPOCHS_Selector, EAZY
-from galfind.Data import morgan_version_to_dir
+from galfind.imaging.Data import morgan_version_to_dir
 
 def main(
     survey,

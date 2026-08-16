@@ -1,6 +1,6 @@
 
 from galfind import Data
-from galfind.Data import morgan_version_to_dir
+from galfind.imaging.Data import morgan_version_to_dir
 from galfind import config
 
 def main():

@@ -14,7 +14,7 @@ from galfind import (
     galfind_logger,
 )
 from galfind import useful_funcs_austind as funcs
-from galfind.Catalogue_Creator import Galfind_Catalogue_Creator
+from galfind.catalogues.Catalogue_Creator import Galfind_Catalogue_Creator
 
 sys.path.insert(1, config["NumberDensityFunctions"]["FLAGS_DATA_DIR"])
 try:

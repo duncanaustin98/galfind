@@ -5,7 +5,7 @@ from astropy.table import Table
 from tqdm import tqdm
 
 from galfind import EAZY, Catalogue, NIRCam
-from galfind.Catalogue_Creator import GALFIND_Catalogue_Creator
+from galfind.catalogues.Catalogue_Creator import GALFIND_Catalogue_Creator
 
 
 def Halpha_template_phot_color_diff(

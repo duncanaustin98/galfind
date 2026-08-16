@@ -2,7 +2,7 @@
 import astropy.units as u
 
 from galfind import Catalogue  # , LePhare, EAZY,
-from galfind.Catalogue_Creator import Galfind_Catalogue_Creator
+from galfind.catalogues.Catalogue_Creator import Galfind_Catalogue_Creator
 
 
 def Trussler2024_smouldering_IDs(survey):

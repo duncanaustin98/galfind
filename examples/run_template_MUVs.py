@@ -2,7 +2,7 @@ import astropy.units as u
 import os
 
 from galfind import Data, Catalogue, EAZY, Bagpipes, Band_SNR_Selector, MUV_Calculator
-from galfind.Data import morgan_version_to_dir
+from galfind.imaging.Data import morgan_version_to_dir
 from galfind.Property_calculator import MUV_SED_Property_Calculator
 
 def main(

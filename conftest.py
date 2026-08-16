@@ -27,7 +27,7 @@ from galfind import (
     Photometry_rest,
     Multiple_Filter,
 )
-from galfind.Data import morgan_version_to_dir
+from galfind.imaging.Data import morgan_version_to_dir
 
 test_galfind_data_dir = "test_data"
 test_survey = "test"

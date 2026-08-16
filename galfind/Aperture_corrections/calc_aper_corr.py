@@ -20,8 +20,8 @@ from astropy.io import fits
 from matplotlib.patches import Circle
 from scipy import optimize
 
-from . import config
-from . import useful_funcs_austind as funcs
+from .. import config
+from ..utils import useful_funcs_austind as funcs
 
 
 def log_transform(im):  # function to transform fits image to log scaling

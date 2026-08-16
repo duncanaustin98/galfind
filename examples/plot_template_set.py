@@ -17,7 +17,7 @@ from galfind import (
     NIRCam,
     config,
 )
-from galfind.Emission_lines import line_diagnostics
+from galfind.spectra.Emission_lines import line_diagnostics
 
 plt.style.use(f"{config['DEFAULT']['GALFIND_DIR']}/galfind_style.mplstyle")
 

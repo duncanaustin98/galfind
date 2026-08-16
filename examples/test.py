@@ -5,7 +5,7 @@ from copy import deepcopy
 from tqdm import tqdm
 from galfind import Filter, Catalogue, Catalogue_Creator, Data, EAZY, LePhare, Bagpipes, config
 from galfind import Colour_Selector, Unmasked_Instrument_Selector, EPOCHS_Selector
-from galfind.Data import morgan_version_to_dir
+from galfind.imaging.Data import morgan_version_to_dir
 
 from galfind import Hainline24_TY_Brown_Dwarf_Selector_1, Hainline24_TY_Brown_Dwarf_Selector_2
 

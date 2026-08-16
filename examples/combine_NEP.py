@@ -15,7 +15,7 @@ from galfind import (
     Catalogue,
     Multiple_Catalogue,
 )
-from galfind.Catalogue_Creator import Galfind_Catalogue_Creator
+from galfind.catalogues.Catalogue_Creator import Galfind_Catalogue_Creator
 
 
 def pipeline(

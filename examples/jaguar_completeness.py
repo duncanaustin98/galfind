@@ -4,8 +4,8 @@ from typing import List
 
 from galfind import Data, Catalogue_Creator, EAZY
 from galfind.selection import Grid_2D
-from galfind.Data import morgan_version_to_dir
-from galfind.Catalogue import jaguar_phot_labels, load_jaguar_phot
+from galfind.imaging.Data import morgan_version_to_dir
+from galfind.catalogues.Catalogue import jaguar_phot_labels, load_jaguar_phot
 
 def main(
     survey: str,

@@ -2,8 +2,8 @@ import astropy.units as u
 from astropy.table import Table
 
 from galfind import NIRCam, Photometry_rest
-from galfind.SED import SED_obs
-from galfind.Spectrum import Spectral_Catalogue
+from galfind.spectra.SED import SED_obs
+from galfind.spectra.Spectrum import Spectral_Catalogue
 
 
 def load_DJA_spectra(ra_range=None, dec_range=None, UV_SNR_lim=5.0):

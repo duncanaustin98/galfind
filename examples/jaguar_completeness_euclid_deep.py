@@ -18,7 +18,7 @@ from galfind import (
     
 )
 from galfind.selection import Grid, Grid_2D
-from galfind.Catalogue import phot_property_from_fits, scattered_depth_labels, scattered_phot_labels_inst
+from galfind.catalogues.Catalogue import phot_property_from_fits, scattered_depth_labels, scattered_phot_labels_inst
 from galfind import useful_funcs_austind as funcs
 import itertools
 from tqdm import tqdm

@@ -6,7 +6,7 @@ import os
 # os.environ["GALFIND_CONFIG_NAME"] = "test_galfind_config.ini"
 
 from galfind import Multiple_Filter, Catalogue, LePhare
-from galfind.Data import morgan_version_to_dir
+from galfind.imaging.Data import morgan_version_to_dir
 
 def main(
     survey,

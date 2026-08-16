@@ -3,7 +3,7 @@ import numpy as np
 import astropy.units as u
 
 from galfind import Combined_Catalogue, Catalogue
-from galfind.Data import morgan_version_to_dir
+from galfind.imaging.Data import morgan_version_to_dir
 
 def main():
     surveys = [f"CEERSP{i}" for i in range(1, 11)]

@@ -6,7 +6,7 @@ try:
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from galfind.Data import morgan_version_to_dir
+from galfind.imaging.Data import morgan_version_to_dir
 from galfind import Catalogue, EAZY, SED_code
 from galfind import galfind_logger
 from galfind import (

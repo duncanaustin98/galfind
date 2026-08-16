@@ -27,7 +27,7 @@ from galfind import (
     Sextractor_Bands_Radius_Selector,
     Unmasked_Instrument_Selector,
 )
-from galfind.Data import morgan_version_to_dir
+from galfind.imaging.Data import morgan_version_to_dir
 
 try:
     from typing import Self, Type  # python 3.11+
