@@ -82,6 +82,7 @@ class Combined_Catalogue(Catalogue_Base):
         survey: Optional[str] = None,
         version: Optional[str] = None,
         overwrite: bool = False,
+        crop_fits: bool = False,
     ):
         # ensure all catalogues have the same aperture diameters
         assert all(cat.aper_diams == cat_arr[0].aper_diams for cat in cat_arr), \
@@ -101,7 +102,7 @@ class Combined_Catalogue(Catalogue_Base):
         
         # make filterset comprising all available bands
         filters = np.array([filt for filt in chain.from_iterable([[filt for filt in cat.filterset] for cat in cat_arr])])
-        unique_filters = filters[sorted(np.unique([filt.band_name for filt in filters], return_index = True)[1])]
+        unique_filters = filters[sorted(np.unique([filt.filt_name for filt in filters], return_index = True)[1])]
         full_cat_filterset = Multiple_Filter(unique_filters)
         full_cat_instr_name = full_cat_filterset.instrument_name
         
@@ -123,7 +124,9 @@ class Combined_Catalogue(Catalogue_Base):
         if not Path(cat_path).is_file() or overwrite:
             # TODO: Make the loading of these not require to indiviudally specify code names
             from . import SED_code, EAZY, LePhare, Bagpipes
-            unique_hdu_names = np.unique(list(chain.from_iterable([cat.get_hdu_names() for cat in cat_arr])))
+            unique_hdu_names, unique_hdu_counts = np.unique(list(chain.from_iterable([cat.get_hdu_names() for cat in cat_arr])), return_counts = True)
+            unique_hdu_names = np.array([hdu for hdu, count in zip(unique_hdu_names, unique_hdu_counts) if count == len(cat_arr)])
+            
             full_tab_hdus = np.full(len(unique_hdu_names), None)
             # put flux table first
             assert "OBJECTS" in unique_hdu_names, \
@@ -131,45 +134,61 @@ class Combined_Catalogue(Catalogue_Base):
                     "All catalogues must have an 'OBJECTS' HDU"
                 )
             unique_hdu_names = np.concatenate((["OBJECTS"], unique_hdu_names[unique_hdu_names != "OBJECTS"]))
+            object_cat_lengths = []
             # determine ID column names
             for i, hdu in enumerate(unique_hdu_names):
                 # make combined catalogue .fits if this does not already exist
                 full_tab_arr = [] #np.full(len(cat_arr), None)
                 unique_ids = []
                 for j, cat in enumerate(cat_arr):
-                    tab = cat.open_cat(hdu = hdu, cropped=False)
+                    tab = cat.open_cat(hdu = hdu, cropped = crop_fits) # usually False
                     if i == 0:
                         assert hdu == "OBJECTS", \
                             galfind_logger.critical(
                                 "First HDU must be 'OBJECTS'"
                             )
-                        tab["SURVEY"] = cat.survey
-                        tab["VERSION"] = cat.version
-                        tab["INSTR_NAME"] = cat.filterset.instrument_name
                         tab.rename_column(cat.ID_label, "SURVEY_ID")
+                        uncropped_tab = cat.open_cat(hdu = hdu, cropped = False)
+                        object_cat_lengths.append(len(uncropped_tab))
                     # determine SED_code that the hdu originates from, if not any cat.ID_label
-                    ID_colname = [subcls.ID_label for subcls in SED_code.__subclasses__() if subcls.__name__.upper() in hdu]
+                    ID_colname = []
+                    for subcls in funcs.all_subclasses(SED_code):
+                        if subcls.__name__.upper() in hdu:
+                            if "PROPERTIES" in hdu:
+                                ID_label = "ID"
+                            else:
+                                ID_label = subcls.ID_label
+                            ID_colname.append(ID_label)
+                    #ID_colname = [subcls.ID_label for subcls in funcs.all_subclasses(SED_code) if subcls.__name__.upper() in hdu]
                     if len(ID_colname) == 0:
                         ID_colname = [cat.ID_label if i != 0 else "SURVEY_ID"]
                     if len(ID_colname) > 1:
                         # choose the first one found
-                        ID_colname_hdu_pos = [hdu.find(subcls.__name__.upper()) for subcls in SED_code.__subclasses__() if subcls.__name__.upper() in hdu]
+                        ID_colname_hdu_pos = [hdu.find(subcls.__name__.upper()) for subcls in funcs.all_subclasses(SED_code) if subcls.__name__.upper() in hdu]
                         ID_colname_index = np.argmin(ID_colname_hdu_pos)
                         ID_colname = [ID_colname[ID_colname_index]]
                     #ID_colname = np.unique(ID_colname)
-                    try:
+                    if isinstance(ID_colname, list):
                         assert len(ID_colname) == 1, \
                             galfind_logger.critical(
                                 f"Could not determine ID_colname for HDU {hdu}"
                             )
                         ID_colname = ID_colname[0]
-                        if j == 0:
-                            cat_unique_ids = list(tab[ID_colname])
-                        else:
-                            cat_unique_ids = np.sum(len(tab_) for tab_ in full_tab_arr) + np.array(list(tab[ID_colname]))
-                    except:
+                    try:
+                        tab[ID_colname]
+                    except KeyError as e:
+                        galfind_logger.critical(
+                            f"Could not find ID column in HDU {hdu} for catalogue {cat.survey} {cat.version}. Error: {e}"
+                        )
                         breakpoint()
+                    if j == 0:
+                        cat_unique_ids = list(tab[ID_colname])
+                    else:
+                        cat_unique_ids = np.sum(object_cat_lengths[:j]) + np.array(list(tab[ID_colname])).astype(int)
                     unique_ids.extend(cat_unique_ids)
+                    tab["SURVEY"] = cat.survey
+                    tab["VERSION"] = cat.version
+                    tab["INSTR_NAME"] = cat.filterset.instrument_name
                     full_tab_arr.append(tab)
                 full_tab = vstack(list(full_tab_arr))
                 # TODO: Sort unique IDs!
@@ -272,6 +291,8 @@ class Combined_Catalogue(Catalogue_Base):
         SED_fit_code: SED_code,
         z_step: float = 0.01,
         unmasked_area: Union[str, u.Quantity] = "selection",
+        Vmax_method: str = "uniform_depth",
+        n_jobs: int = 1,
     ) -> None:
         # # calculate Vmax for galaxy selection in their origin field
         # [
@@ -289,6 +310,8 @@ class Combined_Catalogue(Catalogue_Base):
                     SED_fit_code, 
                     z_step,
                     unmasked_area = unmasked_area,
+                    Vmax_method = Vmax_method,
+                    n_jobs = n_jobs,
                 ) for data_cat in self.cat_arr
             ] for cat in self.cat_arr
         ]
@@ -306,37 +329,48 @@ class Combined_Catalogue(Catalogue_Base):
         # ]
 
         # combine Vmax's for each field on a galaxy by galaxy basis
-        save_path = self.get_vmax_ecsv_path(self)
+        save_path = self.get_Vmax_ecsv_path(self, Vmax_method = Vmax_method)
         if not Path(save_path).is_file():
             # make Vmax table
-            try:
-                Vmax_arr = np.array(
+            #try:
+            Vmax_arr = np.array(
+                [
                     [
-                        [
-                            gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
-                            V_max[self.crop_name.split("/")[-1]][cat.data.full_name]. \
-                            to(u.Mpc**3).value for cat in self.cat_arr
-                        ] for gal in self
-                    ]
-                )
-            except:
-                breakpoint()
+                        gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
+                        Vmax[cat.data.survey][region] for cat in self.cat_arr \
+                        for region in cat.data.regions
+                    ] for gal in self
+                ]
+            )
+            # except:
+            #     breakpoint()
             Vmax_arr = np.where(Vmax_arr == -1.0, 0.0, Vmax_arr)
             Vmax_arr = np.sum(Vmax_arr, axis = 1)
             Vmax_arr = np.where(Vmax_arr == 0.0, -1.0, Vmax_arr)
             data = {
                 "ID": np.array([gal.ID for gal in self]),
+                "aper_diam": np.array([aper_diam.to(u.arcsec).value] * len(self)),
+                "SED_fit_code": np.array([SED_fit_code.label] * len(self)),
+                "region": np.array(["combined"] * len(self)),
                 "survey": np.array([gal.survey for gal in self]),
-                "Vmax": Vmax_arr * u.Mpc ** 3,
+                "Vmax_total": Vmax_arr * u.Mpc ** 3,
             }
-            new_tab = Table(data, dtype=[int, str, float])
+            new_tab = Table(data, dtype=[int, float, str, str, str, float])
             new_tab.meta = {"Vmax_invalid_val": -1.0}
             self._save_ecsv(save_path, new_tab)
-
         full_survey_name = funcs.get_full_survey_name(self.survey, self.version, self.filterset)
         tab = Table.read(save_path)
-        self._load_Vmax_from_ecsv(tab, aper_diam, SED_fit_code, full_survey_name)
-        
+        self._load_Vmax_from_ecsv(tab, self.survey, aper_diam, SED_fit_code, full_survey_name)
+
+    
+    def plot_phot_diagnostics(self, *args, **kwargs):
+        for cat in self.cat_arr:
+            cat.plot_phot_diagnostics(*args, **kwargs)
+    
+    # def hist(self, *args, **kwargs):
+    #     for cat in self.cat_arr:
+    #         cat.hist(*args, **kwargs)
+
     def plot_combined_area_depth(
         self,
         save_path,

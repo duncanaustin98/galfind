@@ -165,15 +165,18 @@ def plot_voigt_profile():
     plt.show()
 
 
-def plot_obj_DLA(log_N_HI_arr=[21.0, 22.0, 22.5, 23.0]):
+def plot_obj_DLA(log_N_HI_arr=[23.0, 24.0]):
     fig, ax = plt.subplots()
-    wav_rest = np.linspace(1216.0, 1400.0, 1_000) * u.AA
+    wav_rest = np.linspace(1216.0, 3600.0, 1_000) * u.AA
     for log_N_HI in log_N_HI_arr:
         dla = DLA(
             10**log_N_HI / (u.cm**2), 150 * u.km / u.s, 0.0 * u.km / u.s, 0.0
         )
         dla.plot_transmission_profile(ax, wav_rest)
-
+    ax.set_xlabel(r"$\lambda_{\mathrm{rest}}~/~\mathrm{\AA}$")
+    ax.set_ylabel("Transmission")
+    ax.legend()
+    plt.savefig("dla.png", bbox_inches="tight")
 
 if __name__ == "__main__":
     # lya = Emission_line("Lya", Doppler_b = 200. * u.km / u.s)

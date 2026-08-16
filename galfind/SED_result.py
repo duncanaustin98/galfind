@@ -16,7 +16,7 @@ import numpy as np
 from astropy.table import Table
 from tqdm import tqdm
 import logging
-from typing import Union, TYPE_CHECKING
+from typing import Dict, Union, TYPE_CHECKING
 if TYPE_CHECKING:
     from .Photometry_obs import Photometry_obs
 
@@ -162,6 +162,15 @@ class SED_result:
         for key, value in self.__dict__.items():
             setattr(result, key, deepcopy(value, memo))
         return result
+
+    def update_lowz_zmax_properties(
+        self: Self,
+        property_dict: Dict[str, Dict[str, Union[float, u.Quantity, u.Magnitude, u.Dex]]],
+    ) -> Self:
+        # if not hasattr(self, "lowz_zmax_properties"):
+        #     self.lowz_zmax_properties = {}
+        self.lowz_zmax_properties = property_dict
+        return self
 
     # @classmethod
     # def from_gal(cls, gal, SED_fit_params):

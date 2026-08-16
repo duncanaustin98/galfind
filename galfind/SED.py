@@ -104,6 +104,7 @@ class SED:
         label: Optional[str] = None,
         annotate: bool = True,
         save_name: Optional[str] = None,
+        save_dir: Optional[str] = f"{config['Other']['PLOT_DIR']}/SEDs",
         log_fluxes: bool = True,
         plot_kwargs: Dict[str, Any] = {},
         legend_kwargs: Dict[str, Any] = {},
@@ -143,9 +144,14 @@ class SED:
             # save png by default
             if save_name.split(".")[-1] not in ["png", "pdf"]:
                 save_name = f"{'.'.join(save_name.split('.')[-1:])}.png"
-            funcs.make_dirs(save_name)
-            plt.savefig(save_name)
-            funcs.change_file_permissions(save_name)
+            if save_dir is not None:
+                save_path = f"{save_dir}/{save_name}"
+            else:
+                save_path = save_name
+            funcs.make_dirs(save_path)
+            plt.savefig(save_path)
+            funcs.change_file_permissions(save_path)
+            galfind_logger.info(f"Saved {repr(self)} plot to {save_path}")
         return plot
 
     def calc_bandpass_averaged_flux(
@@ -367,24 +373,20 @@ class SED_rest(SED):
             & (wavs < wav_range.to(wav_units).value[1])
         ]
         super().__init__(wavs, mags, wav_units, mag_units)
-
-    def crop_to_Calzetti94_filters(self, update=False):
-        wavs = self.wavs.to(u.AA)
-        Calzetti94_filter_indices = np.logical_or.reduce(
-            [
-                (wavs.value > low_lim) & (wavs.value < up_lim)
-                for low_lim, up_lim in zip(
-                    funcs.lower_Calzetti_filt, funcs.upper_Calzetti_filt
-                )
-            ]
+    
+    @classmethod
+    def from_SED_obs(cls, SED_obs, out_wav_units=u.AA, out_mag_units=u.ABmag):
+        wavs = funcs.convert_wav_units(
+            SED_obs.wavs / (1 + SED_obs.z), out_wav_units
         )
-        wavs = self.wavs[Calzetti94_filter_indices]
-        mags = self.mags[Calzetti94_filter_indices]
-        if update:
-            self.wavs = wavs
-            self.wav_units = u.AA  # should improve this functionality
-            self.mags = mags
-        return wavs, mags
+        mags = funcs.convert_mag_units(wavs, SED_obs.mags, out_mag_units)
+        return cls(
+            wavs.value,
+            mags.value,
+            wavs.unit,
+            mags.unit,
+            wav_range=[0, 10_000] * u.AA,
+        )
 
 
 class SED_obs(SED):
@@ -503,6 +505,16 @@ class SED_obs(SED):
             UV_flux,
             u.ABmag,
         )
+
+    def calc_MUV(
+        self: Self,
+        wav_range: u.Quantity = [1_450.0, 1_550.0] * u.AA,
+        wav_resolution: u.Quantity = 1.0 * u.AA,
+    ):
+        mUV = self.calc_mUV(wav_range, wav_resolution)
+        dL = astropy_cosmo.luminosity_distance(self.z).to(u.pc).value
+        MUV = mUV.value - 5 * np.log10(dL / 10.0) + 2.5 * np.log10(1.0 + self.z)
+        return MUV # * u.ABmag
 
 
 class Mock_SED_rest(SED_rest):  # , Mock_SED):
@@ -715,7 +727,7 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
     def calc_UV_slope(self, output_errs=False, method="Calzetti+94"):
         if method == "Calzetti+94":
             # crop to Calzetti+94 filters
-            wavs, mags = self.crop_to_Calzetti94_filters()
+            wavs, mags = funcs.crop_to_Calzetti94_filters(self.wavs, self.mags)
             # convert self.mags to f_λ if needed
             if mags.unit == u.ABmag:
                 mags = funcs.convert_mag_units(
@@ -831,10 +843,10 @@ class Mock_SED_obs(SED_obs):
     ):
         lum_distance = astropy_cosmo.luminosity_distance(z).to(u.pc)
         m_UV = (
-            M_UV
+            M_UV.to(u.ABmag).value
             - 2.5 * np.log10(1 + z)
             + 5 * np.log10(lum_distance.value / 10)
-        )
+        ) * u.ABmag
         mock_SED_rest = Mock_SED_rest.power_law_from_beta_m_UV(
             beta, m_UV, template_name=template_name
         )
@@ -882,9 +894,9 @@ class Mock_SED_obs(SED_obs):
             assert len(bands) == 2
             # requires colour to exist in the mock photometry
             for band in bands:
-                if band not in self.mock_photometry.filterset.band_names:
+                if band not in self.mock_photometry.filterset.filt_names:
                     galfind_logger.critical(
-                        f"self.mock_photometry includes the bands = {self.mock_photometry.filterset.band_names}, and {band} is not included!"
+                        f"self.mock_photometry includes the bands = {self.mock_photometry.filterset.filt_names}, and {band} is not included!"
                     )
                 assert self.mock_photometry[band].flux.unit == u.Jy
             # calculate colour in mags

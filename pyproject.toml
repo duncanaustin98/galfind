@@ -246,4 +246,8 @@ line-ending = "auto"
 
 [tool.pytest.ini_options]
 # Set pytest markers
-markers = ["requires_data"]
+markers = [
+  "slow: marks slow tests",
+  "instrument: tests that require instrument setup",
+  "requires_data: marks tests requiring data to run",
+]

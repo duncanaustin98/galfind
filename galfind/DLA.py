@@ -18,8 +18,8 @@ class DLA:
         self,
         N_HI,
         Doppler_b,
-        vel_offset=0.0 * u.km / u.s,
-        z_offset=0.0,
+        vel_offset = 0.0 * u.km / u.s,
+        z_offset = 0.0,
         voigt_method="Tepper-Garcia+06",
     ):
         self.N_HI = N_HI

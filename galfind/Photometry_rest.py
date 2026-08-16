@@ -40,8 +40,8 @@ class Photometry_rest(Photometry):
         flux_errs: u.Quantity,
         depths: u.Quantity,
         z: float,
-        properties: Optional[Dict[str, Union[u.Mangitude, u.Quantity, u.Dex]]] = None,
-        property_errs: Optional[Dict[str, Tuple[Union[u.Mangitude, u.Quantity, u.Dex], Union[u.Mangitude, u.Quantity, u.Dex]]]] = None,
+        properties: Optional[Dict[str, Union[u.Magnitude, u.Quantity, u.Dex]]] = None,
+        property_errs: Optional[Dict[str, Tuple[Union[u.Magnitude, u.Quantity, u.Dex], Union[u.Magnitude, u.Quantity, u.Dex]]]] = None,
         property_PDFs: Optional[Dict[str, Type[PDF]]] = None,
         property_kwargs: Optional[Dict[str, Dict[str, Union[str, int, float]]]] = None
     ):
@@ -172,7 +172,7 @@ class Photometry_rest(Photometry):
     #         for band in self.filterset:
     #             lower_wav = band.WavelengthLower50
     #             if lower_wav > Lya_wav * (1 + self.z):
-    #                 first_band = band.band_name
+    #                 first_band = band.filt_name
     #                 break
     #         self._first_Lya_detect_band = first_band
     #         return self._first_Lya_detect_band
@@ -190,7 +190,7 @@ class Photometry_rest(Photometry):
     #         for band in self.filterset:
     #             upper_wav = band.WavelengthUpper50
     #             if upper_wav < Lya_wav * (1 + self.z):
-    #                 first_band = band.band_name
+    #                 first_band = band.filt_name
     #                 break
     #         self._first_Lya_non_detect_band = first_band
     #     return self._first_Lya_non_detect_band
@@ -314,7 +314,8 @@ class Photometry_rest(Photometry):
         assert all(
             property_iters == property_iters_arr[0]
             for property_iters in property_iters_arr
-        ), f"All {property_names=} must have the same number of iterations to run!, {[(property_iters, property_iters_arr[0]) for property_iters in property_iters_arr]}"
+        ), f"All {property_names=} must have the same number of iterations to run!, " + \
+            f"{[(property_iters, property_iters_arr[0]) for property_iters in property_iters_arr]}"
         # do nothing if PDFs of the required length have already been loaded
         if property_iters_arr[0] == 0:
             return self, property_names
@@ -326,7 +327,6 @@ class Photometry_rest(Photometry):
         kwargs["save_path"] = save_path
 
         properties = SED_rest_property_function(**kwargs)[0]
-        # breakpoint()
         # print(properties, property_name)
         for property, property_name in zip(properties, property_names):
             # update property PDFs
@@ -338,7 +338,6 @@ class Photometry_rest(Photometry):
                         f"{type(property)=} not in [dict]!"
                     )
                     breakpoint()
-                # breakpoint()
                 # construct PDF from property output if required
                 if "PDF" in property.keys():
                     new_PDF = property["PDF"]
@@ -361,7 +360,7 @@ class Photometry_rest(Photometry):
                 self.recently_updated.append(property_name)
                 self.property_PDFs[property_name] = PDF_obj
                 self._update_properties_from_PDF(property_name)
-                if type(save_path) != type(None):
+                if save_path is not None:
                     self._save_SED_rest_PDF(
                         property_name,
                         save_path.replace(
@@ -372,7 +371,7 @@ class Photometry_rest(Photometry):
 
     def _save_SED_rest_PDF(self, property_name, save_path):
         funcs.make_dirs(save_path)
-        if self.property_PDFs[property_name]is not None:
+        if self.property_PDFs[property_name] is not None:
             self.property_PDFs[property_name].save(save_path)
 
     def _update_properties_from_PDF(self, property_name):

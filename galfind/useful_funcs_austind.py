@@ -5,6 +5,7 @@ import astropy.constants as const
 import astropy.units as u
 import matplotlib.pyplot as plt
 import numpy as np
+from pathlib import Path
 import sep
 import re
 from astropy.coordinates import SkyCoord
@@ -20,7 +21,7 @@ from numpy.typing import NDArray
 from typing import Union, List, Tuple, TYPE_CHECKING, Optional, Any, Dict
 if TYPE_CHECKING:
     from .Data import Band_Data_Base, Band_Data, Stacked_Band_Data
-    from . import Selector, Filter, Multiple_Filter, Mask_Selector
+    from . import Selector, Filter, Multiple_Filter, Mask_Selector, Photometry_rest
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -171,13 +172,20 @@ def calc_flux_from_ra_dec(ra, dec, im_data, wcs, r, unit="deg"):
     return flux  # image units
 
 
-def calc_1sigma_flux(depth, zero_point):
+def calc_1sigma_flux(
+    depth: Union[float, u.Magnitude],
+    zero_point: float,
+) -> float:
+    if isinstance(depth, u.Magnitude):
+        depth = depth.value
     flux_1sigma = (10 ** ((depth - zero_point) / -2.5)) / 5
     return flux_1sigma  # image units
 
 
 def n_sigma_detection(
-    depth, mag, zero_point
+    depth,
+    mag,
+    zero_point,
 ):  # mag here is non aperture corrected
     flux_1sigma = calc_1sigma_flux(depth, zero_point)
     flux = 10 ** ((mag - zero_point) / -2.5)
@@ -221,17 +229,23 @@ def flux_image_to_Jy(fluxes, zero_points):
         return (
             np.array(
                 [
-                    flux * (10 ** ((zero_points - 8.9) / -2.5))
+                    flux * (10 ** ((zero_points - (u.Jy).to(u.ABmag)) / -2.5))
                     for flux in fluxes
                 ]
             )
             * u.Jy
         )
     else:
-        return np.array(fluxes * (10 ** ((zero_points - 8.9) / -2.5))) * u.Jy
+        return np.array(fluxes * (10 ** ((zero_points - (u.Jy).to(u.ABmag)) / -2.5))) * u.Jy
 
 
-def five_to_n_sigma_mag(five_sigma_depth, n):
+def five_to_n_sigma_mag(
+    five_sigma_depth: Union[int, float, u.Magnitude],
+    n: Union[int, float],
+):
+    assert n > 0, galfind_logger.critical(f"{n=} must be > 0")
+    if isinstance(five_sigma_depth, u.Magnitude):
+        five_sigma_depth = five_sigma_depth.value
     n_sigma_mag = -2.5 * np.log10(n / 5) + five_sigma_depth
     # flux_sigma = (10 ** ((five_sigma_depth - zero_point) / -2.5)) / 5
     # n_sigma_mag = -2.5 * np.log10(flux_sigma * n) + zero_point
@@ -533,6 +547,7 @@ def get_SED_fit_label_aper_diam_z_bin_name(
 
 
 def get_crop_name(crops: List[Selector]) -> str:
+    from . import EAZY
     if crops is not None:
         aper_diam = np.unique([selector.aper_diam.to(u.arcsec).value for selector \
             in crops if hasattr(selector, "aper_diam") and selector.aper_diam is not None])
@@ -540,17 +555,21 @@ def get_crop_name(crops: List[Selector]) -> str:
             aper_diam = aper_diam[0]
         else:
             aper_diam = None
-        SED_fit_label = np.unique([selector.SED_fit_label for selector \
-            in crops if hasattr(selector, "SED_fit_label") and selector.SED_fit_label is not None])
+        SED_fit_label = np.unique([selector.SED_fitter.label for selector \
+            in crops if getattr(selector, "SED_fitter", None) is not None])
         if len(SED_fit_label) == 1:
             SED_fit_label = SED_fit_label[0]
         else:
             SED_fit_label = None
         if aper_diam is not None and SED_fit_label is not None:
-            SED_fit_aper_diam_name = f"{SED_fit_label}_{aper_diam:.2f}as"
-            out_crop_name = f"{SED_fit_aper_diam_name}/" + \
-                "+".join([selector.name.replace( \
-                f"_{SED_fit_aper_diam_name}", "") for selector in crops])
+            # SED_fit_aper_diam_name = f"{SED_fit_label}_{aper_diam:.2f}as"
+            out_crop_name = f"{aper_diam:.2f}as/" + \
+                "+".join([
+                    selector.name.replace(f"_{aper_diam:.2f}as", "") \
+                    if not isinstance(getattr(selector, "SED_fitter", None), EAZY) \
+                    else f"{selector.name.replace(f'_{aper_diam:.2f}as', '')}_zfree"
+                    for selector in crops
+                ])
         elif aper_diam is not None:
             aper_diam_name = f"{aper_diam:.2f}as"
             out_crop_name = f"{aper_diam_name}/" + \
@@ -766,17 +785,17 @@ def get_phot_cat_path(
     version: str,
     instrument_name: str,
     aper_diams: u.Quantity,
-    forced_phot_band_name: Optional[str],
+    forced_phot_filt_name: Optional[str],
 ):
     save_dir = (
         f"{config['DEFAULT']['GALFIND_WORK']}/Catalogues/{version}/" + \
         f"{instrument_name}/{survey}/{aper_diams_to_str(aper_diams)}"
     )
-    if forced_phot_band_name is None:
-        forced_phot_band_name = ""
+    if forced_phot_filt_name is None:
+        forced_phot_filt_name = ""
     else:
-        forced_phot_band_name = f"_MASTER_Sel-{forced_phot_band_name}"
-    save_name = f"{survey}{forced_phot_band_name}_{version}.fits"
+        forced_phot_filt_name = f"_MASTER_Sel-{forced_phot_filt_name}"
+    save_name = f"{survey}{forced_phot_filt_name}_{version}.fits"
     save_path = f"{save_dir}/{save_name}"
     make_dirs(save_path)
     return save_path
@@ -892,6 +911,21 @@ def validate_quantity(
 # beta slope function
 def beta_slope_power_law_func(wav_rest, A, beta):
     return (10**A) * (wav_rest**beta)
+
+def crop_to_Calzetti94_filters(wavs, mags):
+    wavs = wavs.to(u.AA)
+    Calzetti94_filter_indices = np.logical_or.reduce(
+        [
+            (wavs.value > low_lim) & (wavs.value < up_lim)
+            for low_lim, up_lim in zip(
+                lower_Calzetti_filt,
+                upper_Calzetti_filt,
+            )
+        ]
+    )
+    wavs = wavs[Calzetti94_filter_indices]
+    mags = mags[Calzetti94_filter_indices]
+    return wavs, mags
 
 
 def inspect_info():
@@ -1097,12 +1131,15 @@ def get_first_bluewards_band(
     elif isinstance(ignore_bands, str):
         ignore_bands = [ignore_bands]
     first_band = None
+    if z < 0.0:
+        return first_band
     # bands already ordered from blue -> red
-    for filt in filterset:
-        upper_wav = filt.WavelengthUpper50
-        if upper_wav < ref_wav * (1.0 + z):
-            first_band = filt.band_name
-            break
+    for filt in reversed(filterset):
+        if filt.filt_name not in ignore_bands:
+            upper_wav = filt.WavelengthUpper50
+            if upper_wav < ref_wav * (1.0 + z):
+                first_band = filt.filt_name
+                break
     return first_band
 
 def get_first_redwards_band(
@@ -1121,10 +1158,10 @@ def get_first_redwards_band(
         ignore_bands = [ignore_bands]
     first_band = None
     for filt in filterset:
-        if filt.band_name not in ignore_bands:
+        if filt.filt_name not in ignore_bands:
             lower_wav = filt.WavelengthLower50
             if lower_wav > ref_wav * (1.0 + z):
-                first_band = filt.band_name
+                first_band = filt.filt_name
                 break
     return first_band
 
@@ -1279,3 +1316,152 @@ def gradient_descent_beta_fit(x, y, initial_params, learning_rate=0.01, max_iter
             break
             
     return params, i  # Return optimized parameters and iterations taken
+
+def symlink(target_path, symlink_path):
+    make_dirs(symlink_path)
+    if Path(target_path).is_file():
+        try:
+            os.symlink(target_path, symlink_path)
+            galfind_logger.info(f"Created symlink: {symlink_path} -> {target_path}")
+        except FileExistsError:
+            galfind_logger.debug(f"Symlink already exists: {symlink_path}")
+    else:
+        breakpoint()
+        galfind_logger.warning(f"Target file does not exist for symlink: {target_path}")
+
+def get_depth_dir(galfind_work_dir, survey, version, instrument_names):
+    out_dirs = []
+    for instrument_name in instrument_names:
+        out_dirs.append(f"{galfind_work_dir}/Depths/{instrument_name}/{version}/{survey}")
+    return np.array(out_dirs)
+
+def get_eazy_dir(galfind_work_dir, survey, version, instrument_names):
+    instrument_name = "+".join(instrument_names)
+    out_dirs = []
+    for subdir in ["input", "output"]:
+        out_dirs.append(f"{galfind_work_dir}/EAZY/{subdir}/{instrument_name}/{version}/{survey}")
+    return np.array(out_dirs)
+
+def get_mask_dir(galfind_work_dir, survey):
+    return np.array([f"{galfind_work_dir}/Masks/{survey}"])
+
+def get_sex_dir(galfind_work_dir, survey, version, instrument_names):
+    out_dirs = []
+    for instrument_name in instrument_names:
+        out_dirs.append(f"{galfind_work_dir}/SExtractor/{instrument_name}/{version}/{survey}")
+    return np.array(out_dirs)
+
+def get_stacked_images_dir(galfind_work_dir, survey, version, instrument_names):
+    out_dirs = []
+    for instrument_name in instrument_names:
+        out_dirs.append(f"{galfind_work_dir}/Stacked_Images/{version}/{instrument_name}/{survey}")
+    return np.array(out_dirs)
+
+def find_target_dir(galfind_work_dir, survey, version, instrument_names, keyword):
+    if keyword == "Depths":
+        return get_depth_dir(galfind_work_dir, survey, version, instrument_names)
+    elif keyword == "EAZY":
+        return get_eazy_dir(galfind_work_dir, survey, version, instrument_names)
+    elif keyword == "Masks":
+        return get_mask_dir(galfind_work_dir, survey)
+    elif keyword == "SExtractor":
+        return get_sex_dir(galfind_work_dir, survey, version, instrument_names)
+    elif keyword == "Stacked_Images":
+        return get_stacked_images_dir(galfind_work_dir, survey, version, instrument_names)
+    else:
+        raise ValueError(f"Keyword {keyword} not recognised")
+
+def make_symlinks(target_galfind_work, symlink_galfind_work, survey, version, instrument_names, keywords):
+    for keyword in keywords:
+        target_dirs = find_target_dir(target_galfind_work, survey, version, instrument_names, keyword)
+        for target_dir in target_dirs:
+            target_paths = [str(path) for path in Path(target_dir).rglob("*") if path.is_file()]
+            symlink_paths = [path.replace(target_galfind_work, symlink_galfind_work) for path in target_paths]
+            for target_path, symlink_path in zip(target_paths, symlink_paths):
+                symlink(target_path, symlink_path)
+
+def get_ext_src_corr(
+    phot_rest: Photometry_rest,
+    ext_src_key: Optional[str] = "UV",
+    ext_src_uplim: Optional[Union[int, float]] = 10.0,
+    ref_wav: u.Quantity = 1_500.0 * u.AA,
+) -> float:
+    if ext_src_key is None:
+        return 1.0
+    else:
+        if len(phot_rest.filterset) == 0:
+            galfind_logger.debug(
+                f"{repr(phot_rest)} has {len(phot_rest.filterset)=}! " + 
+                "Unable to compute extended source correction!"
+            )
+            return np.nan
+    if not hasattr(phot_rest, "ext_src_corrs"):
+        err_message = f"{repr(phot_rest)} has no attribute ext_src_corrs! " + \
+            "Unable to compute extended source correction!"
+        galfind_logger.critical(err_message)
+        raise AttributeError(err_message)
+    if ext_src_key == "UV":
+        # calculate band nearest to the rest frame UV reference wavelength
+        band_wavs = [filt.WavelengthCen.to(u.AA).value \
+            for filt in phot_rest.filterset] * u.AA / (1. + phot_rest.z.value)
+        ref_band = phot_rest.filterset.filt_names[np.argmin(np.abs(band_wavs - ref_wav))]
+        ext_src_corr = phot_rest.ext_src_corrs[ref_band]
+    else: # band given
+        ext_src_corr = phot_rest.ext_src_corrs[ext_src_key]
+    # apply limit to extended source correction
+    if ext_src_uplim is not None:
+        if ext_src_corr > ext_src_uplim:
+            ext_src_corr = ext_src_uplim
+    if ext_src_corr < 1.0:
+        ext_src_corr = 1.0
+    return ext_src_corr
+
+def get_ext_src_corr_label(
+    ext_src_key: Optional[str] = "UV",
+    ext_src_uplim: Optional[Union[int, float]] = 10.0,
+) -> str:
+    if ext_src_key is None:
+        return ""
+    else:
+        ext_src_name = f"_extsrc_{ext_src_key}"
+        if ext_src_uplim is None:
+            ext_src_lim_label = ""
+        else:
+            ext_src_lim_label = f"<{ext_src_uplim:.0f}"
+        return ext_src_name + ext_src_lim_label
+    
+def truncate_colname(col):
+    out_colname = col
+    if len(col) > 68:
+        # truncate column name to 68 characters for fits format
+        # remove 'F', 'W', 'M', 'LP' from filter names
+        # find all filter names in column name
+        filter_names = re.findall(r'F[0-9]+[WMLP]+', col)
+        for filter_name in filter_names:
+            out_colname = out_colname.replace(
+                filter_name,
+                filter_name.replace('F', '').replace('W', '').replace('M', '').replace('LP', '')
+            )
+        galfind_logger.warning(
+            f"{col=} with {len(col)=}>68 is too long for fits format! " + \
+            f"Using truncated {out_colname} instead!"
+        )
+        if len(out_colname) > 68:
+            out_colname = out_colname[:68]
+            galfind_logger.warning(
+                f"Truncated {out_colname=} with {len(out_colname)=}>68!" +
+                f"Further truncating to {out_colname}!"
+            )
+    return out_colname
+
+def all_subclasses(cls):
+    out = set()
+    stack = [cls]
+    while stack:
+        parent = stack.pop()
+        for sub in parent.__subclasses__():
+            if sub not in out:
+                out.add(sub)
+                stack.append(sub)
+    out = tuple(out)
+    return out

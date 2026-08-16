@@ -23,4 +23,10 @@ examples/reionization_paper
 build
 configs/galfind_config_goolsby.ini
 galfind/configs
-configs/DJA_spectral_catalogues/DJA_v4_2.csv
+#configs/DJA_spectral_catalogues/DJA_v4_2.csv
+testing/test_work
+htmlcov
+.coverage
+.pytest_cache
+configs/DJA_spectral_catalogues
+configs/EAZY_templates/templates/PEGASE2.0

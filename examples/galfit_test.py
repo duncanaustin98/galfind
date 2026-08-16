@@ -37,13 +37,13 @@ def main():
     cat.load_sextractor_auto_fluxes()
     cat.load_sextractor_kron_radii()
 
-    for band_name in ["F444W"]: #["F200W", "F277W", "F356W", "F444W", "F410M"]: #cat.filterset.band_names:
+    for filt_name in ["F444W"]: #["F200W", "F277W", "F356W", "F444W", "F410M"]: #cat.filterset.filt_names:
 
-        bd_selector = Brown_Dwarf_Selector(aper_diams[0], bd_fitter, secondary_SED_fit_label = eazy_fitter, select_band = band_name, morph_cut = False)
+        bd_selector = Brown_Dwarf_Selector(aper_diams[0], bd_fitter, secondary_SED_fit_label = eazy_fitter, select_band = filt_name, morph_cut = False)
         bd_cat = bd_selector(cat, return_copy = True)
 
-        filt = Filter.from_filt_name(band_name)
-        psf_path = f"/nvme/scratch/work/westcottl/psf/PSF_Resample_03_{band_name}.fits"
+        filt = Filter.from_filt_name(filt_name)
+        psf_path = f"/nvme/scratch/work/westcottl/psf/PSF_Resample_03_{filt_name}.fits"
         psf = PSF_Cutout.from_fits(
             fits_path=psf_path,
             filt=filt,
@@ -54,7 +54,7 @@ def main():
         galfit_sersic_fitter = Galfit_Fitter(psf, "sersic", fixed_params = ["n"])
         galfit_sersic_fitter(bd_cat)
 
-        bd_selector = Brown_Dwarf_Selector(aper_diams[0], bd_fitter, secondary_SED_fit_label = eazy_fitter, select_band = band_name, morph_cut = True)
+        bd_selector = Brown_Dwarf_Selector(aper_diams[0], bd_fitter, secondary_SED_fit_label = eazy_fitter, select_band = filt_name, morph_cut = True)
         bd_cat_selected = bd_selector(bd_cat, return_copy = True)
 
         bd_cat_selected.plot_phot_diagnostics(
@@ -73,7 +73,7 @@ def main():
         )
         IDs = bd_cat_selected.ID
         from galfind import ID_Selector
-        id_selector = ID_Selector(IDs, f"brown_dwarf_{band_name}")
+        id_selector = ID_Selector(IDs, f"brown_dwarf_{filt_name}")
         id_selector(cat)
 
     #breakpoint()
@@ -83,7 +83,7 @@ def main():
 
     # from galfind.Morphology import fwhm_nircam
     # from galfind import Re_Selector
-    # galfit_re_selector = Re_Selector(galfit_sersic_fitter, "less", 1.2 * fwhm_nircam[band_name])
+    # galfit_re_selector = Re_Selector(galfit_sersic_fitter, "less", 1.2 * fwhm_nircam[filt_name])
     # bd_cat = galfit_re_selector(bd_cat, return_copy = True)
 
 

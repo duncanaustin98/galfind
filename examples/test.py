@@ -145,7 +145,7 @@ def test_selection():
     ]
     # import time
     # time.sleep(180 * 60)
-    data = Data.from_survey_version(
+    data = Data.from_survey_version_psfs(
         survey,
         version,
         instrument_names = instrument_names,
@@ -355,7 +355,7 @@ def test_UVLF():
     ]
     test_selection_criteria.extend([
         Sextractor_Bands_Radius_Selector( \
-        band_names = ["F277W", "F356W", "F444W"], \
+        filt_names = ["F277W", "F356W", "F444W"], \
         gtr_or_less = "gtr", lim = 45. * u.marcsec)
     ])
     # xi_ion_calc = Xi_Ion_Calculator(aper_diams[0], EAZY(SED_fit_params_arr[-1]), ext_src_corrs = None)
@@ -372,7 +372,7 @@ def test_UVLF():
         #EPOCHS_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), allow_lowz=False), 
         EPOCHS_Selector(aper_diams[0], EAZY(SED_fit_params_arr[-1]), allow_lowz=True)
     ]:
-        JOF_data = Data.from_survey_version(
+        JOF_data = Data.from_survey_version_psfs(
             survey,
             version,
             instrument_names = instrument_names,
@@ -593,7 +593,7 @@ def split_UVLF_by_beta():
     ]
     test_selection_criteria.extend([
         Sextractor_Bands_Radius_Selector( \
-        band_names = ["F277W", "F356W", "F444W"], \
+        filt_names = ["F277W", "F356W", "F444W"], \
         gtr_or_less = "gtr", lim = 45. * u.marcsec)
     ])
     beta_calc = UV_Beta_Calculator(aper_diams[0], EAZY(SED_fit_params_arr[-1]))
@@ -760,9 +760,9 @@ def test_plotting():
     JOF_cat_new = Ha_emission_band_selector(JOF_cat, return_copy = True)
 
     from galfind import PSF_Cutout, Galfit_Fitter, Custom_Morphology_Property_Extractor
-    band_name = "F444W"
-    filt = Filter.from_filt_name(band_name)
-    psf_path = f"/nvme/scratch/work/westcottl/psf/PSF_Resample_03_{band_name}.fits"
+    filt_name = "F444W"
+    filt = Filter.from_filt_name(filt_name)
+    psf_path = f"/nvme/scratch/work/westcottl/psf/PSF_Resample_03_{filt_name}.fits"
     psf = PSF_Cutout.from_fits(
         fits_path=psf_path,
         filt=filt,
