@@ -6,6 +6,8 @@ name: Python application
 on:
   pull_request:
     branches: ["main"]
+  push:
+    branches: ["main"]
 
 permissions:
   contents: read
@@ -28,13 +30,19 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         WITH_OPENMP=1 pip install .
-        pip install ruff pytest
+        pip install ruff pytest pre-commit
+    - name: Run pre-commit checks
+      run: pre-commit run --all-files
     - name: Test with pytest
       run: |
-        pytest --cov=galfind testing
-    #--cov-report=html
-    # - uses: chartboost/ruff-action@v1  # Lint with Ruff
-    #   with:
-    #     version: 0.6.4
-    #     changed-files: 'true'
-        
+        pytest --cov=galfind --cov-report=xml testing
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        files: ./coverage.xml
+        flags: unittests
+        fail_ci_if_error: false
+    - name: Build API documentation
+      run: |
+        pip install sphinx sphinx-rtd-theme
+        cd docs && make html
