@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import astropy.units as u
 import numpy as np
-from regions import Regions
 from astropy.io import fits
 from tqdm import tqdm
 from astropy.table import Column
@@ -302,6 +301,7 @@ def convert_mask_to_fits(
         # open image corresponding to band
         im_data = self.load_im()[0]
         # open .reg mask file
+        from regions import Regions
         mask_regions = Regions.read(mask_path)
         assert len(mask_regions) > 0, \
             galfind_logger.critical(
@@ -588,6 +588,7 @@ def auto_mask(
                     spike_scale,
                     angle,
                 )
+                from regions import Regions
                 region_obj = Regions.parse(sky_region, format="ds9")
                 diffraction_regions.append(region_obj)
                 stellar_region_strings.append(

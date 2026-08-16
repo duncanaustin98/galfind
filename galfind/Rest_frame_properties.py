@@ -464,7 +464,7 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
                for property in properties_to_nan_check):
             phot_rest.properties[property_name] = np.nan
             if n_chains > 1:
-                phot_rest.property_errs[property_name] = np.nan
+                phot_rest.property_errs[property_name] = (np.nan, np.nan)
                 phot_rest.property_PDFs[property_name] = None
                 phot_rest.property_kwargs[property_name] = {}
         else:
@@ -538,7 +538,7 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
                     if self._fail_criteria(phot_rest):
                         phot_rest.property_PDFs[property_name] = None
                         phot_rest.properties[property_name] = np.nan
-                        phot_rest.property_errs[property_name] = np.nan
+                        phot_rest.property_errs[property_name] = (np.nan, np.nan)
                         phot_rest.property_kwargs[property_name] = {}
                     else: # phot_rest has not failed
                         galfind_logger.debug("Making PDF")
@@ -547,7 +547,7 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
                         if PDF_obj is None:
                             phot_rest.property_PDFs[property_name] = None
                             phot_rest.properties[property_name] = np.nan
-                            phot_rest.property_errs[property_name] = np.nan
+                            phot_rest.property_errs[property_name] = (np.nan, np.nan)
                             phot_rest.property_kwargs[property_name] = {}
                         else:
                             if n_new_chains != n_chains:

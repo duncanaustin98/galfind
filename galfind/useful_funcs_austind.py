@@ -34,6 +34,26 @@ except ImportError:
 
 from . import astropy_cosmo, galfind_logger, config
 
+# Scalar extraction helpers
+
+def to_scalar(val: Union[u.Quantity, float, int]) -> float:
+    """Safely extract a scalar value from a Quantity or plain number.
+
+    Handles both dimensioned quantities (e.g., magnitudes with u.ABmag) and
+    dimensionless quantities (e.g., u.dimensionless_unscaled).
+
+    Parameters
+    ----------
+    val : `astropy.units.Quantity`, `float`, or `int`
+        A quantity with or without units, or a plain number.
+
+    Returns
+    -------
+    `float`
+        The scalar numeric value.
+    """
+    return float(val.value) if hasattr(val, 'value') else float(val)
+
 # fluxes and magnitudes
 
 def convert_wav_units(wavs, units):

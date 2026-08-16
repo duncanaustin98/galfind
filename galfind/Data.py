@@ -65,7 +65,6 @@ from astropy.wcs import WCS
 #from astroquery.gaia import Gaia
 from joblib import Parallel, delayed, parallel_config
 from matplotlib.colors import LogNorm, Normalize
-from regions import Regions
 from tqdm import tqdm
 
 from . import Depths, Masking, SExtractor, Photutils, Filter, Multiple_Filter, config, galfind_logger
