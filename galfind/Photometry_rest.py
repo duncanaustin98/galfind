@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Mon Jul 17 15:04:24 2023
+"""Rest-frame photometry at a given redshift.
 
-@author: austind
+Stores rest-frame flux measurements shifted from observed frame with computed
+rest-frame properties and posterior probability distributions.
 """
 
 from __future__ import annotations
@@ -33,6 +33,36 @@ from .Emission_lines import line_diagnostics, strong_optical_lines
 
 
 class Photometry_rest(Photometry):
+    """Rest-frame photometry for a source at a given redshift.
+
+    Stores flux measurements and uncertainties shifted to rest-frame wavelengths,
+    derived from observed-frame photometry and a source redshift. Includes optional
+    computed rest-frame properties and their posterior distributions.
+
+    Parameters
+    ----------
+    filterset : `Multiple_Filter`
+        Set of rest-frame filters.
+    flux : `astropy.units.Quantity`
+        Rest-frame flux measurements.
+    flux_errs : `astropy.units.Quantity`
+        Rest-frame flux uncertainties.
+    depths : `astropy.units.Quantity`
+        Rest-frame depth/sensitivity measurements.
+    z : `float`
+        Redshift used to shift to rest frame.
+    properties : `dict` or `None`, optional
+        Best-fit rest-frame properties (e.g., absolute magnitude, stellar mass).
+        Default is `None`.
+    property_errs : `dict` or `None`, optional
+        Uncertainties on properties. Default is `None`.
+    property_PDFs : `dict` or `None`, optional
+        Posterior distributions for properties. Default is `None`.
+    property_kwargs : `dict` or `None`, optional
+        Configuration dictionaries for property calculators. Default is `None`.
+    ext_src_corrs : `dict` or `None`, optional
+        Extended source corrections by filter name. Default is `None`.
+    """
     def __init__(
         self: Self,
         filterset: Multiple_Filter,
@@ -43,7 +73,8 @@ class Photometry_rest(Photometry):
         properties: Optional[Dict[str, Union[u.Magnitude, u.Quantity, u.Dex]]] = None,
         property_errs: Optional[Dict[str, Tuple[Union[u.Magnitude, u.Quantity, u.Dex], Union[u.Magnitude, u.Quantity, u.Dex]]]] = None,
         property_PDFs: Optional[Dict[str, Type[PDF]]] = None,
-        property_kwargs: Optional[Dict[str, Dict[str, Union[str, int, float]]]] = None
+        property_kwargs: Optional[Dict[str, Dict[str, Union[str, int, float]]]] = None,
+        ext_src_corrs: Optional[Dict[str, float]] = None,
     ):
         self.z = z
         if properties is None:
@@ -54,10 +85,13 @@ class Photometry_rest(Photometry):
             property_PDFs = {}
         if property_kwargs is None:
             property_kwargs = {}
+        if ext_src_corrs is None:
+            ext_src_corrs = {}
         self.properties = properties
         self.property_errs = property_errs
         self.property_PDFs = property_PDFs
         self.property_kwargs = property_kwargs
+        self.ext_src_corrs = ext_src_corrs
         # unmask if given as mask
         if isinstance(flux, Masked):
             flux = flux.unmasked
@@ -67,7 +101,26 @@ class Photometry_rest(Photometry):
 
     # these class methods need updating!
     @classmethod
-    def from_fits_cat(cls, fits_cat_row, filterset, cat_creator, code):
+    @classmethod
+    def from_fits_cat(cls, fits_cat_row, filterset, cat_creator, code) -> Self:
+        """Create rest-frame photometry from FITS catalogue row.
+
+        Parameters
+        ----------
+        fits_cat_row : `astropy.table.Row`
+            Row from photometry FITS catalogue.
+        filterset : `Multiple_Filter`
+            Filter set for the galaxy.
+        cat_creator : `Catalogue_Creator`
+            Catalogue creator for loading photometry.
+        code : `SED_code`
+            SED code with galaxy property labels.
+
+        Returns
+        -------
+        `Photometry_rest`
+            Rest-frame photometry at the catalogue redshift.
+        """
         phot = Photometry.from_fits_cat(fits_cat_row, filterset, cat_creator)
         # TODO: mask the photometry object
         return cls.from_phot(
@@ -75,27 +128,70 @@ class Photometry_rest(Photometry):
         )
 
     @classmethod
-    def from_phot(cls, phot, z):
-        return cls(phot.filterset, phot.flux, phot.flux_errs, phot.depths, z)
+    def from_phot(cls, phot, z) -> Self:
+        """Create rest-frame photometry from observed photometry and redshift.
+
+        Parameters
+        ----------
+        phot : `Photometry`
+            Observed-frame photometry object.
+        z : `float`
+            Galaxy redshift.
+
+        Returns
+        -------
+        `Photometry_rest`
+            Rest-frame photometry at the specified redshift.
+        """
+        # Propagate extended source corrections if present
+        ext_src_corrs = getattr(phot, 'ext_src_corrs', None)
+        return cls(phot.filterset, phot.flux, phot.flux_errs, phot.depths, z, ext_src_corrs=ext_src_corrs)
 
     @classmethod
-    def from_phot_obs(cls, phot):
+    def from_phot_obs(cls, phot) -> Self:
+        """Create rest-frame photometry from observed-frame photometry object.
+
+        Parameters
+        ----------
+        phot : `Photometry_obs`
+            Observed-frame photometry object.
+
+        Returns
+        -------
+        `Photometry_rest`
+            Rest-frame photometry at the galaxy's redshift.
+        """
+        # Propagate extended source corrections if present
+        ext_src_corrs = getattr(phot, 'ext_src_corrs', None)
         return cls(
             phot.filterset,
             phot.flux,
             phot.flux_errs,
             phot.depths,
             phot.z,
+            ext_src_corrs=ext_src_corrs,
         )
 
+    def __repr__(self: Self) -> str:
+        """Return the official string representation of the Photometry_rest object."""
+        return f"Photometry_rest({self.filterset.instrument_name}, z={self.z:.3f})"
+
     def __str__(self: Self) -> str:
+        """Return a detailed string representation of the rest-frame photometry."""
         output_str = funcs.line_sep
-        output_str += f"PHOTOMETRY_REST: z = {self.z}\n"
+        output_str += f"PHOTOMETRY_REST: {self.filterset.instrument_name} at z={self.z:.3f}\n"
         output_str += funcs.band_sep
-        # don't print the photometry here, only the derived properties
-        #if print_PDFs:
-        #for PDF_obj in self.property_PDFs.values():
-        #    output_str += str(PDF_obj)
+        output_str += f"N FILTERS: {len(self.filterset)}\n"
+        if self.properties:
+            output_str += funcs.band_sep
+            output_str += "PROPERTIES:\n"
+            for key, value in self.properties.items():
+                output_str += f"{key}: {value}\n"
+        if self.ext_src_corrs:
+            output_str += funcs.band_sep
+            output_str += "EXTENDED SOURCE CORRECTIONS:\n"
+            for filt_name, corr in self.ext_src_corrs.items():
+                output_str += f"{filt_name}: {corr:.4f}\n"
         output_str += funcs.line_sep
         return output_str
 
@@ -200,13 +296,41 @@ class Photometry_rest(Photometry):
         ref_wav: u.Quantity,
         ignore_bands: Optional[Union[str, List[str]]] = None,
     ) -> Optional[str]:
+        """Get the first filter redward of a reference wavelength.
+
+        Parameters
+        ----------
+        ref_wav : `astropy.units.Quantity`
+            Reference wavelength.
+        ignore_bands : `str` or `list` of `str`, optional
+            Filter names to exclude from consideration. Default is `None`.
+
+        Returns
+        -------
+        `str` or `None`
+            Name of the first filter redward of the reference, or `None`.
+        """
         return funcs.get_first_redwards_band(self.z, self.filterset, ref_wav, ignore_bands)
-    
+
     def get_first_bluewards_band(
         self: Self,
         ref_wav: u.Quantity,
         ignore_bands: Optional[Union[str, List[str]]] = None,
     ) -> Optional[str]:
+        """Get the first filter blueward of a reference wavelength.
+
+        Parameters
+        ----------
+        ref_wav : `astropy.units.Quantity`
+            Reference wavelength.
+        ignore_bands : `str` or `list` of `str`, optional
+            Filter names to exclude from consideration. Default is `None`.
+
+        Returns
+        -------
+        `str` or `None`
+            Name of the first filter blueward of the reference, or `None`.
+        """
         return funcs.get_first_bluewards_band(self.z, self.filterset, ref_wav, ignore_bands)
 
     def _make_phot_from_scattered_fluxes(
@@ -269,7 +393,19 @@ class Photometry_rest(Photometry):
     #         for i in range(n_scatter)
     #     ]
 
-    def is_correctly_UV_cropped(self, rest_UV_wav_lims):
+    def is_correctly_UV_cropped(self, rest_UV_wav_lims) -> bool:
+        """Check if photometry is correctly UV-cropped to specified wavelength range.
+
+        Parameters
+        ----------
+        rest_UV_wav_lims : `astropy.units.Quantity`
+            UV wavelength limits to check against.
+
+        Returns
+        -------
+        `bool`
+            `True` if photometry is correctly cropped, `False` otherwise.
+        """
         if hasattr(self, "UV_wav_range"):
             if self.UV_wav_range == self.rest_UV_wavs_name(rest_UV_wav_lims):
                 assert (
@@ -279,7 +415,19 @@ class Photometry_rest(Photometry):
                 return True
         return False
 
-    def PL_amplitude_name(self, rest_UV_wav_lims):
+    def PL_amplitude_name(self, rest_UV_wav_lims) -> str:
+        """Generate property name for UV power-law amplitude.
+
+        Parameters
+        ----------
+        rest_UV_wav_lims : `astropy.units.Quantity`
+            UV wavelength limits.
+
+        Returns
+        -------
+        `str`
+            Property name of the form "A_PL_{wavelength_range}".
+        """
         return f"A_PL_{self.rest_UV_wavs_name(rest_UV_wav_lims)}"
 
     def _calc_property(

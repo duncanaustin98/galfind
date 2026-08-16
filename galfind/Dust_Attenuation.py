@@ -1,3 +1,9 @@
+"""Dust attenuation law implementations and utilities.
+
+Provides abstract Dust_Law base class with implementations for different attenuation
+curves (Calzetti, Meurer 1999, etc.) with wavelength-dependent attenuation calculations.
+"""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -17,19 +23,64 @@ from . import config
 
 
 class Dust_Law(ABC):
+    """Abstract base class for a dust attenuation curve, k(lambda).
+
+    Subclasses must implement `k_lambda`, the un-normalized attenuation
+    curve as a function of wavelength. This base class then derives common
+    diagnostic quantities (R(V), UV/optical/near-IR slopes, UV bump
+    strength, power-law index) and provides a generic `attenuate` and
+    `plot` method built on top of `k_lambda`.
+
+    Parameters
+    ----------
+    label : `str`, optional
+        Class label, usually including the author and year the
+        attenuation curve was originally published. Default is `None`.
+
+    Attributes
+    ----------
+    label : `str` or `None`
+        Class label.
+    R_V : `float`
+        Ratio of total to selective extinction, R(V) = A(V) / E(B-V).
+    UV_optical_slope : `float`
+        UV-optical slope of the attenuation curve.
+    UV_slope : `float`
+        UV slope of the attenuation curve.
+    optical_slope : `float`
+        Optical slope of the attenuation curve.
+    near_IR_slope : `float`
+        Near-IR slope of the attenuation curve.
+    UV_bump_strength : `float`
+        Strength of the UV bump at 2175 Angstrom.
+    n : `float`
+        Power-law index of the attenuation curve.
+    """
     def __init__(
         self: Self,
         label: Optional[str] = None
     ) -> NoReturn:
-        """Abstract class to contain the dust attenuation curve and related properties
+        """Initialize a dust attenuation law.
 
-        Args:
-            R_V (float): The ratio of total to selective extinction, R(V) = A(V) / E(B-V)
-            label (str, optional): Class label, usually including the author and year initially published.
+        Parameters
+        ----------
+        label : `str`, optional
+            Class label (usually author and year). Default is `None`.
         """
         self.label = label
 
+    def __repr__(self):
+        """Return the official string representation of the dust attenuation law."""
+        return f"Dust_Attenuation({self.label}, R_V={self.R_V})"
+
     def __str__(self):
+        """Return a formatted string representation of the dust attenuation law.
+
+        Returns
+        -------
+        `str`
+            Multi-line string containing dust law properties and parameters.
+        """
         output_str = funcs.line_sep
         output_str += f"DUST ATTENUATION LAW: {self.__class__.__name__}\n"
         output_str += funcs.band_sep
@@ -173,13 +224,45 @@ class Dust_Law(ABC):
         return n
 
     def plot(self, ax, wavs, label = True, **kwargs):
+        """Plot the attenuation curve k(lambda) against wavelength on a given axis.
+
+        Parameters
+        ----------
+        ax : `matplotlib.axes.Axes`
+            Axis to plot the attenuation curve on.
+        wavs : `astropy.units.Quantity`
+            Wavelength(s) at which to evaluate and plot `k_lambda`.
+        label : `bool`, optional
+            Whether to label the plotted line with `self.label`. Default
+            is `True`.
+        **kwargs : `dict`
+            Additional keyword arguments passed to `ax.plot`.
+        """
         ax.plot(wavs, self.k_lambda(wavs), label = self.label if label else None, **kwargs)
         ax.set_xlabel(r"$\lambda_{\mathrm{rest}} / \AA $")
         ax.set_ylabel(r"$k(\lambda)$")
 
 
 class Calzetti00(Dust_Law):
+    """Calzetti et al. (2000) local starburst galaxy dust attenuation curve.
+
+    Piecewise power-law attenuation curve of Calzetti et al. (2000), with
+    fixed R(V) = 4.05, extrapolated linearly in log-log space outside its
+    defined 0.12-2.2 micron range.
+
+    Attributes
+    ----------
+    label : `str`
+        Class label, fixed to ``"Calzetti+00"``.
+    R_V : `float`
+        Ratio of total to selective extinction, fixed to 4.05.
+    """
+
     def __init__(self):
+        """Initialize a Calzetti+00 dust attenuation curve.
+
+        Sets the label to ``"Calzetti+00"``.
+        """
         #self._n = 0.7
         label = "Calzetti+00"
         super().__init__(label)
@@ -231,9 +314,27 @@ class Calzetti00(Dust_Law):
     
     @property
     def R_V(self):
+        """`float`: Ratio of total to selective extinction, R(V) = A(V) / E(B-V).
+
+        Overrides `Dust_Law.R_V`, fixed to 4.05.
+        """
         return 4.05
 
 class Power_Law_Dust(Dust_Law):
+    """Power-law dust attenuation curve, k(lambda) = R_V * (lambda / 5500 Angstrom)^-n.
+
+    Parameters
+    ----------
+    R_V : `float`
+        Ratio of total to selective extinction, R(V) = A(V) / E(B-V).
+    n : `float`, optional
+        Power-law index of the attenuation curve. Default is 1.0.
+
+    Attributes
+    ----------
+    label : `str`
+        Class label, of the form ``"PL (R_V=<R_V>,n=<n>)"``.
+    """
 
     def __init__(self, R_V: float, n: float = 1.0):
         """Power law dust attenuation curve
@@ -259,9 +360,36 @@ class Power_Law_Dust(Dust_Law):
 
     @property
     def R_V(self):
+        """`float`: Ratio of total to selective extinction, R(V) = A(V) / E(B-V).
+
+        Overrides `Dust_Law.R_V`, returning the fixed value passed at
+        construction.
+        """
         return self._R_V
 
 class Modified_Calzetti00(Dust_Law):
+    """Modified Calzetti et al. (2000) attenuation curve with slope adjustment (Salim et al. 2018).
+
+    Modifies the slope of the underlying `Calzetti00` curve by a power
+    law in wavelength with index `delta`, following Salim et al. (2018).
+
+    Parameters
+    ----------
+    delta : `float`
+        Amount of modification to the slope of the `Calzetti00`
+        attenuation curve. A value of 0.0 recovers the original
+        Calzetti+00 curve.
+
+    Attributes
+    ----------
+    delta : `float`
+        Amount of modification to the slope of the underlying
+        `Calzetti00` curve.
+    calzetti : `Calzetti00`
+        Underlying unmodified Calzetti+00 attenuation curve instance.
+    label : `str`
+        Class label, of the form ``"Modifed Calzetti+00 (delta=<delta>)"``.
+    """
 
     def __init__(self, delta: float):
         """Modified Calzetti+00 attenuation curve from Salim+18
@@ -296,6 +424,15 @@ class Modified_Calzetti00(Dust_Law):
 
 
 class Reddy15(Dust_Law):
+    """Reddy et al. (2015) attenuation curve for z~1.4-2.6 star-forming galaxies.
+
+    Attributes
+    ----------
+    label : `str`
+        Class label, fixed to ``"Reddy+15"``.
+    R_V : `float`
+        Ratio of total to selective extinction, fixed to 2.505.
+    """
 
     def __init__(self):
         """
@@ -306,6 +443,10 @@ class Reddy15(Dust_Law):
 
     @property
     def R_V(self):
+        """`float`: Ratio of total to selective extinction, R(V) = A(V) / E(B-V).
+
+        Overrides `Dust_Law.R_V`, fixed to 2.505.
+        """
         return 2.505
 
     def k_lambda(self, wavs):
@@ -359,6 +500,19 @@ class Reddy15(Dust_Law):
     
 
 class Salim18(Dust_Law):
+    """Salim et al. (2018) attenuation curve with a 2175 Angstrom UV bump.
+
+    Piecewise attenuation curve including a Drude-profile UV bump at
+    2175 Angstrom (see `drude`), with fixed power-law index n = 1.15 and
+    R(V) = 3.15.
+
+    Attributes
+    ----------
+    label : `str`
+        Class label, fixed to ``"Salim+18"``.
+    R_V : `float`
+        Ratio of total to selective extinction, fixed to 3.15.
+    """
 
     def __init__(self):
         """
@@ -370,6 +524,10 @@ class Salim18(Dust_Law):
 
     @property
     def R_V(self):
+        """`float`: Ratio of total to selective extinction, R(V) = A(V) / E(B-V).
+
+        Overrides `Dust_Law.R_V`, fixed to 3.15.
+        """
         return 3.15
     
     def k_lambda(self, wavs):
@@ -431,8 +589,20 @@ class Salim18(Dust_Law):
 
 
 class SMC(Dust_Law):
+    """Small Magellanic Cloud (SMC) bar attenuation curve from Gordon et al. (2003).
+
+    Loads a tabulated A(lambda)/A(V) curve from an HDF5 data file and
+    interpolates it with a cubic spline.
+
+    Attributes
+    ----------
+    label : `str`
+        Class label, fixed to ``"SMC (Gordon+03)"``.
+    R_V : `float`
+        Ratio of total to selective extinction, fixed to 2.74.
+    """
     # Gordon+03
-    
+
     def __init__(self):
         """
             SMC attenuation curve from Gordon+03 - specifically for the SMC bar
@@ -442,6 +612,10 @@ class SMC(Dust_Law):
 
     @property
     def R_V(self):
+        """`float`: Ratio of total to selective extinction, R(V) = A(V) / E(B-V).
+
+        Overrides `Dust_Law.R_V`, fixed to 2.74.
+        """
         return 2.74
     
     def k_lambda(self, wavs):
@@ -468,40 +642,158 @@ class SMC(Dust_Law):
 
 
 class AUV_from_beta(ABC):
+    """Abstract base class converting UV continuum slope, beta, to UV dust attenuation, A(UV).
+
+    Implements the linear relation ``beta = beta_int + slope * A_UV``,
+    i.e. ``A_UV = (beta - beta_int) / slope``, calibrated for a given
+    `dust_law` and reference wavelength. Instances are callable (see
+    `__call__`), taking `beta` and returning the corresponding `A_UV`.
+
+    Parameters
+    ----------
+    beta_int : `float`
+        Intrinsic (dust-free) UV continuum slope.
+    slope : `float`
+        Slope of the linear beta-A(UV) relation.
+    dust_law : `Dust_Law`
+        Dust attenuation law the relation was calibrated for.
+    ref_wav : `astropy.units.Quantity`
+        Reference wavelength the UV slope/attenuation are defined at.
+
+    Attributes
+    ----------
+    beta_int : `float`
+        Intrinsic (dust-free) UV continuum slope.
+    slope : `float`
+        Slope of the linear beta-A(UV) relation.
+    dust_law : `Dust_Law`
+        Dust attenuation law the relation was calibrated for.
+    ref_wav : `astropy.units.Quantity`
+        Reference wavelength the UV slope/attenuation are defined at.
+    """
+
     def __init__(self, beta_int, slope, dust_law, ref_wav):
+        """Initialize a UV continuum slope to dust attenuation converter.
+
+        Parameters
+        ----------
+        beta_int : `float`
+            Intrinsic (dust-free) UV continuum slope.
+        slope : `float`
+            Slope of the linear beta-A(UV) relation.
+        dust_law : `Dust_Law`
+            Dust attenuation law the relation was calibrated for.
+        ref_wav : `astropy.units.Quantity`
+            Reference wavelength the UV slope/attenuation are defined at.
+        """
         self.beta_int = beta_int
         self.slope = slope
         self.dust_law = dust_law
         self.ref_wav = ref_wav
 
     def __call__(self, beta):
+        """Convert a UV continuum slope to UV dust attenuation.
+
+        Parameters
+        ----------
+        beta : `astropy.units.Quantity` or `float`
+            UV continuum slope.
+
+        Returns
+        -------
+        `astropy.units.Quantity`
+            Dust attenuation at the reference wavelength (ABmag).
+        """
         # beta = beta_int + slope * A_UV
         return ((beta - self.beta_int) / self.slope).value * u.ABmag
 
     def change_ref_wav(self, ref_wav):
+        """Change the reference wavelength the beta-A(UV) relation is defined at.
+
+        Parameters
+        ----------
+        ref_wav : `astropy.units.Quantity`
+            New reference wavelength to convert the relation to.
+
+        Raises
+        ------
+        NotImplementedError
+            Always; this method is not yet implemented.
+        """
         if not ref_wav == self.ref_wav:
             pass
         raise NotImplementedError
 
 
 class M99(AUV_from_beta):
+    """Meurer et al. (1999) beta-A(UV) relation, calibrated against `Calzetti00`.
+
+    Fixes ``beta_int = -4.43 / 1.99``, ``slope = 1.0 / 1.99``,
+    `dust_law` to `Calzetti00`, and `ref_wav` to 1600 Angstrom.
+    """
+
     def __init__(self):
+        """Initialize a Meurer et al. (1999) beta-A(UV) relation instance."""
         super().__init__(-4.43 / 1.99, 1.0 / 1.99, Calzetti00(), 1_600.0 * u.AA)
 
 
 class Reddy15_conv(AUV_from_beta):
+    """Reddy et al. (2015) beta-A(UV) relation, calibrated against `Reddy15`.
+
+    Fixes ``beta_int = -4.48 / 1.84``, ``slope = 1.0 / 1.84``,
+    `dust_law` to `Reddy15`, and `ref_wav` to 1600 Angstrom.
+    """
+
     def __init__(self):
+        """Initialize a Reddy et al. (2015) beta-A(UV) relation instance."""
         super().__init__(
             -4.48 / 1.84, 1.0 / 1.84, Reddy15(), 1_600.0 * u.AA
         )
 
 
 class Reddy18(AUV_from_beta):
+    """Reddy et al. (2018) beta-A(UV) relation for a given dust law and stellar population age.
+
+    Selects `beta_int` from a BPASS-age-dependent lookup and `slope`
+    from a `dust_law`-dependent lookup (only defined for `Reddy15`),
+    with `ref_wav` fixed to 1600 Angstrom.
+
+    Parameters
+    ----------
+    dust_law : `Dust_Law`, optional
+        Dust attenuation law the relation is calibrated for. Must be an
+        instance of `SMC`, `Calzetti00` or `Reddy15`. Default is
+        `Reddy15`.
+    BPASS_age : `astropy.units.Quantity`, optional
+        BPASS stellar population age used to select `beta_int`. Must be
+        100 or 300 `astropy.units.Myr`. Default is 100
+        `astropy.units.Myr`.
+
+    Raises
+    ------
+    AssertionError
+        If `dust_law` is not an instance of `SMC`, `Calzetti00` or
+        `Reddy15`, or if `BPASS_age` is not 100 or 300 Myr.
+    KeyError
+        If `slope` has no entry for `dust_law`'s class name (only
+        `Reddy15` is currently supported).
+    """
+
     def __init__(
-        self: Self, 
-        dust_law: Type[Dust_Law] = Reddy15(), 
+        self: Self,
+        dust_law: Type[Dust_Law] = Reddy15(),
         BPASS_age: u.Quantity = 100 * u.Myr
     ) -> NoReturn:
+        """Initialize a Reddy et al. (2018) beta-A(UV) relation instance.
+
+        Parameters
+        ----------
+        dust_law : `Dust_Law`, optional
+            Dust attenuation law. Must be `SMC`, `Calzetti00` or `Reddy15`.
+            Default is `Reddy15`.
+        BPASS_age : `astropy.units.Quantity`, optional
+            BPASS stellar population age (100 or 300 Myr). Default is 100 Myr.
+        """
         assert dust_law.__class__.__name__ in ["SMC", "Calzetti00", "Reddy15"]
         assert BPASS_age in [100 * u.Myr, 300 * u.Myr]
         beta_int = {100 * u.Myr: -2.520, 300 * u.Myr: -2.616}

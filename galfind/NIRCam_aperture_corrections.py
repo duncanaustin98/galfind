@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Thu Dec  1 12:47:06 2022
+"""NIRCam aperture correction calculation from PSF models.
 
-@author: u92876da
+Computes aperture corrections from PSF models and measured flux profiles
+for photometric calibration and aperture-dependent corrections.
 """
 
 # calc_aper_corr.py
@@ -23,8 +23,23 @@ from scipy import optimize
 from . import config
 
 
-def log_transform(im):  # function to transform fits image to log scaling
-    """returns log(image) scaled to the interval [0,1]"""
+def log_transform(im):
+    """Apply logarithmic scaling to an image for improved visualization.
+
+    Scales image values to the interval ``[0, 1]`` using the logarithm,
+    with fallback to the original image if the transformation fails.
+
+    Parameters
+    ----------
+    im : `numpy.ndarray`
+        Input image array.
+
+    Returns
+    -------
+    `numpy.ndarray`
+        Image scaled to ``[0, 1]`` in log space, or the original image if
+        transformation fails or values are invalid.
+    """
     try:
         (min, max) = (im[im > 0].min(), im.max())
         if (max > min) and (max > 0):
@@ -41,6 +56,34 @@ def open_PSF_model(
     PSF_loc=config["DEFAULT"]["PSF_DIR"],
     PSF_name=["PSF_", "cen_G5V_fov299px_ISIM41"],
 ):
+    """Load a PSF model FITS image and its pixel scale.
+
+    Parameters
+    ----------
+    band : `str`
+        Band name, used to construct the PSF filename (lowercase ``"f"``
+        is converted to uppercase ``"F"``).
+    PSF_loc : `str`, optional
+        Directory containing the PSF FITS file. Default is
+        ``config["DEFAULT"]["PSF_DIR"]``.
+    PSF_name : `str`, optional
+        Name of the PSF FITS file (without the ``.fits`` extension),
+        appended to `PSF_loc`. Default is
+        ``["PSF_", "cen_G5V_fov299px_ISIM41"]``.
+
+    Returns
+    -------
+    `tuple`
+        ``(PSFdata, pixel_scale)``: the PSF image data (byte-swapped to
+        native order for use with SExtractor/`sep`) and the pixel scale
+        (`astropy.units.Quantity` in arcsec) read from the ``PIXELSCL``
+        FITS header keyword.
+
+    Raises
+    ------
+    Exception
+        If the FITS header does not contain a ``PIXELSCL`` keyword.
+    """
     # load PSF .fits image
     band = band.replace("f", "F")
     PSF_path = PSF_loc + "/" + PSF_name
@@ -76,6 +119,53 @@ def calc_aper_corr(
     print_output=True,
     tot_aper_size=None,
 ):
+    """Compute the aperture correction for a PSF model at a given aperture diameter.
+
+    Measures the flux within a circular aperture of diameter `aper_diam`
+    centred at ``(x_cen, y_cen)``, divides it by the flux within a larger
+    circular aperture of diameter `tot_aper_size` (assumed to approximate
+    the total flux), and converts the resulting flux fraction into a
+    magnitude-space aperture correction.
+
+    Parameters
+    ----------
+    PSFdata : `NDArray`
+        2D PSF model image data (in pixels).
+    x_cen : `float`
+        x pixel coordinate of the PSF centre.
+    y_cen : `float`
+        y pixel coordinate of the PSF centre.
+    band : `str`
+        Band name, used for plot labelling only.
+    aper_diam : `float`
+        Aperture diameter, in pixels.
+    extract_code : `str`, optional
+        Which photometry code to use to measure the aperture flux, either
+        ``"sep"`` or ``"photutils"``. Default is ``"sep"``.
+    plot_PSF : `bool`, optional
+        Whether to plot the PSF image with the aperture and total-flux
+        aperture overlaid. Default is `True`.
+    PSF_loc : `str`, optional
+        Unused directly here; present for interface compatibility.
+        Default is ``config["DEFAULT"]["PSF_DIR"]``.
+    PSF_name : `str`, optional
+        Unused directly here; present for interface compatibility.
+        Default is ``["PSF_", "cen_G5V_fov299px_ISIM41"]``.
+    print_output : `bool`, optional
+        Whether to print the computed flux percentage and aperture
+        correction. Default is `True`.
+    tot_aper_size : `float`, optional
+        Diameter, in pixels, of the aperture used to approximate the total
+        PSF flux. Default is `None`.
+
+    Returns
+    -------
+    `tuple`
+        ``(flux_pc, aper_corr, x_cen, y_cen)``: the fraction of total flux
+        contained within `aper_diam`, the corresponding aperture
+        correction in magnitudes (``-2.5 * log10(flux_pc)``), and the
+        (unmodified) input centre coordinates.
+    """
     # calculate flux in the aperture
     if extract_code == "sep":
         flux_aper, fluxerr_aper, flag_aper = sep.sum_circle(
@@ -134,6 +224,36 @@ def plot_flux_curve(
     tot_aper_size=None,
     aper_diams=[],
 ):
+    """Plot encircled energy curve with NIRCam aperture corrections.
+
+    Similar to plot_flux_curve in calc_aper_corr.py but configured for
+    NIRCam PSF models and save locations.
+
+    Parameters
+    ----------
+    PSFdata : `numpy.ndarray`
+        2D PSF image.
+    pixel_scale : `astropy.units.Quantity`
+        Pixel scale (arcsec/pixel).
+    x_cen, y_cen : `float`
+        PSF center (pixels).
+    band : `str`
+        Filter name.
+    flux_pcs : `array-like`
+        Flux fractions in apertures.
+    aper_corrs : `array-like`
+        Aperture corrections (mag).
+    PSF_loc : `str`, optional
+        PSF directory.
+    PSF_name : `list`, optional
+        PSF name components.
+    save_loc : `str`, optional
+        Output directory.
+    tot_aper_size : `float` or `None`, optional
+        Total aperture size (pixels).
+    aper_diams : `list`, optional
+        Aperture diameters to mark.
+    """
     mpl.rcParams.update(mpl.rcParamsDefault)
     rlist = (
         np.arange(0, tot_aper_size * pixel_scale.value / 2, 0.01) / pixel_scale
@@ -201,7 +321,45 @@ def plot_additional_flux_curve(band):
 
 
 def fit_2d_moffatt(PSFdata, maxfev=10000):
+    """Fit 2D Moffat profile to NIRCam PSF data.
+
+    Fits an analytic 2D Moffat function to a NIRCam PSF image.
+
+    Parameters
+    ----------
+    PSFdata : `numpy.ndarray`
+        2D PSF image to fit.
+    maxfev : `int`, optional
+        Maximum function evaluations. Default is 10,000.
+
+    Returns
+    -------
+    `tuple`
+        Fitted parameters (A, a, b, xcen, ycen) and covariance.
+    """
     def moffatcurve(xdata_tuple, A, a, b, xcen, ycen):
+        """2D Moffat function for curve fitting.
+
+        Parameters
+        ----------
+        xdata_tuple : `tuple` of `numpy.ndarray`
+            (x, y) coordinate arrays.
+        A : `float`
+            Amplitude parameter.
+        a : `float`
+            Scale parameter.
+        b : `float`
+            Power-law index parameter.
+        xcen : `float`
+            Center x coordinate.
+        ycen : `float`
+            Center y coordinate.
+
+        Returns
+        -------
+        `numpy.ndarray`
+            Flattened Moffat profile.
+        """
         (x, y) = xdata_tuple
         d = -b
         g = A * (1 + (((x - xcen) ** 2 + (y - ycen) ** 2) / a**2)) ** d
@@ -235,6 +393,36 @@ def main(
     * u.arcsec,
     instrument_name="NIRCam",
 ):
+    """Compute and plot NIRCam aperture corrections from PSF models.
+
+    Loads PSF models for each band, fits a 2D Moffat profile to find the
+    center, measures the flux within specified apertures, computes aperture
+    corrections, and generates an encircled energy plot. Results are saved
+    to disk.
+
+    Parameters
+    ----------
+    in_bands : `list`
+        Filter band names to process.
+    extract_code : `str`, optional
+        Photometry code to use, either ``"sep"`` or ``"photutils"``.
+        Default is ``"sep"``.
+    save_loc : `str`, optional
+        Output directory for results. Default is
+        ``config['DEFAULT']['GALFIND_WORK']/Aperture_corrections``.
+    PSF_loc : `str`, optional
+        Directory containing PSF FITS files. Default is
+        ``config["DEFAULT"]["PSF_DIR"]``.
+    PSF_name : `str`, optional
+        PSF filename prefix. Default is ``"PSF_MIRI_in_flight_opd_filter_"``.
+    plot_PSF : `bool`, optional
+        Whether to display PSF plots during processing. Default is `True`.
+    aper_diams : `astropy.units.Quantity`, optional
+        Aperture diameters to compute corrections for. Default is loaded from
+        config ``SExtractor.APERTURE_DIAMS``.
+    instrument_name : `str`, optional
+        Instrument name used in output filename. Default is ``"NIRCam"``.
+    """
     print("extract code =", extract_code)
     print_line = [
         ["# aper_diam / arcsec"]

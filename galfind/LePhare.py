@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Tue Jun  6 14:44:23 2023
+"""Wrapper around LePhare photo-z and SED-fitting tool.
 
-@author: austind
+Manages LePhare filter/binary/template libraries, input catalogue construction,
+and result parsing from .out and .spec output files.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from numpy.typing import NDArray
 from astropy.table import Table
 from typing import Any, Dict, List, Union, NoReturn, Optional, TYPE_CHECKING, Tuple
 if TYPE_CHECKING:
-    from . import Catalogue, Filter, Multiple_Filter, PDF, SED_obs
+    from . import Galaxy, Catalogue, Spectral_Catalogue, Filter, Multiple_Filter, PDF, SED_obs
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -32,6 +32,49 @@ from . import useful_funcs_austind as funcs
 from .decorators import run_in_dir
 
 class LePhare(SED_code):
+    """`SED_code` wrapper around the external LePhare photo-z / SED-fitting tool.
+
+    Handles construction of LePhare ``.in`` input catalogues, compilation of
+    LePhare filter, binary and template libraries, running the LePhare
+    fitting executable, and parsing the resulting ``.out``/``.spec`` files
+    back into GALFIND-native `SED_obs` and `Redshift_PDF` objects.
+
+    Parameters
+    ----------
+    SED_fit_params : `dict`
+        Dictionary of SED fitting parameters/options for this run. Must
+        contain (or will be populated with defaults for) the keys required
+        by LePhare, including ``"GAL_TEMPLATES"``. Passed on to
+        `SED_code.__init__`.
+    filterset : `Multiple_Filter`, optional
+        Set of filters the fit will be performed with. Used to compile
+        LePhare filter/template libraries and to build input catalogues.
+        Default is `None`.
+    gal_lib_name : `str`, optional
+        Name of the pre-compiled galaxy template library to use, overriding
+        the name that would otherwise be derived from `SED_fit_params` and
+        `filterset`. Default is `None`.
+    star_lib_name : `str`, optional
+        Name of the pre-compiled stellar template library to use, overriding
+        the derived name. Default is `None`.
+    qso_lib_name : `str`, optional
+        Name of the pre-compiled QSO template library to use, overriding the
+        derived name. Default is `None`.
+
+    Attributes
+    ----------
+    filterset : `Multiple_Filter` or `None`
+        Filters associated with this fitting run.
+    gal_lib_name : `str` or `None`
+        Galaxy template library name override, if given.
+    star_lib_name : `str` or `None`
+        Stellar template library name override, if given.
+    qso_lib_name : `str` or `None`
+        QSO template library name override, if given.
+    SED_fit_params : `dict`
+        SED fitting parameters/options, set by `SED_code.__init__`.
+    """
+
     ID_label = "IDENT"
     ext_src_corr_properties = ["MASS_BEST", "SFR_BEST"]
 
@@ -56,32 +99,64 @@ class LePhare(SED_code):
 
     @classmethod
     def from_label(cls, label: str):
+        """Construct a `LePhare` instance from a saved catalogue label.
+
+        Parameters
+        ----------
+        label : `str`
+            Label string identifying a previous LePhare fitting run.
+
+        Raises
+        ------
+        NotImplementedError
+            Always; this method is not yet implemented for `LePhare`.
+        """
         raise NotImplementedError
         #return super().from_label(label)
 
     # @property
     # def ID_label(self) -> str:
     #     return "IDENT"
-    
+
     @property
     def label(self) -> str:
+        """`str`: Unique label for this fitting run, implementing the `SED_code.label` interface.
+
+        Combines the class name with the galaxy template set name.
+        """
         # TODO: Full name should probably be different to this, depending on template set used
         return f"{self.__class__.__name__}_{self.SED_fit_params['GAL_TEMPLATES']}"
-    
+
     @property
     def hdu_name(self) -> str:
+        """`str`: Name of the FITS HDU/extension this code's output is stored under.
+
+        Implements the `SED_code.hdu_name` interface.
+        """
         return f"{self.__class__.__name__}_{self.SED_fit_params['GAL_TEMPLATES']}"
-    
+
     @property
     def tab_suffix(self) -> str:
+        """`str`: Column-name suffix used to distinguish this run's output columns.
+
+        Implements the `SED_code.tab_suffix` interface.
+        """
         return f"{self.SED_fit_params['GAL_TEMPLATES']}"
-    
+
     @property
     def required_SED_fit_params(self) -> List[str]:
+        """`list` of `str`: Names of the `SED_fit_params` keys required by `LePhare`.
+
+        Implements the `SED_code.required_SED_fit_params` interface.
+        """
         return ["GAL_TEMPLATES"]
-    
+
     @property
     def are_errs_percentiles(self) -> bool:
+        """`bool`: Whether output property errors are stored as percentiles rather than 1-sigma values.
+
+        Implements the `SED_code.are_errs_percentiles` interface.
+        """
         # TODO: Check this is correct!
         return False
     
@@ -89,7 +164,7 @@ class LePhare(SED_code):
         self: Self,
         *args,
         **kwargs,
-    ):
+    ) -> Union[Galaxy, Catalogue, Spectral_Catalogue]:
         #self.compile()
         return super().__call__(*args, **kwargs)
 
@@ -174,13 +249,67 @@ class LePhare(SED_code):
 
         return super()._assert_SED_fit_params()
 
-    def make_in(
-        self,
-        cat: Catalogue, 
+    def pre_fitting(
+        self: Type[Self],
+        cat: Catalogue,
         aper_diam: u.Quantity,
         overwrite: bool = False,
+        save_name: Optional[str] = None,
+    ) -> None:
+        """Perform any pre-fitting setup required before running LePhare.
+
+        Implements the `SED_code.pre_fitting` interface. Currently a no-op
+        for `LePhare`.
+
+        Parameters
+        ----------
+        cat : `Catalogue`
+            Catalogue of galaxies about to be fitted.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter of the photometry to be fitted.
+        overwrite : `bool`, optional
+            Whether to overwrite any existing pre-fitting products. Default
+            is `False`.
+        save_name : `str`, optional
+            Optional custom name used when saving pre-fitting products.
+            Default is `None`.
+        """
+        pass
+
+    def make_in(
+        self,
+        cat: Catalogue,
+        aper_diam: u.Quantity,
+        overwrite: bool = False,
+        save_name: Optional[str] = None,
     ) -> str:
-        in_path = self.get_in_path(cat, aper_diam)
+        """Build the LePhare ``.in`` input photometric catalogue.
+
+        Implements the `SED_code.make_in` interface. Loads photometry for
+        each galaxy in `cat`, computes the LePhare filter "context" for each
+        object, and writes an ASCII catalogue of ID, flux/flux-error pairs
+        per filter, context and redshift, in the format LePhare expects.
+
+        Parameters
+        ----------
+        cat : `Catalogue`
+            Catalogue of galaxies to build the input file for.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter of the photometry to extract.
+        overwrite : `bool`, optional
+            Whether to remake the input file if one already exists. Default
+            is `False`.
+        save_name : `str`, optional
+            Optional custom name to append when constructing the input file
+            path. Default is `None`.
+
+        Returns
+        -------
+        `str`
+            Path to the (possibly newly written) LePhare ``.in`` input
+            catalogue.
+        """
+        in_path = self.get_in_path(cat, aper_diam, save_name = save_name)
         if not Path(in_path).is_file() or overwrite:
             # 1) obtain input data
             IDs = np.array([gal.ID for gal in cat.gals])
@@ -251,6 +380,27 @@ class LePhare(SED_code):
         types: List[str] = ["STAR", "QSO", "GAL"],
         template_save_suffix: str = ""
     ) -> None:
+        """Compile the LePhare filter, binary and template libraries.
+
+        Compiles the filter response curves for `self.filterset`, then for
+        each requested source type compiles the corresponding SED binary
+        library and magnitude/template library.
+
+        Parameters
+        ----------
+        types : `list` of `str`, optional
+            Source types to compile libraries for. Each element must be one
+            of ``"STAR"``, ``"QSO"``, ``"GAL"``. Default is
+            ``["STAR", "QSO", "GAL"]``.
+        template_save_suffix : `str`, optional
+            Suffix appended to the saved template library names. Default is
+            ``""``.
+
+        Raises
+        ------
+        ValueError
+            If `self.filterset` is `None`.
+        """
         if self.filterset is None:
             err_message = f"{repr(self)}.filterset is None, " + \
                 "cannot compile without filterset!"
@@ -491,16 +641,51 @@ class LePhare(SED_code):
         save_PDFs: bool = True,
         overwrite: bool = False,
         update: bool = False,
+        save_name: Optional[str] = None,
         **kwargs: Dict[str, Any],
     ) -> None:
+        """Run the LePhare fitting executable on a catalogue's input file.
 
-        fits_out_path = self.get_fits_out_path(cat, aper_diam)
+        Implements the `SED_code.fit` interface. Determines the required
+        input/output paths and template library names, asserts that the
+        compiled filtersets match `self.filterset`, then launches the
+        ``run_lephare.sh`` wrapper script as a subprocess and waits for it
+        to complete. Skips fitting if the FITS output already exists and
+        `overwrite` is `False`.
+
+        Parameters
+        ----------
+        cat : `Catalogue`
+            Catalogue of galaxies to fit.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter of the photometry being fitted.
+        save_SEDs : `bool`, optional
+            Currently unused within this method body; kept for interface
+            compatibility. Default is `True`.
+        save_PDFs : `bool`, optional
+            Currently unused within this method body; kept for interface
+            compatibility. Default is `True`.
+        overwrite : `bool`, optional
+            Whether to re-run the fit even if the output FITS file already
+            exists. Default is `False`.
+        update : `bool`, optional
+            Currently unused within this method body; kept for interface
+            compatibility. Default is `False`.
+        save_name : `str`, optional
+            Optional custom name used when constructing input/output paths.
+            Default is `None`.
+        **kwargs : `dict`
+            Additional keyword arguments. If ``"save_suffix"`` is given, it
+            is appended to the compiled template library names used for
+            this fit.
+        """
+        fits_out_path = self.get_fits_out_path(cat, aper_diam, save_name = save_name)
 
         if not Path(fits_out_path).is_file() or overwrite:
             galfind_logger.info(f"Fitting {repr(cat)} with {repr(self)}")
 
-            in_path = self.get_in_path(cat, aper_diam)
-            out_path = self.get_out_path(cat, aper_diam)
+            in_path = self.get_in_path(cat, aper_diam, save_name = save_name)
+            out_path = self.get_out_path(cat, aper_diam, save_name = save_name)
             lephare_config_path = f"{config['LePhare']['LEPHARE_CONFIG_DIR']}/default.para"
 
             if "save_suffix" in kwargs.keys():
@@ -589,6 +774,28 @@ class LePhare(SED_code):
         
 
     def SED_fit_params_from_label(self, label):
+        """Parse a catalogue column-suffix label back into SED fit parameters.
+
+        Parameters
+        ----------
+        label : `str`
+            Label of the form ``"<code>_<templates>"`` as produced by
+            `LePhare` output columns.
+
+        Returns
+        -------
+        `dict`
+            Dictionary with keys ``"code"`` (this `LePhare` instance) and
+            ``"templates"`` (the galaxy template set name parsed from
+            `label`).
+
+        Raises
+        ------
+        AssertionError
+            If `label` does not split into exactly two ``"_"``-separated
+            parts, or if the parsed template name is not in
+            `self.available_templates`.
+        """
         label_arr = label.split("_")
         assert len(label_arr) == 2
         assert label_arr[1] in self.available_templates
@@ -600,6 +807,29 @@ class LePhare(SED_code):
         *args: Any,
         **kwargs: Dict[str, Any],
     ) -> None:
+        """Convert a raw LePhare ``.out`` ASCII table into a FITS binary table.
+
+        Implements the `SED_code.make_fits_from_out` interface. Parses the
+        commented header of the ``.out`` file to recover output column
+        names, then writes the numerical data to a FITS binary table at the
+        path derived by `fits_out_path_from_out_path`.
+
+        Parameters
+        ----------
+        out_path : `str`
+            Path to the LePhare ``.out`` output catalogue.
+        *args : `tuple`
+            Additional positional arguments forwarded to
+            `fits_out_path_from_out_path`.
+        **kwargs : `dict`
+            Additional keyword arguments forwarded to
+            `fits_out_path_from_out_path`.
+
+        Returns
+        -------
+        `str`
+            Path to the newly written FITS output catalogue.
+        """
         fits_out_path = self.fits_out_path_from_out_path(out_path, *args, **kwargs)
 
         # read in the data from the .out table
@@ -651,17 +881,58 @@ class LePhare(SED_code):
         self: Self,
         cat: Catalogue,
         aper_diam: u.Quantity,
+        save_name: Optional[str] = None,
     ) -> str:
+        """Construct the path to the LePhare ``.in`` input catalogue for a catalogue.
+
+        Parameters
+        ----------
+        cat : `Catalogue`
+            Catalogue the input file corresponds to.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter of the photometry.
+        save_name : `str`, optional
+            Optional custom suffix to append to the file name. Default is
+            `None`.
+
+        Returns
+        -------
+        `str`
+            Full path to the ``.in`` input catalogue.
+        """
+        if save_name is None:
+            save_name = ""
+        else:
+            save_name = f"_{save_name}"
         in_dir = f"{config['LePhare']['LEPHARE_DIR']}/input/{cat.filterset.instrument_name}/{cat.version}/{cat.survey}"
-        in_name = cat.cat_name.replace('.fits', f"_{aper_diam.to(u.arcsec).value:.2f}as.in")
+        in_name = cat.cat_name.replace('.fits', f"_{aper_diam.to(u.arcsec).value:.2f}as{save_name}.in")
         return f"{in_dir}/{in_name}"
 
     def get_out_path(
         self: Self,
         cat: Catalogue,
         aper_diam: u.Quantity,
+        save_name: Optional[str] = None,
     ) -> str:
-        in_path = self.get_in_path(cat, aper_diam)
+        """Construct the path to the LePhare ``.out`` output catalogue for a catalogue.
+
+        Parameters
+        ----------
+        cat : `Catalogue`
+            Catalogue the output file corresponds to.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter of the photometry.
+        save_name : `str`, optional
+            Optional custom suffix used when deriving the input file name.
+            Default is `None`.
+
+        Returns
+        -------
+        `str`
+            Full path to the ``.out`` output catalogue, derived from the
+            corresponding ``.in`` input path.
+        """
+        in_path = self.get_in_path(cat, aper_diam, save_name = save_name)
         out_folder = funcs.split_dir_name(
             in_path.replace("input", "output"), "dir"
         )
@@ -674,6 +945,25 @@ class LePhare(SED_code):
         *args: Any,
         **kwargs: Dict[str, Any],
     ) -> str:
+        """Derive the FITS output catalogue path from a ``.out`` file path.
+
+        Parameters
+        ----------
+        out_path : `str`
+            Path to the LePhare ``.out`` output catalogue.
+        *args : `tuple`
+            Unused; accepted for interface compatibility.
+        **kwargs : `dict`
+            Unused; accepted for interface compatibility.
+
+        Returns
+        -------
+        `str`
+            Path with the ``.out`` extension replaced by
+            ``_LePhare_<templates>.fits``, where ``<templates>`` is
+            `self.gal_lib_name` if set, else the ``"GAL_TEMPLATES"``
+            SED fit parameter.
+        """
         if getattr(self, "gal_lib_name", None) is not None:
             suffix = self.gal_lib_name
         else:
@@ -687,9 +977,27 @@ class LePhare(SED_code):
         self: Self,
         cat: Catalogue,
         aper_diam: u.Quantity,
+        save_name: Optional[str] = None,
     ) -> str:
+        """Construct the path to the FITS output catalogue for a catalogue.
+
+        Parameters
+        ----------
+        cat : `Catalogue`
+            Catalogue the output file corresponds to.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter of the photometry.
+        save_name : `str`, optional
+            Optional custom suffix used when deriving the ``.out`` path.
+            Default is `None`.
+
+        Returns
+        -------
+        `str`
+            Full path to the FITS output catalogue.
+        """
         return self.fits_out_path_from_out_path(
-            self.get_out_path(cat, aper_diam)
+            self.get_out_path(cat, aper_diam, save_name = save_name)
         )
 
     @staticmethod
@@ -697,6 +1005,21 @@ class LePhare(SED_code):
         fits_out_path: str,
         ID: int,
     ) -> str:
+        """Construct the path to a single galaxy's LePhare ``.spec`` SED/PDF file.
+
+        Parameters
+        ----------
+        fits_out_path : `str`
+            Path to the FITS output catalogue for the parent run.
+        ID : `int`
+            Galaxy ID.
+
+        Returns
+        -------
+        `str`
+            Path to the zero-padded ``Id<ID>.spec`` file within the run's
+            ``_SEDs`` subdirectory.
+        """
         return fits_out_path.replace(
             ".fits",
             f"_SEDs/Id{'0' * (9 - len(str(ID))) + str(ID)}.spec"
@@ -706,8 +1029,28 @@ class LePhare(SED_code):
         self: Self,
         cat: Catalogue,
         aper_diam: u.Quantity,
+        save_name: Optional[str] = None,
     ) -> Dict[str, List[str]]:
-        fits_out_path = self.get_fits_out_path(cat, aper_diam)
+        """Get the paths to each galaxy's redshift PDF file.
+
+        Parameters
+        ----------
+        cat : `Catalogue`
+            Catalogue of galaxies to get PDF paths for.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter of the photometry.
+        save_name : `str`, optional
+            Optional custom suffix used when deriving the FITS output path.
+            Default is `None`.
+
+        Returns
+        -------
+        `dict`
+            Dictionary with a single key ``"z"`` mapping to the list of
+            ``.spec`` file paths (one per galaxy in `cat`), since redshift
+            is the only property LePhare stores a PDF for.
+        """
+        fits_out_path = self.get_fits_out_path(cat, aper_diam, save_name = save_name)
         PDF_paths = {
             "z": [
                 self.get_spec_path(fits_out_path, gal.ID)
@@ -715,25 +1058,44 @@ class LePhare(SED_code):
             ]
         }
         return PDF_paths
-    
+
     def get_SED_paths(
         self: Self,
         cat: Catalogue,
-        aper_diam: u.Quantity
+        aper_diam: u.Quantity,
+        save_name: Optional[str] = None,
     ) -> Dict[str, List[str]]:
-        fits_out_path = self.get_fits_out_path(cat, aper_diam)
+        """Get the paths to each galaxy's best-fit SED (``.spec``) file.
+
+        Parameters
+        ----------
+        cat : `Catalogue`
+            Catalogue of galaxies to get SED paths for.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter of the photometry.
+        save_name : `str`, optional
+            Optional custom suffix used when deriving the FITS output path.
+            Default is `None`.
+
+        Returns
+        -------
+        `list` of `str`
+            List of ``.spec`` file paths, one per galaxy in `cat`.
+        """
+        fits_out_path = self.get_fits_out_path(cat, aper_diam, save_name = save_name)
         return [self.get_spec_path(fits_out_path, gal.ID) for gal in cat]
 
     def _get_out_paths(
         self: Self, 
         cat: Catalogue, 
-        aper_diam: u.Quantity
+        aper_diam: u.Quantity,
+        save_name: Optional[str] = None,
     ) -> Tuple[str, str, str, Dict[str, List[str]], List[str]]:
-        in_path = self.get_in_path(cat, aper_diam)
-        out_path = self.get_out_path(cat, aper_diam)
-        fits_out_path = self.get_fits_out_path(cat, aper_diam)
-        PDF_paths = self.get_PDF_paths(cat, aper_diam)
-        SED_paths = self.get_SED_paths(cat, aper_diam)
+        in_path = self.get_in_path(cat, aper_diam, save_name = save_name)
+        out_path = self.get_out_path(cat, aper_diam, save_name = save_name)
+        fits_out_path = self.get_fits_out_path(cat, aper_diam, save_name = save_name)
+        PDF_paths = self.get_PDF_paths(cat, aper_diam, save_name = save_name)
+        SED_paths = self.get_SED_paths(cat, aper_diam, save_name = save_name)
         return in_path, out_path, fits_out_path, PDF_paths, SED_paths
 
     def get_lib_name(
@@ -742,6 +1104,31 @@ class LePhare(SED_code):
         type: str,
         save_suffix: str = "",
     ) -> str:
+        """Get the name of the compiled template library for a given source type.
+
+        Returns the corresponding ``*_lib_name`` instance attribute if it
+        has been set explicitly, otherwise derives the name from the
+        filterset and `SED_fit_params`.
+
+        Parameters
+        ----------
+        type : `str`
+            Source type; one of ``"STAR"``, ``"QSO"``, ``"GAL"``.
+        save_suffix : `str`, optional
+            Suffix appended to the derived library name. Ignored if the
+            corresponding ``*_lib_name`` attribute is already set. Default
+            is ``""``.
+
+        Returns
+        -------
+        `str`
+            Name of the compiled template library for `type`.
+
+        Raises
+        ------
+        AssertionError
+            If `type` is not one of ``"STAR"``, ``"QSO"``, ``"GAL"``.
+        """
         assert type in ["STAR", "QSO", "GAL"], \
             galfind_logger.critical(
                 f"{type=} not in ['STAR', 'QSO', 'GAL']"
@@ -767,6 +1154,33 @@ class LePhare(SED_code):
         *args,
         **kwargs,
     ) -> List[SED_obs]:
+        """Extract best-fit SEDs from LePhare ``.spec`` output files.
+
+        Implements the `SED_code.extract_SEDs` interface.
+
+        Parameters
+        ----------
+        IDs : `list` of `int`
+            Galaxy IDs to extract SEDs for.
+        SED_paths : `str` or `list` of `str`
+            Path(s) to the ``.spec`` file(s) containing each galaxy's
+            best-fit SED, as returned by `get_SED_paths`.
+        *args : `tuple`
+            Unused; accepted for interface compatibility.
+        **kwargs : `dict`
+            Unused; accepted for interface compatibility.
+
+        Returns
+        -------
+        `list` of `SED_obs`
+            Best-fit galaxy SED for each requested ID, in the same order as
+            `IDs`.
+
+        Raises
+        ------
+        AssertionError
+            If `IDs` and `SED_paths` have different lengths.
+        """
         # TODO: Generalize. Currently a near-carbon copy of EAZY method
 
         # ensure this works if only extracting 1 galaxy
@@ -860,8 +1274,37 @@ class LePhare(SED_code):
         self: Self, 
         gal_property: str, 
         IDs: List[int], 
-        PDF_paths: Union[str, List[str]], 
+        PDF_paths: Union[str, List[str]],
     ) -> List[Redshift_PDF]:
+        """Extract posterior PDFs for a galaxy property from LePhare output files.
+
+        Implements the `SED_code.extract_PDFs` interface. LePhare only
+        stores a PDF for redshift, so requesting any other property returns
+        an array of `None`.
+
+        Parameters
+        ----------
+        gal_property : `str`
+            Name of the galaxy property to extract PDFs for. Only ``"z"``
+            yields non-`None` PDFs.
+        IDs : `list` of `int`
+            Galaxy IDs to extract PDFs for.
+        PDF_paths : `str` or `list` of `str`
+            Path(s) to the ``.spec`` file(s) containing each galaxy's
+            redshift PDF, as returned by `get_PDF_paths`.
+
+        Returns
+        -------
+        `list`
+            List of `Redshift_PDF` objects (one per ID) if `gal_property`
+            is ``"z"``, otherwise a list of `None` of the same length.
+
+        Raises
+        ------
+        AssertionError
+            If `PDF_paths` or `IDs` is not a `list`/`numpy.ndarray`, or if
+            they differ in length, when `gal_property` is ``"z"``.
+        """
         # TODO: Generalize. Again the majority is carbon copy of eazy method
 
         # ensure this works if only extracting 1 galaxy
@@ -941,6 +1384,27 @@ class LePhare(SED_code):
         PDF_paths: Union[List[str], List[Dict[str, str]]],
         IDs: List[int],
     ) -> List[Dict[str, Optional[Type[PDF]]]]:
+        """Load per-galaxy property PDFs from a set of PDF file paths.
+
+        Implements the `SED_code.load_cat_property_PDFs` interface. Calls
+        `extract_PDFs` for each requested property and reorganises the
+        result into one dictionary of non-`None` PDFs per galaxy.
+
+        Parameters
+        ----------
+        PDF_paths : `dict`
+            Mapping from galaxy property name to the PDF file path(s) for
+            that property, as returned by `get_PDF_paths`.
+        IDs : `list` of `int`
+            Galaxy IDs to load PDFs for.
+
+        Returns
+        -------
+        `list` of `dict`
+            One dictionary per galaxy (in the order of `IDs`), mapping
+            property name to its PDF object. `None` is used in place of a
+            dictionary for galaxies with no available PDFs.
+        """
         # TODO: Put this in parent class (carbon copy of eazy method)
         cat_property_PDFs_ = {
             gal_property: self.extract_PDFs(

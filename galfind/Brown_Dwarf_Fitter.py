@@ -1,3 +1,8 @@
+"""Template fitter for stellar and brown-dwarf SED fitting.
+
+Wraps external BDFit.StarFit fitter for fitting SEDs against template grids
+(e.g., Sonora atmosphere models) for low-mass stars and brown dwarfs.
+"""
 
 from __future__ import annotations
 
@@ -7,9 +12,9 @@ import h5py
 from astropy.table import Table
 from pathlib import Path
 import itertools
-from typing import TYPE_CHECKING, Dict, List, NoReturn, Union
+from typing import TYPE_CHECKING, Dict, List, NoReturn, Union, Optional, Tuple
 if TYPE_CHECKING:
-    from . import Catalogue
+    from . import Catalogue, Spectral_Catalogue
 try:
     from typing import Self, Type, Any  # python 3.11+
 except ImportError:
@@ -21,6 +26,30 @@ from . import SED_code
 from .SED import SED_obs
 
 class Template_Fitter(SED_code):
+    """`SED_code` wrapper around external stellar/brown-dwarf template fitting (`BDFit.StarFit`).
+
+    Fits observed photometry against pre-computed template grids (e.g.
+    Sonora atmosphere models) using the external ``BDFit`` package's
+    ``StarFit`` fitter, and parses the results back into GALFIND-native
+    tables and SEDs.
+
+    Parameters
+    ----------
+    SED_fit_params : `dict`
+        Dictionary of SED fitting parameters/options for this run. Must
+        contain the key ``"templates"``, a list of template library names
+        to fit against. Passed on to `SED_code.__init__`.
+    fit_instrument : `str`, optional
+        Name of the instrument whose bands are used for fitting. Default
+        is ``"NIRCam"``.
+
+    Attributes
+    ----------
+    fit_instrument : `str`
+        Name of the instrument whose bands are used for fitting.
+    SED_fit_params : `dict`
+        SED fitting parameters/options, set by `SED_code.__init__`.
+    """
 
     ID_label = "ID"
 
@@ -29,11 +58,34 @@ class Template_Fitter(SED_code):
         SED_fit_params: Dict[str, Any],
         fit_instrument: str = "NIRCam",
     ):
+        """Initialize a Template_Fitter instance.
+
+        Parameters
+        ----------
+        SED_fit_params : `dict`
+            Dictionary of SED fitting parameters/options. Must contain
+            the key ``"templates"``.
+        fit_instrument : `str`, optional
+            Name of the instrument whose bands are used for fitting.
+            Default is ``"NIRCam"``.
+        """
         self.fit_instrument = fit_instrument
         super().__init__(SED_fit_params)
 
     @classmethod
     def from_label(cls, label: str) -> Type[SED_code]:
+        """Construct a `Template_Fitter` instance from a saved catalogue label.
+
+        Parameters
+        ----------
+        label : `str`
+            Label string identifying a previous fitting run.
+
+        Raises
+        ------
+        NotImplementedError
+            Always; this method is not yet implemented for `Template_Fitter`.
+        """
         raise NotImplementedError()
 
     # @property
@@ -42,14 +94,30 @@ class Template_Fitter(SED_code):
 
     @property
     def label(self) -> str:
+        """`str`: Unique label for this fitting run, implementing the `SED_code.label` interface.
+
+        Combines the class name with `tab_suffix`.
+        """
         return f"{self.__class__.__name__}_{self.tab_suffix}"
 
     @property
     def hdu_name(self) -> str:
+        """`str`: Name of the FITS HDU/extension this code's output is stored under.
+
+        Implements the `SED_code.hdu_name` interface. Combines the class
+        name with `tab_suffix`.
+        """
         return f"{self.__class__.__name__}_{self.tab_suffix}"
 
     @property
     def tab_suffix(self) -> str:
+        """`str`: Column-name suffix used to distinguish this run's output columns.
+
+        Implements the `SED_code.tab_suffix` interface. A ``"+"``-joined
+        string of the requested template library names
+        (``SED_fit_params["templates"]``) if more than one is given,
+        otherwise the single template library name.
+        """
         if len(self.SED_fit_params["templates"]) > 1:
             return "+".join(self.SED_fit_params["templates"])
         else:
@@ -57,16 +125,28 @@ class Template_Fitter(SED_code):
 
     @property
     def required_SED_fit_params(self) -> List[str]:
+        """`list` of `str`: Names of the `SED_fit_params` keys required by `Template_Fitter`.
+
+        Implements the `SED_code.required_SED_fit_params` interface.
+        """
         return ["templates"]
 
     @property
     def are_errs_percentiles(self) -> bool:
+        """`bool`: Whether output property errors are stored as percentiles rather than 1-sigma values.
+
+        Implements the `SED_code.are_errs_percentiles` interface.
+        """
         return False # not sure here
 
     # BELOW TWO METHODS SHOULD BE HADNLED BETTER IN SED_code
 
     #@abstractmethod
     def _load_gal_property_labels(self) -> NoReturn:
+        """Load mappings from internal property names to output column names.
+
+        Implements the `SED_code._load_gal_property_labels` interface.
+        """
         self.gal_property_labels = {
             "chi_sq": "chi2",
             "red_chi_sq": "red_chi2",
@@ -81,9 +161,18 @@ class Template_Fitter(SED_code):
 
     #@abstractmethod
     def _load_gal_property_err_labels(self) -> NoReturn:
+        """Load mappings for property error column names.
+
+        Implements the `SED_code._load_gal_property_err_labels` interface.
+        Sets empty dict since this fitter does not provide error estimates.
+        """
         super()._load_gal_property_err_labels({})
 
     def _load_gal_property_units(self) -> NoReturn:
+        """Load the astropy units for each fitted property.
+
+        Implements the `SED_code._load_gal_property_units` interface.
+        """
         self.gal_property_units = {
             **{gal_property: u.dimensionless_unscaled for gal_property in ["chi_sq", "red_chi_sq"]},
             "temp": u.K,
@@ -92,12 +181,65 @@ class Template_Fitter(SED_code):
         }
         # , "met", "co", "f"
 
+    def pre_fitting(
+        self: Type[Self],
+        cat: Union[Catalogue, Spectral_Catalogue],
+        aper_diam: u.Quantity,
+        overwrite: bool = False,
+        save_name: Optional[str] = None,
+    ) -> None:
+        """Perform any pre-fitting steps required by this fitter.
+
+        Implements the `SED_code.pre_fitting` interface. Currently a no-op
+        for `Template_Fitter`, since no pre-fitting steps are required.
+
+        Parameters
+        ----------
+        cat : `Catalogue` or `Spectral_Catalogue`
+            Catalogue to fit.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter of the photometry to extract.
+        overwrite : `bool`, optional
+            Whether to remake the input file if one already exists. Default
+            is `False`.
+        save_name : `str`, optional
+            Name of the file to save any pre-fitting output to. Default is
+            ``None`` (no output saved).
+        """
+        pass
+
     def make_in(
-        self, 
-        cat: Catalogue, 
-        aper_diam: u.Quantity, 
-        overwrite: bool = False
+        self,
+        cat: Catalogue,
+        aper_diam: u.Quantity,
+        overwrite: bool = False,
+        save_name: Optional[str] = None,
     ) -> str:
+        """Build the input photometric catalogue required by the fit.
+
+        Implements the `SED_code.make_in` interface. Currently a no-op for
+        `Template_Fitter`; photometry is instead loaded directly within
+        `fit` via `SED_code._load_phot`.
+
+        Parameters
+        ----------
+        cat : `Catalogue`
+            Catalogue of galaxies to build the input file for.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter of the photometry to extract.
+        overwrite : `bool`, optional
+            Whether to remake the input file if one already exists. Default
+            is `False`.
+        save_name : `str`, optional
+            Name of the file to save the input catalogue to. Default is
+            ``None``
+
+        Returns
+        -------
+        `None`
+            This no-op implementation returns `None`, despite the
+            annotated `str` return type.
+        """
         pass
 
     def fit(
@@ -108,10 +250,51 @@ class Template_Fitter(SED_code):
         save_PDFs: bool = True,
         overwrite: bool = False,
         verbose: bool = True,
+        save_name: Optional[str] = None,
         **kwargs: Dict[str, Any],
     ) -> NoReturn:
+        """Fit a catalogue's photometry against template libraries using `BDFit.StarFit`.
+
+        Implements the `SED_code.fit` interface. Selects the bands
+        belonging to `self.fit_instrument`, builds a `StarFit` fitter for
+        the requested template libraries (``SED_fit_params["templates"]``),
+        fits the catalogue's photometry, and writes the resulting best-fit
+        table (and, if `save_SEDs` is `True`, best-fit SEDs) to disk.
+        Skips fitting entirely if the output FITS file already exists and
+        `overwrite` is `False`.
+
+        Parameters
+        ----------
+        cat : `Catalogue`
+            Catalogue of galaxies to fit.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter of the photometry being fitted.
+        save_SEDs : `bool`, optional
+            Whether to save the best-fit SEDs to an accompanying ``.h5``
+            file. Default is `True`.
+        save_PDFs : `bool`, optional
+            Currently unused within this method body; kept for interface
+            compatibility. Default is `True`.
+        overwrite : `bool`, optional
+            Whether to re-run the fit even if the output file already
+            exists. Default is `False`.
+        verbose : `bool`, optional
+            Whether `StarFit` should print verbose fitting output. Default
+            is `True`.
+        save_name : `str`, optional
+            Name of the file to save the output table to. Default is ``None`` 
+            (output file name is automatically generated).
+        **kwargs : `dict`
+            Additional keyword arguments. Currently unused.
+
+        Raises
+        ------
+        AssertionError
+            If `cat.filterset` contains no filters with
+            ``instrument_name == self.fit_instrument``.
+        """
         from BDFit import StarFit
-        out_path = self._get_out_paths(cat, aper_diam)[1]
+        out_path = self._get_out_paths(cat, aper_diam, save_name = save_name)[1]
         if not Path(out_path).is_file() or overwrite:
             # convert cat.filterset to bands used in StarFit
             fit_instrument_indices = np.array([i for i, filt in enumerate(cat.filterset) if filt.instrument_name == self.fit_instrument])
@@ -164,28 +347,93 @@ class Template_Fitter(SED_code):
                 starfit.make_best_fit_SEDs(SED_save_path, IDs = cat.ID)
                 galfind_logger.info(f"Saved {self.tab_suffix} SEDs to {SED_save_path}")
 
-    def make_fits_from_out(self, out_path):
+    def make_fits_from_out(
+        self: Self,
+        out_path: str,
+        save_name: Optional[str] = None,
+    ):
+        """Convert the raw output of the fit into a FITS binary table.
+
+        Implements the `SED_code.make_fits_from_out` interface. Currently
+        a no-op for `Template_Fitter`, since `fit` already writes the
+        output table directly to `out_path`.
+
+        Parameters
+        ----------
+        out_path : `str`
+            Path to the output catalogue produced by `fit`.
+        save_name : `str`, optional
+            Name of the file to save the output table to. Default is ``None``
+        """
         pass
 
     def _get_out_paths(
         self: Self,
         cat: Catalogue,
-        aper_diam: u.Quantity
+        aper_diam: u.Quantity,
+        save_name: Optional[str] = None,
     ) -> Tuple[str, str, str, Dict[str, List[str]], List[str]]:
+        """Construct output file paths for this fitting run.
+
+        Implements the `SED_code._get_out_paths` interface.
+
+        Parameters
+        ----------
+        cat : `Catalogue`
+            Catalogue being fit.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter used in the fit.
+        save_name : `str`, optional
+            Name of the file to save the output table to. Default is ``None``
+            (output file name is automatically generated).
+
+        Returns
+        -------
+        `tuple`
+            ``(None, out_path, out_path, None, SED_path)`` where ``out_path``
+            is the FITS catalogue output file and ``SED_path`` is the HDF5 SED file.
+        """
         aper_diams_str = funcs.aper_diams_to_str(np.array([aper_diam.to(u.arcsec).value]) * u.arcsec)
         out_path = f"{config['TemplateFitting']['BROWN_DWARF_OUT_DIR']}/{cat.version}/" + \
             f"{cat.filterset.instrument_name}/{cat.survey}/{aper_diams_str}/" + \
             f"{self.hdu_name}_{self.fit_instrument}.fits"
+        if save_name is not None:
+            out_path = out_path.replace(".fits", f"_{save_name}.fits")
         SED_path = out_path.replace(".fits", "_SEDs.h5")
         return None, out_path, out_path, None, SED_path
 
     def extract_SEDs(
         self: Self,
-        IDs: List[int], 
+        IDs: List[int],
         SED_paths: str,
         *args,
         **kwargs,
     ) -> List[SED_obs]:
+        """Extract best-fit SEDs from the `StarFit`-generated HDF5 SED file.
+
+        Implements the `SED_code.extract_SEDs` interface. Reads each
+        template library group from the HDF5 file and matches stored
+        galaxy IDs against `IDs`.
+
+        Parameters
+        ----------
+        IDs : `list` of `int`
+            Galaxy IDs to extract SEDs for.
+        SED_paths : `str`
+            Path to the HDF5 (``.h5``) file containing best-fit SEDs for
+            all fitted template libraries, as produced by `fit`.
+        *args : `tuple`
+            Unused; accepted for interface compatibility.
+        **kwargs : `dict`
+            Unused; accepted for interface compatibility.
+
+        Returns
+        -------
+        `list` of `SED_obs` or `None`
+            Best-fit galaxy SED for each requested ID, in the same order
+            as `IDs`. `None` is returned in place of an `SED_obs` for any
+            ID not found in `SED_paths`.
+        """
         # open .h5 table
         SED_h5 = h5py.File(SED_paths, "r")
         libraries = list(SED_h5.keys())
@@ -203,23 +451,67 @@ class Template_Fitter(SED_code):
         return [sed_obs_arr[ID] if ID in sed_obs_arr.keys() else None for ID in IDs]
 
     def extract_PDFs(
-        self: Self, 
-        gal_property: str, 
-        IDs: List[int], 
-        PDF_paths: Union[str, List[str]], 
+        self: Self,
+        gal_property: str,
+        IDs: List[int],
+        PDF_paths: Union[str, List[str]],
     ) -> Optional[List[Type[PDF]]]:
+        """Extract posterior PDFs for a galaxy property.
+
+        Implements the `SED_code.extract_PDFs` interface. Currently a
+        no-op for `Template_Fitter`, since `StarFit` does not produce
+        property PDFs; always returns `None`.
+
+        Parameters
+        ----------
+        gal_property : `str`
+            Name of the galaxy property to extract PDFs for.
+        IDs : `list` of `int`
+            Galaxy IDs to extract PDFs for.
+        PDF_paths : `str` or `list` of `str`
+            Path(s) to PDF file(s).
+
+        Returns
+        -------
+        `None`
+            No PDFs are available for `Template_Fitter`.
+        """
         pass
 
     def load_cat_property_PDFs(
-        self: Self, 
+        self: Self,
         PDF_paths: Union[List[str], List[Dict[str, str]]],
         IDs: List[int]
     ) -> List[Dict[str, Optional[Type[PDF]]]]:
+        """Load per-galaxy property PDFs.
+
+        Implements the `SED_code.load_cat_property_PDFs` interface.
+        `Template_Fitter` does not produce property PDFs, so this simply
+        returns an array of `None`, one per galaxy.
+
+        Parameters
+        ----------
+        PDF_paths : `list` of `str` or `list` of `dict`
+            Unused; accepted for interface compatibility.
+        IDs : `list` of `int`
+            Galaxy IDs to load PDFs for.
+
+        Returns
+        -------
+        `numpy.ndarray`
+            Array of `None`, one per galaxy in `IDs`.
+        """
         return np.array(
             list(itertools.repeat(None, len(IDs)))
         )
 
     def _assert_SED_fit_params(self) -> NoReturn:
+        """Validate that required SED fitting parameters are present.
+
+        Implements the `SED_code._assert_SED_fit_params` interface. Checks
+        that all required keys are present in `SED_fit_params` and initializes
+        ``excl_bands`` if not already present.
+        """
         for key in self.required_SED_fit_params:
             assert key in self.SED_fit_params.keys(), galfind_logger.critical(
                 f"'{key}' not in SED_fit_params keys = {list(self.SED_fit_params.keys())}"
@@ -229,23 +521,65 @@ class Template_Fitter(SED_code):
 
 
 class Brown_Dwarf_Fitter(Template_Fitter):
+    """`Template_Fitter` preconfigured to fit the Sonora brown-dwarf template grids.
+
+    Fixes ``SED_fit_params["templates"]`` to the full set of Sonora
+    atmosphere model libraries (``sonora_bobcat``, ``sonora_cholla``,
+    ``sonora_elf_owl``, ``sonora_diamondback``) plus a ``"low-z"`` library.
+
+    Parameters
+    ----------
+    fit_instrument : `str`, optional
+        Name of the instrument whose bands are used for fitting. Default
+        is ``"NIRCam"``.
+
+    Attributes
+    ----------
+    fit_instrument : `str`
+        Name of the instrument whose bands are used for fitting.
+    SED_fit_params : `dict`
+        SED fitting parameters/options, fixed to the Sonora + ``"low-z"``
+        template libraries.
+    """
 
     def __init__(
         self: Self,
         fit_instrument: str = "NIRCam"
     ):
+        """Initialize a Brown_Dwarf_Fitter with Sonora template libraries.
+
+        Parameters
+        ----------
+        fit_instrument : `str`, optional
+            Name of the instrument whose bands are used for fitting.
+            Default is ``"NIRCam"``.
+        """
         SED_fit_params = {"templates": ["sonora_bobcat", "sonora_cholla", "sonora_elf_owl", "sonora_diamondback", "low-z"]}
         super().__init__(SED_fit_params, fit_instrument)
 
     @property
     def label(self) -> str:
+        """`str`: Unique label for this fitting run, implementing the `SED_code.label` interface.
+
+        Overrides `Template_Fitter.label`, always returning ``"bd"``.
+        """
         return "bd"
         #return self.__class__.__name__
 
     @property
     def hdu_name(self) -> str:
+        """`str`: Name of the FITS HDU/extension this code's output is stored under.
+
+        Implements the `SED_code.hdu_name` interface. Overrides
+        `Template_Fitter.hdu_name`, returning the class name alone.
+        """
         return self.__class__.__name__
 
     @property
     def tab_suffix(self) -> str:
+        """`str`: Column-name suffix used to distinguish this run's output columns.
+
+        Implements the `SED_code.tab_suffix` interface. Overrides
+        `Template_Fitter.tab_suffix`, always returning an empty string.
+        """
         return ""

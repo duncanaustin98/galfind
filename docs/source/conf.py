@@ -42,6 +42,20 @@ templates_path = ["_templates"]
 
 master_doc = "index"
 
+# Autodoc configuration for better API documentation
+autodoc_default_options = {
+    'undoc-members': False,
+    'show-inheritance': True,
+    'member-order': 'bysource',
+}
+
+# Configure Napoleon for NumPy-style docstrings
+napoleon_include_init_doc = False
+napoleon_include_private_with_doc = False
+napoleon_include_special_with_doc = True
+napoleon_use_param = True
+napoleon_use_keyword = True
+
 # -- Options for HTML output
 
 html_theme = "sphinx_rtd_theme"

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Tue Jun  6 14:52:36 2023
+"""Wrapper around EAZY-py photo-z and SED-fitting tool.
 
-@author: austind
+Handles input catalogue construction, filter response file setup, PhotoZ fitter
+execution, and result parsing into GALFIND-native objects.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from scipy.linalg import LinAlgWarning
 from tqdm import tqdm
 from typing import TYPE_CHECKING, List, Any, Dict, Optional, NoReturn, Type, Union, Tuple
 if TYPE_CHECKING:
-    from . import Catalogue, PDF, Multiple_Filter
+    from . import Galaxy, Catalogue, Spectral_Catalogue, PDF, Multiple_Filter, SED_Result, SED_obs
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -94,14 +94,57 @@ from .SED import SED_obs
 
 
 class EAZY(SED_code):
+    """`SED_code` wrapper around the external EAZY-py photo-z / SED-fitting tool.
+
+    Handles construction of EAZY ASCII input catalogues and filter
+    response files, running the ``eazy-py`` `PhotoZ` fitter, and parsing
+    the resulting best-fit redshifts, rest-frame UBVJ fluxes, SEDs and
+    redshift PDFs back into GALFIND-native `SED_obs` and `Redshift_PDF`
+    objects.
+
+    Parameters
+    ----------
+    SED_fit_params : `dict`
+        Dictionary of SED fitting parameters/options for this run. Must
+        contain (or will be populated with defaults for) the keys
+        required by EAZY, including ``"templates"`` and ``"lowz_zmax"``.
+        Passed on to `SED_code.__init__`.
+    **kwargs : `dict`
+        Additional keyword arguments passed on to `SED_code.__init__`,
+        where each key/value pair is set as an instance attribute.
+
+    Attributes
+    ----------
+    SED_fit_params : `dict`
+        SED fitting parameters/options, set by `SED_code.__init__`.
+    """
 
     ID_label = "IDENT"
     #ext_src_corr_properties = []
-    def __init__(self: Self, SED_fit_params: Dict[str, Any]):
-        super().__init__(SED_fit_params)
+    def __init__(
+        self: Self,
+        SED_fit_params: Dict[str, Any],
+        **kwargs: Dict[str, Any],
+    ):
+        super().__init__(SED_fit_params, **kwargs)
 
     @classmethod
     def from_label(cls, label: str) -> Type[SED_code]:
+        """Construct an `EAZY` instance from a saved catalogue label.
+
+        Parameters
+        ----------
+        label : `str`
+            Label string of the form
+            ``"<code>_<templates>_<lowz_zmax_label>"``, as produced by
+            `EAZY` output columns.
+
+        Returns
+        -------
+        `EAZY`
+            A new `EAZY` instance configured with the `SED_fit_params`
+            parsed from `label`.
+        """
         label_arr = label.split("_")
         templates = "_".join(
             label_arr[1:-1]
@@ -116,30 +159,52 @@ class EAZY(SED_code):
 
     @property
     def label(self) -> str:
+        """`str`: Unique label for this fitting run, implementing the `SED_code.label` interface.
+
+        Combines the class name, template set name, and low-z zmax label.
+        """
         # first write the code name, next write the template name, finish off with lowz_zmax
         return f"{self.__class__.__name__}_{self.SED_fit_params['templates']}" + \
             f"_{funcs.lowz_label(self.SED_fit_params['lowz_zmax'])}"
 
     @property
     def hdu_name(self) -> str:
+        """`str`: Name of the FITS HDU/extension this code's output is stored under.
+
+        Implements the `SED_code.hdu_name` interface. Combines the class
+        name with the template set name.
+        """
         return f"{self.__class__.__name__}_{self.SED_fit_params['templates']}"
 
     @property
     def tab_suffix(self) -> str:
+        """`str`: Column-name suffix used to distinguish this run's output columns.
+
+        Implements the `SED_code.tab_suffix` interface. Combines the
+        template set name with the low-z zmax label.
+        """
         return f"{self.SED_fit_params['templates']}_" + \
             f"{funcs.lowz_label(self.SED_fit_params['lowz_zmax'])}"
 
     @property
     def required_SED_fit_params(self) -> List[str]:
+        """`list` of `str`: Names of the `SED_fit_params` keys required by `EAZY`.
+
+        Implements the `SED_code.required_SED_fit_params` interface.
+        """
         return ["templates", "lowz_zmax"]
 
     @property
     def are_errs_percentiles(self) -> bool:
+        """`bool`: Whether output property errors are stored as percentiles rather than 1-sigma values.
+
+        Implements the `SED_code.are_errs_percentiles` interface.
+        """
         return False
 
     def __call__(
         self: Self,
-        cat: Union[Catalogue, Spectral_Catalogue],
+        target: Union[Galaxy, Catalogue, Spectral_Catalogue],
         aper_diam: u.Quantity,
         save_PDFs: bool = True,
         save_SEDs: bool = True,
@@ -149,10 +214,11 @@ class EAZY(SED_code):
         overwrite: bool = False,
         update: bool = True,
         lowz_zmax_arr: Optional[List[float]] = None,
+        save_name: Optional[str] = None,
         **fit_kwargs
-    ) -> Self:
-        super().__call__(
-            cat,
+    ) -> Union[Galaxy, Catalogue, Spectral_Catalogue]:
+        target = super().__call__(
+            target,
             aper_diam,
             save_PDFs,
             save_SEDs,
@@ -161,20 +227,27 @@ class EAZY(SED_code):
             timed,
             overwrite,
             update,
+            save_name = save_name,
             **fit_kwargs,
         )
-        self._update_lowz_zmax(cat, aper_diam, lowz_zmax_arr)
+        from . import Catalogue, Spectral_Catalogue
+        if isinstance(target, (Catalogue, Spectral_Catalogue)):
+            # BUG: save_name doesn't propagate 
+            # - don't think it makes a difference in the function though
+            self._update_lowz_zmax(target, aper_diam, lowz_zmax_arr, save_name = save_name)
+        return target
 
     def _update_lowz_zmax(
-        self,
+        self: Self,
         cat: Union[Catalogue, Spectral_Catalogue],
         aper_diam: u.Quantity,
         lowz_zmax_arr: List[float],
+        save_name: Optional[str] = None,
     ) -> Optional[List[SED_Result]]:
         #cat_SED_results = [deepcopy(gal).aper_phot[aper_diam].SED_results[self.label] for gal in cat]
         if lowz_zmax_arr is not None and self.SED_fit_params["lowz_zmax"] is None:
             # update cat_SED_results with lowz_zmax info
-            h5_path = self._get_out_paths(cat, aper_diam)[2].replace(".fits", ".h5")
+            h5_path = self._get_out_paths(cat, aper_diam, save_name = save_name)[2].replace(".fits", ".h5")
             fit = hdf5.initialize_from_hdf5(h5file=h5_path, verbose=False)
             lowz_zmax_arr = np.sort(lowz_zmax_arr)
             save_dict_arr = np.full(len(cat), deepcopy({}))
@@ -285,15 +358,73 @@ class EAZY(SED_code):
                         self.SED_fit_params[default_str] = config.getfloat("EAZY", default_str)
         return super()._assert_SED_fit_params()
 
+    def pre_fitting(
+        self: Type[Self],
+        cat: Catalogue,
+        aper_diam: u.Quantity,
+        overwrite: bool = False,
+        save_name: Optional[str] = None,
+    ) -> None:
+        """Perform any pre-fitting setup required before running EAZY.
+
+        Implements the `SED_code.pre_fitting` interface. Currently a
+        no-op for `EAZY`.
+
+        Parameters
+        ----------
+        cat : `Catalogue`
+            Catalogue of galaxies about to be fitted.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter of the photometry to be fitted.
+        overwrite : `bool`, optional
+            Whether to overwrite any existing pre-fitting products. Default
+            is `False`.
+        save_name : `str`, optional
+            Optional custom name used when saving pre-fitting products.
+            Default is `None`.
+        """
+        pass
+
     def make_in(
         self,
         cat: Catalogue,
         aper_diam: u.Quantity,
-        overwrite: bool = False
+        overwrite: bool = False,
+        save_name: Optional[str] = None,
     ) -> str:
+        """Build the EAZY ASCII input photometric catalogue and filter file.
 
+        Implements the `SED_code.make_in` interface. Loads photometry for
+        each galaxy in `cat`, writes the corresponding EAZY filter
+        response file via `_make_filter_file`, and writes an ASCII
+        catalogue of ID, flux/flux-error pairs per filter and
+        spectroscopic redshift, in the format EAZY expects.
+
+        Parameters
+        ----------
+        cat : `Catalogue`
+            Catalogue of galaxies to build the input file for.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter of the photometry to extract.
+        overwrite : `bool`, optional
+            Whether to remake the input file if one already exists. Default
+            is `False`.
+        save_name : `str`, optional
+            Optional custom name to append when constructing the input
+            file path. Default is `None`.
+
+        Returns
+        -------
+        `str`
+            Path to the (possibly newly written) EAZY ``.in`` input
+            catalogue.
+        """
+        if save_name is None:
+            save_name = ""
+        else:
+            save_name = f"_{save_name}"
         in_dir = f"{config['EAZY']['EAZY_DIR']}/input/{cat.filterset.instrument_name}/{cat.version}/{cat.survey}"
-        in_name = cat.cat_name.replace('.fits', f"_{aper_diam.to(u.arcsec).value:.2f}as.in")
+        in_name = cat.cat_name.replace('.fits', f"_{aper_diam.to(u.arcsec).value:.2f}as{save_name}.in")
         in_path = f"{in_dir}/{in_name}"
         in_filt_name = f"{in_path.replace('.in', '_filters.RES')}"
         if not Path(in_path).is_file() or overwrite:
@@ -306,9 +437,11 @@ class EAZY(SED_code):
             funcs.make_dirs(in_path)
 
             # Make filter file
-
-            filt_codes = self._make_filter_file(cat.filterset, in_filt_name, default_param_path = f"{config['EAZY']['EAZY_CONFIG_DIR']}/EAZY_UVJ.RES")
-
+            filt_codes = self._make_filter_file(
+                cat.filterset,
+                in_filt_name,
+                default_param_path = f"{config['EAZY']['EAZY_CONFIG_DIR']}/EAZY_UVJ.RES",
+            )
             # Make input file
             in_data = np.array(
                 [
@@ -360,6 +493,7 @@ class EAZY(SED_code):
         save_PDFs: bool = True,
         overwrite: bool = False,
         update: bool = False,
+        save_name: Optional[str] = None,
         **kwargs: Dict[str, Any],
     ) -> NoReturn:
         """
@@ -380,7 +514,13 @@ class EAZY(SED_code):
         # HOT_60K - modified IMF high-z templates for use at z > 12
         # Nakajima - unobscured AGN templates
 
-        in_path, out_path, fits_out_path, PDF_paths, SED_paths = self._get_out_paths(cat, aper_diam)
+        in_path, out_path, fits_out_path, PDF_paths, SED_paths = \
+            self._get_out_paths(
+                cat,
+                aper_diam,
+                overwrite,
+                save_name = save_name,
+            )
 
         in_filt_path = f"{in_path.replace('.in', '_filters.RES')}"
 
@@ -622,6 +762,15 @@ class EAZY(SED_code):
 
     @staticmethod
     def save_zPDFs(zPDF_path: str, fit) -> NoReturn:
+        """Save per-galaxy redshift PDFs from an EAZY fit to an HDF5 file.
+
+        Parameters
+        ----------
+        zPDF_path : `str`
+            Output path for the HDF5 file of redshift PDFs.
+        fit : `eazy.photoz.PhotoZ`
+            Fitted EAZY `PhotoZ` object to extract redshift PDFs from.
+        """
         fit_pz = 10 ** (fit.lnp)
         fit_zgrid = fit.zgrid
         hf = h5py.File(zPDF_path, "w")
@@ -647,6 +796,24 @@ class EAZY(SED_code):
 
     @staticmethod
     def save_SEDs(SED_path: str, fit, z_arr: List[float], wav_unit: u.Unit = u.AA, flux_unit: u.Unit = u.nJy) -> NoReturn:
+        """Save per-galaxy best-fit template SEDs from an EAZY fit to an HDF5 file.
+
+        Parameters
+        ----------
+        SED_path : `str`
+            Output path for the HDF5 file of best-fit SEDs.
+        fit : `eazy.photoz.PhotoZ`
+            Fitted EAZY `PhotoZ` object to extract best-fit SEDs from.
+        z_arr : `list` of `float`
+            Best-fit redshift for each galaxy in `fit.OBJID`, stored
+            alongside the SEDs.
+        wav_unit : `astropy.units.Unit`, optional
+            Unit to convert best-fit SED wavelengths to before saving.
+            Default is `astropy.units.AA`.
+        flux_unit : `astropy.units.Unit`, optional
+            Unit to convert best-fit SED fluxes to before saving. Default
+            is `astropy.units.nJy`.
+        """
         hf = h5py.File(SED_path, "w")
         hf.create_dataset("wav_unit", data=str(wav_unit))
         hf.create_dataset("flux_unit", data=str(flux_unit))
@@ -689,15 +856,31 @@ class EAZY(SED_code):
         hf.close()
 
     def make_fits_from_out(self, out_path: str) -> NoReturn:
+        """Convert the raw output of the fit into a FITS binary table.
+
+        Implements the `SED_code.make_fits_from_out` interface. Currently
+        a no-op for `EAZY`, since `fit` already writes the FITS output
+        table directly.
+
+        Parameters
+        ----------
+        out_path : `str`
+            Path to the output catalogue produced by `fit`.
+        """
         pass
 
     def _get_out_paths(
-        self: Self,
-        cat: Catalogue,
-        aper_diam: u.Quantity
+        self: Self, 
+        cat: Catalogue, 
+        aper_diam: u.Quantity,
+        save_name: Optional[str] = None,
     ) -> Tuple[str, str, str, Dict[str, List[str]], List[str]]:
+        if save_name is None:
+            save_name = ""
+        else:
+            save_name = f"_{save_name}"
         in_dir = f"{config['EAZY']['EAZY_DIR']}/input/{cat.filterset.instrument_name}/{cat.version}/{cat.survey}"
-        in_name = cat.cat_name.replace('.fits', f"_{aper_diam.to(u.arcsec).value:.2f}as.in")
+        in_name = cat.cat_name.replace('.fits', f"_{aper_diam.to(u.arcsec).value:.2f}as{save_name}.in")
         in_path = f"{in_dir}/{in_name}"
 
         out_folder = funcs.split_dir_name(
@@ -723,6 +906,36 @@ class EAZY(SED_code):
         *args,
         **kwargs,
     ) -> List[SED_obs]:
+        """Extract best-fit SEDs from the EAZY-generated HDF5 SED file.
+
+        Implements the `SED_code.extract_SEDs` interface.
+
+        Parameters
+        ----------
+        IDs : `list` of `int`
+            Galaxy IDs to extract SEDs for.
+        SED_paths : `str` or `list` of `str`
+            Path(s) to the HDF5 (``.h5``) file containing best-fit SEDs
+            for the parent catalogue, as returned by `_get_out_paths`.
+            All entries must be identical, since EAZY stores all
+            galaxies' SEDs for a run in a single file.
+        *args : `tuple`
+            Unused; accepted for interface compatibility.
+        **kwargs : `dict`
+            Unused; accepted for interface compatibility.
+
+        Returns
+        -------
+        `list` of `SED_obs`
+            Best-fit galaxy SED for each requested ID, in the same order
+            as `IDs`.
+
+        Raises
+        ------
+        AssertionError
+            If `IDs` and `SED_paths` have different lengths, or if the
+            elements of `SED_paths` are not all identical.
+        """
         # ensure this works if only extracting 1 galaxy
         if isinstance(IDs, (str, int, float)):
             IDs = np.array([int(IDs)])
@@ -767,6 +980,40 @@ class EAZY(SED_code):
         IDs: List[int],
         PDF_paths: Union[str, List[str]],
     ) -> List[Redshift_PDF]:
+        """Extract posterior redshift PDFs from EAZY output files.
+
+        Implements the `SED_code.extract_PDFs` interface. EAZY only
+        stores a PDF for redshift, so requesting any other property
+        returns an array of `None`.
+
+        Parameters
+        ----------
+        gal_property : `str`
+            Name of the galaxy property to extract PDFs for. Only
+            ``"z"`` yields non-`None` PDFs.
+        IDs : `list` of `int`
+            Galaxy IDs to extract PDFs for.
+        PDF_paths : `str` or `list` of `str`
+            Path(s) to the HDF5 (``.h5``) file containing redshift PDFs
+            for the parent catalogue. All entries must be identical,
+            since EAZY stores all galaxies' PDFs for a run in a single
+            file.
+
+        Returns
+        -------
+        `list`
+            List of `Redshift_PDF` objects (one per ID) if
+            `gal_property` is ``"z"``, otherwise a list of `None` of the
+            same length.
+
+        Raises
+        ------
+        AssertionError
+            If `PDF_paths` or `IDs` is not a `list`/`numpy.ndarray`, if
+            they differ in length, if the elements of `PDF_paths` are
+            not all identical, or if `PDF_paths[0]` does not have a
+            ``.h5`` extension, when `gal_property` is ``"z"``.
+        """
         # ensure this works if only extracting 1 galaxy
         if isinstance(IDs, (str, int, float)):
             IDs = np.array([int(IDs)])
@@ -821,6 +1068,27 @@ class EAZY(SED_code):
         PDF_paths: List[Dict[str, str]],
         IDs: List[int]
     ) -> List[Dict[str, Optional[Type[PDF]]]]:
+        """Load per-galaxy property PDFs from a set of PDF file paths.
+
+        Implements the `SED_code.load_cat_property_PDFs` interface. Calls
+        `extract_PDFs` for each requested property and reorganises the
+        result into one dictionary of non-`None` PDFs per galaxy.
+
+        Parameters
+        ----------
+        PDF_paths : `dict`
+            Mapping from galaxy property name to the PDF file path(s)
+            for that property, as returned by `_get_out_paths`.
+        IDs : `list` of `int`
+            Galaxy IDs to load PDFs for.
+
+        Returns
+        -------
+        `list` of `dict`
+            One dictionary per galaxy (in the order of `IDs`), mapping
+            property name to its PDF object. `None` is used in place of
+            a dictionary for galaxies with no available PDFs.
+        """
         cat_property_PDFs_ = {
             gal_property: self.extract_PDFs(
                 gal_property,

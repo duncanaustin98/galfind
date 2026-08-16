@@ -23,10 +23,9 @@ fitting spectral energy distributions (SEDs), and analyzing galaxy properties.
    sed_fitting/sed_fitting
    selection/selection
    cutouts/cutouts
+   api
 
 .. seds/seds
    multiple_surveys/multiple_surveys
    spectra/spectra
    misc/misc
-   
-.. API

@@ -1,3 +1,9 @@
+"""Factory for creating individual Galaxy objects from catalogue FITS data.
+
+Specializes in loading single-galaxy data with customizable loading functions for
+photometry, masks, depths, and optional SED results.
+"""
+
 from __future__ import annotations
 
 import numpy as np
@@ -42,6 +48,56 @@ from .Catalogue import (
 )
 
 class Galaxy_Creator(Catalogue_Creator):
+    """Factory for creating individual Galaxy objects from catalogue data.
+
+    Inherits from `Catalogue_Creator` and specializes in loading data for
+    a single galaxy (identified by ID) from a FITS catalogue, including
+    photometry, masks, depths, and optional SED fit results.
+
+    Parameters
+    ----------
+    survey : `str`
+        Survey name.
+    version : `str`
+        Data release version.
+    id : `int`
+        Unique galaxy identifier in the catalogue.
+    cat_path : `str`
+        Path to the FITS catalogue file.
+    filterset : `Multiple_Filter`
+        Set of filters for the survey.
+    aper_diams : `astropy.units.Quantity`
+        Aperture diameters for photometry.
+    open_cat : callable, optional
+        Function to open the catalogue file. Default is `open_galfind_cat`.
+    open_hdr : callable, optional
+        Function to extract the catalogue header. Default is `open_galfind_hdr`.
+    load_ID_func : callable or `None`, optional
+        Function to load galaxy ID. Default is `load_IDs_Table`.
+    load_skycoords_func : callable or `None`, optional
+        Function to load RA/DEC. Default is `load_skycoords_Table`.
+    load_phot_func : callable, optional
+        Function to load photometry. Default is `load_galfind_phot`.
+    load_mask_func : callable or `None`, optional
+        Function to load masks. Default is `load_galfind_mask`.
+    load_depth_func : callable or `None`, optional
+        Function to load depth maps. Default is `load_galfind_depths`.
+    load_selection_func : callable or `None`, optional
+        Function to load selection/boolean flags. Default is `load_bool_Table`.
+    load_SED_result_func : callable or `None`, optional
+        Function to load SED fit results. Default is `None`.
+    apply_gal_instr_mask : `bool`, optional
+        Apply instrument masks to the galaxy. Default is `True`.
+    cache_fits_handle : `bool`, optional
+        Whether to keep a single FITS file handle open and reuse it for all
+        extension reads. Significantly speeds up loading many galaxies from
+        the same catalogue. Falls back to standard reading if any errors occur.
+        Default is `True`.
+    simulated : `bool`, optional
+        Whether the galaxy is from a simulation. Default is `False`.
+    **kwargs
+        Additional keyword arguments passed to parent class.
+    """
 
     def __init__(
         self: Self,
@@ -74,6 +130,7 @@ class Galaxy_Creator(Catalogue_Creator):
         load_selection_kwargs: Dict[str, Any] = {},
         load_SED_result_func: Optional[Callable] = None,
         apply_gal_instr_mask: bool = True,
+        cache_fits_handle: bool = True,
         simulated: bool = False,
     ) -> None:
         self.id = id
@@ -107,6 +164,7 @@ class Galaxy_Creator(Catalogue_Creator):
             load_selection_kwargs=load_selection_kwargs,
             load_SED_result_func=load_SED_result_func,
             apply_gal_instr_mask=apply_gal_instr_mask,
+            cache_fits_handle=cache_fits_handle,
             simulated=simulated
         )
 
@@ -117,6 +175,22 @@ class Galaxy_Creator(Catalogue_Creator):
         id: int,
         **kwargs,
     ) -> Self:
+        """Create a galaxy creator from Data object and ID.
+
+        Parameters
+        ----------
+        data : `Data`
+            Data object containing survey, version, and filter information.
+        id : `int`
+            Galaxy ID to create a creator for.
+        **kwargs
+            Additional keyword arguments passed to constructor.
+
+        Returns
+        -------
+        `Galaxy_Creator`
+            Galaxy creator instance initialized from data.
+        """
         gal_creator = cls(
             data.survey,
             data.version,
@@ -192,18 +266,24 @@ class Galaxy_Creator(Catalogue_Creator):
             selection_kwargs = selection_kwargs,
             cat_filterset = self.filterset,
             survey = self.survey,
+            version = self.version,
             simulated = self.simulated,
         )
-        # if hasattr(self, "data"):
-        #     gal.data = self.data
-        galfind_logger.info(f"Made {self.cat_path} galaxy!")
+        if not hasattr(gal, "gal_creator"):
+            setattr(gal, "gal_creator", self)
+        galfind_logger.info(f"Made {repr(gal)} from {repr(self)}!")
         return gal
 
     def load_crops(
         self: Self,
         *args,
         **kwargs,
-    ):
+    ) -> None:
+        """Load crop mask for this galaxy from catalogue.
+
+        Loads the photometric catalogue and creates a boolean mask
+        identifying rows corresponding to this galaxy's ID.
+        """
         super().load_crops(crops = None)
         # load table
         tab = self.open_cat(self.cat_path, "ID")

@@ -1,4 +1,10 @@
-# Instrument.py
+"""Astronomical facility and instrument definitions.
+
+Defines Facility class representing observing facilities (HST, JWST, Spitzer, etc.)
+and Instrument subclasses for specific instruments (NIRCam, MIRI, ACS_WFC, etc.)
+with their filter configurations and metadata.
+"""
+
 from __future__ import annotations
 
 from typing import NoReturn, Dict, Any, Union, List, TYPE_CHECKING
@@ -32,8 +38,20 @@ from . import PSF_Cutout
 
 
 class Facility(ABC):
-    # Facility class to store the name of the facility
-    # and other facility-specific attributes/methods
+    """Abstract base class representing an observing facility (telescope).
+
+    Stores the name of the facility used for SVO Filter Profile Service
+    queries and provides consistent identity, string, and (deep)copy
+    semantics. Subclasses are combined with
+    `useful_funcs_austind.Singleton` so that only one instance of each
+    facility ever exists.
+
+    Attributes
+    ----------
+    SVO_name : `str`
+        Name used to query this facility in the SVO Filter Profile
+        Service. Defaults to the subclass name if not otherwise set.
+    """
 
     def __init__(self) -> None:
         if not hasattr(self, "SVO_name"):
@@ -67,29 +85,65 @@ class Facility(ABC):
 
 
 class HST(Facility, funcs.Singleton):
+    """Singleton `Facility` representing the Hubble Space Telescope."""
     pass
 
 
 class JWST(Facility, funcs.Singleton):
+    """Singleton `Facility` representing the James Webb Space Telescope."""
     pass
 
 class Paranal(Facility, funcs.Singleton):
+    """Singleton `Facility` representing ESO's Paranal Observatory (VISTA)."""
     pass
 
 class Spitzer(Facility, funcs.Singleton):
+    """Singleton `Facility` representing the Spitzer Space Telescope."""
     pass
 
 class Euclid(Facility, funcs.Singleton):
+    """Singleton `Facility` representing the Euclid space telescope."""
     pass
 
 class CFHT(Facility, funcs.Singleton):
+    """Singleton `Facility` representing the Canada-France-Hawaii Telescope."""
     pass
 
 class Subaru(Facility, funcs.Singleton):
+    """Singleton `Facility` representing the Subaru Telescope."""
     pass
 
 
 class Instrument(ABC):
+    """Abstract base class representing an imaging instrument on a facility.
+
+    Stores the filter names available on the instrument together with
+    facility information and the parameters used for astrometric
+    alignment. Concrete subclasses (e.g. `NIRCam`, `ACS_WFC`) must
+    implement the `ZP_keys` property, `calc_ZP`, and `make_model_psf`.
+
+    Parameters
+    ----------
+    facility : `Facility`
+        Facility (telescope) that hosts this instrument.
+    filt_names : `list` of `str`
+        Names of the filters/bands available on this instrument.
+    align_params : `dict`, optional
+        Parameters used for astrometric alignment (e.g. ``searchrad``,
+        ``separation``, ``tolerance``, ``max_sep``). Default is `{}`.
+
+    Attributes
+    ----------
+    facility : `Facility`
+        Facility hosting this instrument.
+    filt_names : `list` of `str`
+        Names of the filters available on this instrument.
+    align_params : `dict`
+        Astrometric alignment parameters.
+    SVO_name : `str`
+        Name used to query this instrument in the SVO Filter Profile
+        Service. Defaults to the subclass name if not otherwise set.
+    """
 
     def __init__(
         self: Type[Self],
@@ -153,13 +207,51 @@ class Instrument(ABC):
     @property
     @abstractmethod
     def ZP_keys(self) -> List[str]:
+        """`list` of `str`: FITS header keywords required by `calc_ZP`.
+
+        Subclasses must override this to return the header keywords
+        (e.g. ``'PHOTFLAM'``, ``'ZEROPNT'``) needed to compute the
+        zero-point, or an empty list if the zero-point does not depend
+        on header keywords.
+        """
         pass
 
     @abstractmethod
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
+        """Calculate the photometric zero-point for the given band data.
+
+        Subclasses must implement this to return the AB magnitude
+        zero-point appropriate for the instrument and band, derived
+        either from FITS header keywords or from a fixed formula.
+
+        Parameters
+        ----------
+        band_data : `Band_Data_Base`
+            Band data object providing access to the image and header
+            needed to compute the zero-point.
+
+        Returns
+        -------
+        `astropy.units.Quantity`
+            The AB magnitude zero-point for this band.
+        """
         pass
 
     def calc_pix_scale(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
+        """Calculate the pixel scale for the given band data.
+
+        Not implemented in the base class.
+
+        Parameters
+        ----------
+        band_data : `Band_Data_Base`
+            Band data object for which to determine the pixel scale.
+
+        Returns
+        -------
+        `None`
+            This base implementation performs no calculation.
+        """
         pass
 
     def make_psf(
@@ -168,6 +260,33 @@ class Instrument(ABC):
         method: str = "default",
         size: u.Quantity = 0.96 * u.arcsec,
     ) -> Type[PSF_Base]:
+        """Construct a PSF for the given band data using the requested method.
+
+        Parameters
+        ----------
+        band_data : `Band_Data`
+            Band data for which to construct the PSF.
+        method : `str`, optional
+            PSF construction method, one of ``'default'``, ``'empirical'``,
+            or ``'EPOCHS'``. Default is `'default'`.
+        size : `astropy.units.Quantity`, optional
+            Angular size of the PSF cutout. Default is `0.96 * u.arcsec`.
+
+        Returns
+        -------
+        `PSF_Base`
+            The constructed PSF. For ``'default'`` this delegates to
+            `make_model_psf`; for ``'empirical'`` this loads/derives an
+            empirical PSF via `PSF_Cutout.from_empirical_psf`; for
+            ``'EPOCHS'`` this uses a model PSF for `ACS_WFC` instruments
+            or loads a pre-computed EPOCHS PSF from disk otherwise.
+
+        Raises
+        ------
+        AssertionError
+            If `method` is not one of ``'default'``, ``'empirical'``, or
+            ``'EPOCHS'``.
+        """
         method_types = ["default", "empirical", "EPOCHS"]
         assert method in method_types, \
             galfind_logger.critical(
@@ -201,6 +320,25 @@ class Instrument(ABC):
         band_data: Band_Data,
         size: u.Quantity = 0.96 * u.arcsec,
     ) -> Type[PSF_Base]:
+        """Construct a model PSF for the given band data.
+
+        Subclasses must implement this to return a model PSF (e.g.
+        generated from STPSF/WebbPSF, or derived from precomputed
+        encircled energy curves), or raise `NotImplementedError` if
+        model PSF construction is not supported for the instrument.
+
+        Parameters
+        ----------
+        band_data : `Band_Data`
+            Band data for which to construct the model PSF.
+        size : `astropy.units.Quantity`, optional
+            Angular size of the PSF cutout. Default is `0.96 * u.arcsec`.
+
+        Returns
+        -------
+        `PSF_Base`
+            The constructed model PSF object.
+        """
         pass
 
     # def make_empirical_psf(
@@ -216,16 +354,64 @@ class Instrument(ABC):
         band_data: Band_Data,
         size: u.Quantity = 4.0 * u.arcsec,
     ) -> Optional[Tuple[float, float]]:
-        return None  
+        """Get the encircled energy and field of view for PSF normalization.
+
+        Base implementation always returns `None`; subclasses with
+        encircled-energy calibration data available (e.g. `NIRCam`,
+        `ACS_WFC`) override this.
+
+        Parameters
+        ----------
+        band_data : `Band_Data`
+            Band data for which to determine the PSF normalization.
+        size : `astropy.units.Quantity`, optional
+            Angular aperture used to determine the encircled energy.
+            Default is `4.0 * u.arcsec`.
+
+        Returns
+        -------
+        `None`
+            This base implementation performs no calculation.
+        """
+        return None
 
     def get_psf_norm_path(
         self: Self,
         **kwargs: Dict[str, Any],
     ) -> None:
+        """Get the path to the PSF normalization (encircled energy) file.
+
+        Base implementation always returns `None`; subclasses with
+        calibration data available override this to return a file path.
+
+        Parameters
+        ----------
+        **kwargs : `dict`
+            Additional keyword arguments, unused in the base
+            implementation.
+
+        Returns
+        -------
+        `None`
+            This base implementation performs no lookup.
+        """
         return None
-    
+
     @staticmethod
     def get_psf_dir(band_data: Band_Data) -> str:
+        """Get the working directory for PSF-related files for a band.
+
+        Parameters
+        ----------
+        band_data : `Band_Data`
+            Band data used to determine the instrument, version, survey,
+            and filter name making up the directory path.
+
+        Returns
+        -------
+        `str`
+            Path to the PSF working directory for this band.
+        """
         return f"{config['PSF']['PSF_WORK_DIR']}/{band_data.filt.instrument.__class__.__name__}" + \
             f"/{band_data.version}/{band_data.survey}/{band_data.filt_name}"
 
@@ -233,13 +419,39 @@ class Instrument(ABC):
         self: Self,
         band_data: Band_Data,
     ) -> str:
+        """Get the path to the encircled energy curve (EEC) file for a band.
+
+        Parameters
+        ----------
+        band_data : `Band_Data`
+            Band data for which to determine the EEC file path.
+
+        Returns
+        -------
+        `str`
+            Path to the HDF5 file storing the encircled energy curve.
+        """
         eec_name = f"EEC_{band_data.filt.filt_name}.h5"
         eec_path = f"{self.get_psf_dir(band_data)}/{eec_name}"
         return eec_path
 
 
 class NIRCam(Instrument, funcs.Singleton):
-    
+    """Singleton `Instrument` representing JWST/NIRCam.
+
+    Defines the full set of NIRCam filters and the astrometric alignment
+    parameters used for NIRCam mosaics.
+
+    Attributes
+    ----------
+    facility : `JWST`
+        The JWST facility instance hosting NIRCam.
+    filt_names : `list` of `str`
+        Names of all NIRCam filters.
+    align_params : `dict`
+        Astrometric alignment parameters for NIRCam.
+    """
+
     def __init__(self) -> None:
         NIRCam_filt_names = [
             "F070W",
@@ -282,12 +494,26 @@ class NIRCam(Instrument, funcs.Singleton):
 
     @property
     def ZP_keys(self) -> List[str]:
+        """`list` of `str`: FITS header keywords required to calculate the zero-point (empty; NIRCam uses a fixed pixel-scale-based formula)."""
         return []
 
     def calc_ZP(
         self: Self,
         band_data: Type[Band_Data_Base]
     ) -> u.Quantity:
+        """Calculate the AB magnitude zero-point assuming MJy/sr flux units.
+
+        Parameters
+        ----------
+        band_data : `Band_Data_Base`
+            Band data providing the pixel scale used in the zero-point
+            calculation.
+
+        Returns
+        -------
+        `astropy.units.Quantity`
+            The AB magnitude zero-point for this band.
+        """
         # assume flux units of MJy/sr and calculate corresponding ZP
         ZP = -2.5 * np.log10(
             (band_data.pix_scale.to(u.rad).value ** 2) * u.MJy.to(u.Jy)
@@ -299,6 +525,22 @@ class NIRCam(Instrument, funcs.Singleton):
         band_data: Band_Data,
         size: u.Quantity = 0.96 * u.arcsec,
     ) -> PSF_Cutout:
+        """Construct a model PSF for NIRCam using STPSF (formerly WebbPSF).
+
+        Parameters
+        ----------
+        band_data : `Band_Data`
+            Band data for which to construct the model PSF.
+        size : `astropy.units.Quantity`, optional
+            Angular size of the PSF cutout. Currently unused (kept for
+            interface compatibility with `Instrument.make_model_psf`).
+            Default is `0.96 * u.arcsec`.
+
+        Returns
+        -------
+        `PSF_Cutout`
+            The constructed model PSF cutout.
+        """
         from . import PSF_Cutout
         # TODO: create PSF_Cutout from WebbPSF instead of loading from file
         #psf_path = f"{psf_dir}/NIRCam/{band_data.filt.filt_name}.fits"
@@ -315,6 +557,29 @@ class NIRCam(Instrument, funcs.Singleton):
         band_data: Band_Data,
         size: u.Quantity = 4.0 * u.arcsec,
     ) -> Union[None, Tuple[float, float]]:
+        """Get the encircled energy and field of view for PSF normalization.
+
+        Parameters
+        ----------
+        band_data : `Band_Data`
+            Band data for which to determine the PSF normalization.
+        size : `astropy.units.Quantity`, optional
+            Angular aperture (diameter) used to look up the tabulated
+            encircled energy. Default is `4.0 * u.arcsec`.
+
+        Returns
+        -------
+        `tuple` of (`float`, `float`) or `None`
+            The encircled energy fraction and the aperture diameter
+            (arcsec) it corresponds to, or `None` if no normalization
+            file could be found for this filter.
+
+        Raises
+        ------
+        AssertionError
+            If the normalization file returned by `get_psf_norm_path`
+            does not exist.
+        """
         norm_path = self.get_psf_norm_path(band_data = band_data)
         if norm_path is None:
             return None
@@ -337,6 +602,25 @@ class NIRCam(Instrument, funcs.Singleton):
         band_data: Band_Data,
         **kwargs: Dict[str, Any],
     ) -> str:
+        """Get the path to the encircled energy calibration file for a band.
+
+        Selects between the short-wavelength (SW) and long-wavelength (LW)
+        NIRCam encircled energy tables depending on which one contains the
+        requested filter.
+
+        Parameters
+        ----------
+        band_data : `Band_Data`
+            Band data whose filter determines which table is returned.
+        **kwargs : `dict`
+            Additional keyword arguments, unused.
+
+        Returns
+        -------
+        `str` or `None`
+            Path to the SW or LW encircled energy text file, or `None`
+            if the filter is not found in either table.
+        """
         SW_norm_path = f"{config['PSF']['PSF_DIR']}/{self.__class__.__name__}/encircled_energy/Encircled_Energy_SW_ETCv2.txt"
         LW_norm_path = f"{config['PSF']['PSF_DIR']}/{self.__class__.__name__}/encircled_energy/Encircled_Energy_LW_ETCv2.txt"
         filters = {
@@ -353,6 +637,18 @@ class NIRCam(Instrument, funcs.Singleton):
 
 
 class MIRI(Instrument, funcs.Singleton):
+    """Singleton `Instrument` representing JWST/MIRI.
+
+    Defines the full set of MIRI imaging filters.
+
+    Attributes
+    ----------
+    facility : `JWST`
+        The JWST facility instance hosting MIRI.
+    filt_names : `list` of `str`
+        Names of all MIRI filters.
+    """
+
     def __init__(self) -> None:
         MIRI_filt_names = [
             "F560W",
@@ -373,9 +669,23 @@ class MIRI(Instrument, funcs.Singleton):
 
     @property
     def ZP_keys(self) -> List[str]:
+        """`list` of `str`: FITS header keywords required to calculate the zero-point (empty; MIRI uses a fixed pixel-scale-based formula)."""
         return []
 
     def calc_ZP(self: Self, band_data: Type[Band_Data_Base]) -> u.Quantity:
+        """Calculate the AB magnitude zero-point assuming MJy/sr flux units.
+
+        Parameters
+        ----------
+        band_data : `Band_Data_Base`
+            Band data providing the pixel scale used in the zero-point
+            calculation.
+
+        Returns
+        -------
+        `astropy.units.Quantity`
+            The AB magnitude zero-point for this band.
+        """
         # assume flux units of MJy/sr and calculate corresponding ZP
         ZP = -2.5 * np.log10(
             (band_data.pix_scale.to(u.rad).value ** 2) * u.MJy.to(u.Jy)
@@ -387,6 +697,20 @@ class MIRI(Instrument, funcs.Singleton):
         band_data: Band_Data,
         size: u.Quantity = 0.96 * u.arcsec,
     ) -> Type[PSF_Base]:
+        """Construct a model PSF for MIRI.
+
+        Parameters
+        ----------
+        band_data : `Band_Data`
+            Band data for which to construct the model PSF.
+        size : `astropy.units.Quantity`, optional
+            Angular size of the PSF cutout. Default is `0.96 * u.arcsec`.
+
+        Raises
+        ------
+        NotImplementedError
+            Model PSF construction is not yet implemented for MIRI.
+        """
         raise NotImplementedError("Model PSF construction not yet implemented for MIRI!")
 
 
@@ -436,6 +760,23 @@ class ACS_SBC(Instrument, funcs.Singleton):
 
 
 class ACS_WFC(Instrument, funcs.Singleton):
+    """Singleton `Instrument` representing HST/ACS-WFC.
+
+    Defines the full set of ACS/WFC filters and the astrometric alignment
+    parameters used for ACS/WFC mosaics. Uses the SVO instrument name
+    ``'ACS'``.
+
+    Attributes
+    ----------
+    facility : `HST`
+        The HST facility instance hosting ACS/WFC.
+    filt_names : `list` of `str`
+        Names of all ACS/WFC filters.
+    align_params : `dict`
+        Astrometric alignment parameters for ACS/WFC.
+    SVO_name : `str`
+        SVO instrument name (``'ACS'``).
+    """
 
     def __init__(self) -> None:
         ACS_WFC_filt_names = [
@@ -482,9 +823,32 @@ class ACS_WFC(Instrument, funcs.Singleton):
 
     @property
     def ZP_keys(self) -> List[str]:
+        """`list` of `str`: FITS header keywords used to calculate the zero-point ('PHOTFLAM', 'PHOTPLAM', 'ZEROPNT')."""
         return ["PHOTFLAM", "PHOTPLAM", "ZEROPNT"] # or 'BUNIT'=MJy/sr
-        
+
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
+        """Calculate the AB magnitude zero-point from the image header.
+
+        Uses 'PHOTFLAM' and 'PHOTPLAM' if both are present, otherwise
+        falls back to 'ZEROPNT'.
+
+        Parameters
+        ----------
+        band_data : `Band_Data_Base`
+            Band data providing the image header used to compute the
+            zero-point.
+
+        Returns
+        -------
+        `astropy.units.Quantity`
+            The AB magnitude zero-point for this band.
+
+        Raises
+        ------
+        Exception
+            If neither ('PHOTFLAM' and 'PHOTPLAM') nor 'ZEROPNT' are
+            present in the image header.
+        """
         im_header = band_data.load_im()[1]
         if "PHOTFLAM" in im_header and "PHOTPLAM" in im_header:
             ZP = (
@@ -518,6 +882,18 @@ class ACS_WFC(Instrument, funcs.Singleton):
         self: Self,
         **kwargs: Dict[str, Any],
     ) -> str:
+        """Get the path to the ACS/WFC encircled energy calibration file.
+
+        Parameters
+        ----------
+        **kwargs : `dict`
+            Additional keyword arguments, unused.
+
+        Returns
+        -------
+        `str`
+            Path to the ACS/WFC encircled energy text file.
+        """
         return f"{config['PSF']['PSF_DIR']}/{self.__class__.__name__}/encircled_energy/ACS_WFC_EE.txt"
 
     def get_psf_norm(
@@ -525,6 +901,26 @@ class ACS_WFC(Instrument, funcs.Singleton):
         band_data: Band_Data,
         size: u.Quantity = 4.0 * u.arcsec,
     ) -> Tuple[float, float]:
+        """Get the encircled energy and field of view for PSF normalization.
+
+        Loads (creating if necessary, via `_make_eec`) the encircled
+        energy curve for `band_data` and looks up the tabulated value
+        nearest to the requested aperture size.
+
+        Parameters
+        ----------
+        band_data : `Band_Data`
+            Band data for which to determine the PSF normalization.
+        size : `astropy.units.Quantity`, optional
+            Angular aperture (diameter) used to look up the tabulated
+            encircled energy. Default is `4.0 * u.arcsec`.
+
+        Returns
+        -------
+        `tuple` of (`float`, `float`)
+            The encircled energy fraction and the aperture diameter
+            (arcsec) it corresponds to.
+        """
         eec_path = self.get_eec_path(band_data)
         self._make_eec(band_data)
         with h5py.File(eec_path, "r") as f:
@@ -543,6 +939,24 @@ class ACS_WFC(Instrument, funcs.Singleton):
         band_data: Band_Data,
         **kwargs: Dict[str, Any],
     ) -> PSF_Base:
+        """Construct a model PSF for ACS/WFC from its encircled energy curve.
+
+        Ensures the encircled energy curve for `band_data` exists (via
+        `_make_eec`), then builds a `PSF_Base` from it.
+
+        Parameters
+        ----------
+        band_data : `Band_Data`
+            Band data for which to construct the model PSF.
+        **kwargs : `dict`
+            Additional keyword arguments forwarded to the `PSF_Base`
+            constructor.
+
+        Returns
+        -------
+        `PSF_Base`
+            The constructed model PSF object.
+        """
         from . import PSF_Base
         self._make_eec(band_data)
         return PSF_Base(
@@ -595,6 +1009,20 @@ class ACS_WFC(Instrument, funcs.Singleton):
 
 
 class WFC3_IR(Instrument, funcs.Singleton):
+    """Singleton `Instrument` representing HST/WFC3-IR.
+
+    Defines the full set of WFC3-IR filters. Uses the SVO instrument name
+    ``'WFC3'``.
+
+    Attributes
+    ----------
+    facility : `HST`
+        The HST facility instance hosting WFC3-IR.
+    filt_names : `list` of `str`
+        Names of all WFC3-IR filters.
+    SVO_name : `str`
+        SVO instrument name (``'WFC3'``).
+    """
 
     def __init__(self) -> None:
         WFC3_IR_filt_names = [
@@ -621,9 +1049,33 @@ class WFC3_IR(Instrument, funcs.Singleton):
 
     @property
     def ZP_keys(self) -> List[str]:
+        """`list` of `str`: FITS header keywords required to calculate the zero-point (empty; WFC3-IR uses fixed per-filter zero-points)."""
         return []
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
+        """Calculate the AB magnitude zero-point from a fixed per-filter lookup table.
+
+        Uses tabulated AB zero-points from Appendix A of WFC3 ISR
+        2020-10, valid for the ``F098M``, ``F105W``, ``F110W``,
+        ``F125W``, ``F140W``, and ``F160W`` filters.
+
+        Parameters
+        ----------
+        band_data : `Band_Data_Base`
+            Band data providing the filter used to look up the
+            zero-point.
+
+        Returns
+        -------
+        `astropy.units.Quantity`
+            The AB magnitude zero-point for this band.
+
+        Raises
+        ------
+        KeyError
+            If `band_data.filt.filt_name` is not one of the tabulated
+            WFC3-IR filters.
+        """
         # Taken from Appendix A of
         # https://www.stsci.edu/files/live/sites/www/files/home/hst/instrumentation/wfc3/documentation/instrument-science-reports-isrs/_documents/2020/WFC3-ISR-2020-10.pdf
         wfc3ir_zps = {
@@ -640,10 +1092,36 @@ class WFC3_IR(Instrument, funcs.Singleton):
         self: Self,
         band_data: Band_Data,
     ) -> Type[PSF_Base]:
+        """Construct a model PSF for WFC3-IR.
+
+        Not yet implemented; the current implementation simply invokes
+        `breakpoint()`, dropping into an interactive debugger rather
+        than returning a PSF.
+
+        Parameters
+        ----------
+        band_data : `Band_Data`
+            Band data for which to construct the model PSF.
+        """
         breakpoint()
 
 
 class VISTA(Instrument, funcs.Singleton):
+    """Singleton `Instrument` representing VISTA/VIRCam.
+
+    Defines the full set of VISTA filters. Uses the SVO instrument name
+    ``'VIRCam'``.
+
+    Attributes
+    ----------
+    facility : `Paranal`
+        The Paranal facility instance hosting VISTA.
+    filt_names : `list` of `str`
+        Names of all VISTA filters.
+    SVO_name : `str`
+        SVO instrument name (``'VIRCam'``).
+    """
+
     def __init__(self) -> None:
         VISTA_filt_names = [
             "Z_filter",
@@ -668,9 +1146,24 @@ class VISTA(Instrument, funcs.Singleton):
 
     @property
     def ZP_keys(self) -> List[str]:
+        """`list` of `str`: FITS header keywords used to calculate the zero-point (``'PHOTZP'``)."""
         return ["PHOTZP"]
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
+        """Calculate the AB magnitude zero-point from the image header.
+
+        Parameters
+        ----------
+        band_data : `Band_Data_Base`
+            Band data providing the image header used to look up the
+            zero-point.
+
+        Returns
+        -------
+        `astropy.units.Quantity`
+            The AB magnitude zero-point for this band, taken directly
+            from the ``'PHOTZP'`` header keyword.
+        """
         ZP = band_data.load_im()[1]["PHOTZP"]
         return ZP
 
@@ -678,10 +1171,36 @@ class VISTA(Instrument, funcs.Singleton):
         self: Self,
         band_data: Band_Data,
     ) -> Type[PSF_Base]:
+        """Construct a model PSF for VISTA.
+
+        Not yet implemented; the current implementation simply invokes
+        `breakpoint()`, dropping into an interactive debugger rather
+        than returning a PSF.
+
+        Parameters
+        ----------
+        band_data : `Band_Data`
+            Band data for which to construct the model PSF.
+        """
         breakpoint()
 
 
 class MegaCam(Instrument, funcs.Singleton):
+    """Singleton `Instrument` representing CFHT/MegaCam.
+
+    Defines the full set of MegaCam filters. Uses the SVO instrument
+    name ``'MegaCam'``.
+
+    Attributes
+    ----------
+    facility : `CFHT`
+        The CFHT facility instance hosting MegaCam.
+    filt_names : `list` of `str`
+        Names of all MegaCam filters.
+    SVO_name : `str`
+        SVO instrument name (``'MegaCam'``).
+    """
+
     def __init__(self) -> None:
         Megacam_filt_names = [
             "u",
@@ -702,19 +1221,60 @@ class MegaCam(Instrument, funcs.Singleton):
 
     @property
     def ZP_keys(self) -> List[str]:
+        """`list` of `str`: FITS header keywords used to calculate the zero-point (``'PHOTZP'``)."""
         return ["PHOTZP"]
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
+        """Calculate the AB magnitude zero-point from the image header.
+
+        Parameters
+        ----------
+        band_data : `Band_Data_Base`
+            Band data providing the image header used to look up the
+            zero-point.
+
+        Returns
+        -------
+        `astropy.units.Quantity`
+            The AB magnitude zero-point for this band, taken directly
+            from the ``'PHOTZP'`` header keyword.
+        """
         return band_data.load_im()[1]["PHOTZP"]
 
     def make_model_psf(
         self: Self,
         band_data: Band_Data,
     ) -> Type[PSF_Base]:
+        """Construct a model PSF for MegaCam.
+
+        Not yet implemented; the current implementation simply invokes
+        `breakpoint()`, dropping into an interactive debugger rather
+        than returning a PSF.
+
+        Parameters
+        ----------
+        band_data : `Band_Data`
+            Band data for which to construct the model PSF.
+        """
         breakpoint()
 
 
 class HSC(Instrument, funcs.Singleton):
+    """Singleton `Instrument` representing Subaru/HSC.
+
+    Defines the full set of Hyper Suprime-Cam filters. Uses the SVO
+    instrument name ``'HSC'``.
+
+    Attributes
+    ----------
+    facility : `Subaru`
+        The Subaru facility instance hosting HSC.
+    filt_names : `list` of `str`
+        Names of all HSC filters.
+    SVO_name : `str`
+        SVO instrument name (``'HSC'``).
+    """
+
     def __init__(self) -> None:
         HSC_filt_names = [
             "g",
@@ -745,20 +1305,61 @@ class HSC(Instrument, funcs.Singleton):
 
     @property
     def ZP_keys(self) -> List[str]:
+        """`list` of `str`: FITS header keywords used to calculate the zero-point (``'PHOTZP'``)."""
         return ["PHOTZP"]
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
+        """Calculate the AB magnitude zero-point from the image header.
+
+        Parameters
+        ----------
+        band_data : `Band_Data_Base`
+            Band data providing the image header used to look up the
+            zero-point.
+
+        Returns
+        -------
+        `astropy.units.Quantity`
+            The AB magnitude zero-point for this band, taken directly
+            from the ``'PHOTZP'`` header keyword.
+        """
         ZP = band_data.load_im()[1]["PHOTZP"]
         return ZP
-    
+
     def make_model_psf(
         self: Self,
         band_data: Band_Data,
     ) -> Type[PSF_Base]:
+        """Construct a model PSF for HSC.
+
+        Not yet implemented; the current implementation simply invokes
+        `breakpoint()`, dropping into an interactive debugger rather
+        than returning a PSF.
+
+        Parameters
+        ----------
+        band_data : `Band_Data`
+            Band data for which to construct the model PSF.
+        """
         breakpoint()
 
 
 class VIS(Instrument, funcs.Singleton):
+    """Singleton `Instrument` representing Euclid/VIS.
+
+    Defines the single VIS visible-light filter. Uses the SVO
+    instrument name ``'VIS'``.
+
+    Attributes
+    ----------
+    facility : `Euclid`
+        The Euclid facility instance hosting VIS.
+    filt_names : `list` of `str`
+        Names of all VIS filters.
+    SVO_name : `str`
+        SVO instrument name (``'VIS'``).
+    """
+
     def __init__(self) -> None:
         VIS_filt_names = [
             "vis"
@@ -768,19 +1369,60 @@ class VIS(Instrument, funcs.Singleton):
 
     @property
     def ZP_keys(self) -> List[str]:
+        """`list` of `str`: FITS header keywords used to calculate the zero-point (``'PHOTZP'``)."""
         return ["PHOTZP"]
 
     def calc_ZP(self: Self, band_data: Type[Band_Data_Base]) -> u.Quantity:
+        """Calculate the AB magnitude zero-point from the image header.
+
+        Parameters
+        ----------
+        band_data : `Band_Data_Base`
+            Band data providing the image header used to look up the
+            zero-point.
+
+        Returns
+        -------
+        `astropy.units.Quantity`
+            The AB magnitude zero-point for this band, taken directly
+            from the ``'PHOTZP'`` header keyword.
+        """
         return band_data.load_im()[1]["PHOTZP"]
 
     def make_model_psf(
         self: Self,
         band_data: Band_Data,
     ) -> Type[PSF_Base]:
+        """Construct a model PSF for VIS.
+
+        Not yet implemented; the current implementation simply invokes
+        `breakpoint()`, dropping into an interactive debugger rather
+        than returning a PSF.
+
+        Parameters
+        ----------
+        band_data : `Band_Data`
+            Band data for which to construct the model PSF.
+        """
         breakpoint()
 
 
 class NISP(Instrument, funcs.Singleton):
+    """Singleton `Instrument` representing Euclid/NISP.
+
+    Defines the full set of NISP near-infrared filters. Uses the SVO
+    instrument name ``'NISP'``.
+
+    Attributes
+    ----------
+    facility : `Euclid`
+        The Euclid facility instance hosting NISP.
+    filt_names : `list` of `str`
+        Names of all NISP filters.
+    SVO_name : `str`
+        SVO instrument name (``'NISP'``).
+    """
+
     def __init__(self) -> None:
         NISP_filt_names = [
             "Y",
@@ -792,19 +1434,60 @@ class NISP(Instrument, funcs.Singleton):
 
     @property
     def ZP_keys(self) -> List[str]:
+        """`list` of `str`: FITS header keywords used to calculate the zero-point (``'PHOTZP'``)."""
         return ["PHOTZP"]
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
+        """Calculate the AB magnitude zero-point from the image header.
+
+        Parameters
+        ----------
+        band_data : `Band_Data_Base`
+            Band data providing the image header used to look up the
+            zero-point.
+
+        Returns
+        -------
+        `astropy.units.Quantity`
+            The AB magnitude zero-point for this band, taken directly
+            from the ``'PHOTZP'`` header keyword.
+        """
         return band_data.load_im()[1]["PHOTZP"]
 
     def make_model_psf(
         self: Self,
         band_data: Band_Data,
     ) -> Type[PSF_Base]:
+        """Construct a model PSF for NISP.
+
+        Not yet implemented; the current implementation simply invokes
+        `breakpoint()`, dropping into an interactive debugger rather
+        than returning a PSF.
+
+        Parameters
+        ----------
+        band_data : `Band_Data`
+            Band data for which to construct the model PSF.
+        """
         breakpoint()
 
 
 class IRAC(Instrument, funcs.Singleton):
+    """Singleton `Instrument` representing Spitzer/IRAC.
+
+    Defines the full set of IRAC infrared filters. Uses the SVO
+    instrument name ``'IRAC'``.
+
+    Attributes
+    ----------
+    facility : `Spitzer`
+        The Spitzer facility instance hosting IRAC.
+    filt_names : `list` of `str`
+        Names of all IRAC filters.
+    SVO_name : `str`
+        SVO instrument name (``'IRAC'``).
+    """
+
     def __init__(self) -> None:
         IRAC_filt_names = [
             "I1",
@@ -817,9 +1500,24 @@ class IRAC(Instrument, funcs.Singleton):
 
     @property
     def ZP_keys(self) -> List[str]:
+        """`list` of `str`: FITS header keywords used to calculate the zero-point (``'PHOTZP'``)."""
         return ["PHOTZP"]
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
+        """Calculate the AB magnitude zero-point from the image header.
+
+        Parameters
+        ----------
+        band_data : `Band_Data_Base`
+            Band data providing the image header used to look up the
+            zero-point.
+
+        Returns
+        -------
+        `astropy.units.Quantity`
+            The AB magnitude zero-point for this band, taken directly
+            from the ``'PHOTZP'`` header keyword.
+        """
         ZP = band_data.load_im()[1]["PHOTZP"]
         return ZP
 
@@ -827,6 +1525,17 @@ class IRAC(Instrument, funcs.Singleton):
         self: Self,
         band_data: Band_Data,
     ) -> Type[PSF_Base]:
+        """Construct a model PSF for IRAC.
+
+        Not yet implemented; the current implementation simply invokes
+        `breakpoint()`, dropping into an interactive debugger rather
+        than returning a PSF.
+
+        Parameters
+        ----------
+        band_data : `Band_Data`
+            Band data for which to construct the model PSF.
+        """
         breakpoint()
 
 

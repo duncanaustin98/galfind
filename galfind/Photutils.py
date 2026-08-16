@@ -1,3 +1,8 @@
+"""Photutils-based source detection and aperture photometry.
+
+Alternative to SExtractor using photutils library for source detection
+and aperture photometry with forced photometry catalogue generation.
+"""
 
 from __future__ import annotations
 import numpy as np
@@ -35,12 +40,35 @@ from . import useful_funcs_austind as funcs
 from . import config, galfind_logger
 
 def get_code() -> str:
+    """Return a string identifying the photutils version used.
+
+    Returns
+    -------
+    `str`
+        The installed photutils version, formatted as ``"photutils-v<version>"``.
+    """
     return f"photutils-v{photutils.__version__}"
 
 def get_segmentation_path(
     self: Type[Band_Data_Base],
     segment_type: str,
 ) -> str:
+    """Construct (and ensure the directory exists for) the photutils segmentation map path.
+
+    Parameters
+    ----------
+    self : `Band_Data_Base`
+        Band data object providing ``instr_name``, ``version``, ``survey``
+        and ``filt_name`` used to build the path.
+    segment_type : `str`
+        Segmentation method identifier (e.g. ``"bkg"`` or ``"rms"``) used
+        as a subdirectory of the segmentation output.
+
+    Returns
+    -------
+    `str`
+        The path to the ``.fits`` segmentation map for this band/segmentation type.
+    """
     seg_dir = f"{config['Photutils']['PHOTUTILS_DIR']}/{self.instr_name}/{self.version}/{self.survey}/{segment_type}/segmentation"
     seg_path = f"{seg_dir}/{self.survey}_{self.filt_name}_{self.filt_name}_{self.version}_seg.fits"
     funcs.make_dirs(seg_path)
@@ -51,6 +79,25 @@ def get_forced_phot_path(
     segment_type: str,
     forced_phot_band: Optional[Type[Band_Data_Base]] = None,
 ) -> str:
+    """Construct (and ensure the directory exists for) the forced photometry catalogue path.
+
+    Parameters
+    ----------
+    self : `Band_Data_Base`
+        Band data object on which forced photometry is being performed.
+    segment_type : `str`
+        Segmentation method identifier used as a subdirectory of the
+        forced photometry output.
+    forced_phot_band : `Band_Data_Base`, optional
+        Band used for source detection/positions. If `None`, ``self`` is
+        used as both the detection and measurement band, and the current
+        photutils version is used as the method label. Default is `None`.
+
+    Returns
+    -------
+    `str`
+        The path to the ``.fits`` forced photometry catalogue.
+    """
     if forced_phot_band is None:
         select_filt_name = self.filt_name
         forced_phot_code = f"photutils-v{photutils.__version__}"
@@ -73,6 +120,39 @@ def segment(
     bkg_kwargs: Dict[str, Any] = {"thresh_mult": 10, "box_size": (50, 50), "filter_size": (3, 3)},
     detect_thresh_kwargs: Dict[str, Any] = {"nsigma": 3.0},
 ) -> str:
+    """Run photutils source detection and create segmentation map.
+
+    Detects sources using photutils.detection and creates a segmentation map
+    with background estimation, using either a local background or RMS map
+    for the detection threshold.
+
+    Parameters
+    ----------
+    self : `Type[Band_Data_Base]`
+        Band data instance to segment.
+    segment_type : `str`, optional
+        Detection threshold type: "bkg" (local background) or "rms" (RMS map).
+        Default is "bkg".
+    overwrite : `bool`, optional
+        Regenerate segmentation even if cached. Default is `False`.
+    segment_kwargs : `dict`, optional
+        Keyword arguments for `SourceCatalog()`. Default includes npixels=30.
+    bkg_kwargs : `dict`, optional
+        Keyword arguments for background estimation (when segment_type="bkg").
+        Must include "box_size" and "thresh_mult".
+    detect_thresh_kwargs : `dict`, optional
+        Keyword arguments for `detect_threshold()`. Default is nsigma=3.0.
+
+    Returns
+    -------
+    `str`
+        Path to the output segmentation map FITS file.
+
+    Raises
+    ------
+    AssertionError
+        If `segment_type` is not in ["bkg", "rms"] or required parameters are missing.
+    """
     assert segment_type in ["bkg", "rms"], \
         galfind_logger.critical(
             f"{segment_type=} not in ['bkg', 'rms']"
@@ -146,6 +226,28 @@ def perform_forced_phot(
     segment_type: str = "bkg",
     overwrite: bool = False,
 ) -> NoReturn:
+    """Perform aperture photometry on one band using positions from another.
+
+    Measures flux in fixed apertures at positions detected in a reference
+    (deeper/bluer) band, enabling photometry of faint sources.
+
+    Parameters
+    ----------
+    self : `Type[Band_Data_Base]`
+        The measurement band (where photometry is performed).
+    forced_phot_band : `Type[Band_Data_Base]`
+        The detection/reference band (where source positions come from).
+    segment_type : `str`, optional
+        Segmentation method ("bkg" or "rms") for detecting reference sources.
+        Default is "bkg".
+    overwrite : `bool`, optional
+        Regenerate forced photometry even if cached. Default is `False`.
+
+    Returns
+    -------
+    `NoReturn`
+        (Returns forced photometry path via side effect).
+    """
 
     forced_phot_path = get_forced_phot_path(
         self, segment_type, forced_phot_band

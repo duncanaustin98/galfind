@@ -1,4 +1,9 @@
-# Depths.py
+"""Depth/sensitivity map calculation and visualization utilities.
+
+Provides aperture photometry functions and grid placement algorithms for
+identifying unmasked regions and calculating depth measurements.
+"""
+
 from __future__ import annotations
 
 # import automask as am
@@ -44,11 +49,79 @@ from . import config, galfind_logger, Masking
 
 
 def do_photometry(image, xy_coords, radius_pixels):
+    """Measure aperture photometry at a set of pixel positions.
+
+    Parameters
+    ----------
+    image : `numpy.ndarray`
+        2D image array to perform photometry on.
+    xy_coords : array-like
+        `(x, y)` pixel coordinates of the aperture centres.
+    radius_pixels : `float`
+        Aperture radius in pixels.
+
+    Returns
+    -------
+    `numpy.ndarray`
+        Summed flux within each aperture.
+    """
     aper = CircularAperture(xy_coords, radius_pixels)
     aper_sums, _ = aper.do_photometry(image, error=None)
     return aper_sums
 
 def make_grid_force(data, mask, radius, scatter_size, pixel_scale=0.03, plot=False, ax=None, distance_to_mask=50, n_retry_box=5, grid_offset_times=4):
+    """Place a grid of non-overlapping circular apertures in unmasked regions of an image.
+
+    Similar to `make_grid`, but retries placement of each candidate
+    aperture position (perturbing it randomly within `scatter_size`) up
+    to `n_retry_box` times if it overlaps the (dilated) mask or a
+    previously placed aperture, and repeats the whole gridding process
+    `grid_offset_times` times with different grid offsets to increase the
+    number of apertures placed.
+
+    Parameters
+    ----------
+    data : `numpy.ndarray`
+        2D image array apertures are placed on (used for its shape and,
+        if `plot` is `True`, as the background image).
+    mask : `numpy.ndarray`
+        2D boolean/integer mask array, the same shape as `data`, where
+        non-zero/`True` pixels are excluded from aperture placement.
+    radius : `float`
+        Aperture radius, in arcseconds.
+    scatter_size : `float`
+        Size of the random positional scatter applied to each grid
+        position, in arcseconds.
+    pixel_scale : `float`, optional
+        Pixel scale in arcseconds/pixel, used to convert `radius` and
+        `scatter_size` to pixels. Default is `0.03`.
+    plot : `bool`, optional
+        Whether to plot the image, mask and placed apertures. Default is
+        `False`.
+    ax : `matplotlib.axes.Axes`, optional
+        Axes to plot on if `plot` is `True`. A new figure/axes is created
+        if `None`. Default is `None`.
+    distance_to_mask : `int`, optional
+        Size (in pixels) of the elliptical structuring element used to
+        dilate `mask` away from masked regions before placing apertures.
+        Default is `50`.
+    n_retry_box : `int`, optional
+        Number of times to retry placing an aperture (with a new random
+        scatter) if it overlaps the mask or another aperture, before
+        giving up on that grid position. Default is `5`.
+    grid_offset_times : `int`, optional
+        Number of times to repeat aperture placement with different grid
+        offsets, to increase the achieved placing efficiency. Default is
+        `4`.
+
+    Returns
+    -------
+    `tuple` of (`list`, `float`)
+        List of `(x, y)` pixel coordinates of the successfully placed,
+        non-overlapping apertures, and the achieved placing efficiency
+        (fraction of the maximum possible number of non-overlapping
+        apertures that were placed).
+    """
     import cv2
     radius_pixels = radius / pixel_scale
     scatter_size_pixels = scatter_size / pixel_scale
@@ -585,6 +658,28 @@ def calc_depths(
 
 @jit(nopython=True)
 def numba_distances(x=np.array([]), y=np.array([]), x_coords=1, y_coords=1):
+    """Compute Euclidean distances from an array of points to a single point.
+
+    Numba-jitted for performance.
+
+    Parameters
+    ----------
+    x : `numpy.ndarray`, optional
+        Array of x coordinates. Default is an empty array.
+    y : `numpy.ndarray`, optional
+        Array of y coordinates, the same length as `x`. Default is an
+        empty array.
+    x_coords : `float`, optional
+        x coordinate of the reference point. Default is `1`.
+    y_coords : `float`, optional
+        y coordinate of the reference point. Default is `1`.
+
+    Returns
+    -------
+    `numpy.ndarray`
+        Euclidean distance from each `(x, y)` point to
+        `(x_coords, y_coords)`.
+    """
     # distances = np.sqrt((x_coords[:, None] - x)**2 + (y_coords[:, None]- y)**2)
     # return distances
     distances = np.zeros_like(x)
@@ -597,6 +692,33 @@ def numba_distances(x=np.array([]), y=np.array([]), x_coords=1, y_coords=1):
 def calculate_depth(
     values, sigma_level=5, zero_point=28.0865, min_number_of_values=100
 ):
+    """Compute a sigma-clipped depth from a set of empty aperture flux values.
+
+    Numba-jitted for performance. Uses the normalized median absolute
+    deviation (NMAD) of `values` scaled by `sigma_level` to estimate the
+    flux limit, then converts this to an AB magnitude depth using
+    `zero_point`.
+
+    Parameters
+    ----------
+    values : `numpy.ndarray`
+        Fluxes measured in empty apertures.
+    sigma_level : `float`, optional
+        Number of sigma (NMAD units) the depth corresponds to. Default is
+        `5`.
+    zero_point : `float`, optional
+        Magnitude zero point used to convert the flux limit to a
+        magnitude. Default is `28.0865`.
+    min_number_of_values : `int`, optional
+        Minimum number of `values` required to compute a depth;
+        `numpy.nan` is returned otherwise. Default is `100`.
+
+    Returns
+    -------
+    `float`
+        Depth in AB magnitudes, or `numpy.nan` if there are too few
+        `values` or the computed NMAD is not positive.
+    """
     if len(values) < min_number_of_values:
         return np.nan
     median = np.nanmedian(values)
@@ -656,6 +778,24 @@ def make_ds9_region_file(
 
 
 def load_xy_from_ds9_region_file(filename: str):
+    """Load circle aperture centre coordinates from a DS9 region file.
+
+    Parses every line starting with ``"circle"`` (as written by
+    `make_ds9_region_file`) and extracts its first two parenthesised
+    values as an `(x, y)` coordinate pair.
+
+    Parameters
+    ----------
+    filename : `str`
+        Path to the DS9 ``.reg`` file to read.
+
+    Returns
+    -------
+    `list` of `tuple`
+        `(x, y)` coordinates of each circle region in the file, in
+        whatever coordinate system (sky or pixel) the file was written
+        in.
+    """
     with open(filename, "r") as f:
         lines = f.readlines()
     f.close()
@@ -669,8 +809,45 @@ def load_xy_from_ds9_region_file(filename: str):
 def cluster_wht_map(
     wht_map, num_regions="auto", bin_factor=1, min_size=10000, plot=False
 ):
+    """Segment a weight map into contiguous depth regions using KMeans clustering.
+
+    Down-weights outliers via percentile clipping, optionally resizes
+    (bins) the weight map for speed, clusters pixel values into
+    `num_regions` groups with KMeans, cleans up the resulting label map
+    with morphological opening/closing and small-hole removal, and
+    identifies (and discards) a background region if one dominates by
+    near-zero weight. Works best for 2 regions, but can be used for more;
+    may need additional smoothing/cleaning for more than 2 regions.
+
+    Parameters
+    ----------
+    wht_map : `str` or `numpy.ndarray`
+        Path to a FITS weight map (its ``"WHT"``/primary extension is
+        used), or a 2D weight map array.
+    num_regions : `int` or `str`, optional
+        Number of regions to cluster into, or `"auto"` to automatically
+        select the number of regions (from 1-4) using a KMeans elbow
+        (`kneed.KneeLocator`) on the clustering inertia. Default is
+        `"auto"`.
+    bin_factor : `int`, optional
+        Factor by which to downsize the weight map before clustering, for
+        speed; the resulting label map is upsampled back to the original
+        shape if greater than `1`. Default is `1`.
+    min_size : `int`, optional
+        Minimum region/hole size (in pixels of the original, unbinned
+        map) used when cleaning the label map with morphological area
+        opening/closing and small-hole removal. Default is `10000`.
+    plot : `bool`, optional
+        Unused; retained for interface compatibility. Default is `False`.
+
+    Returns
+    -------
+    `tuple` of (`numpy.ndarray`, `numpy.ndarray`)
+        Cleaned integer label map (same shape as `wht_map`, unless a
+        KMeans failure returns an all-zero array in the binned shape) and
+        the percentile-clipped, rescaled weight map used for clustering.
+    """
     import cv2
-    "Works best for 2 regions, but can be used for more than 2 regions - may need additional smoothing and cleaning"
     # Read the image and associated weight map
 
     # adjust min_size to be in terms of the bin_factor
@@ -838,6 +1015,31 @@ def get_depth_dir(
     aper_diam: u.Quantity,
     mode: str,
 ) -> str:
+    """Construct the directory path used to store depth outputs for `self`.
+
+    Parameters
+    ----------
+    self : `Band_Data_Base` or `Data`
+        Instance (`Band_Data`, `Stacked_Band_Data` or `Data`) to
+        construct the depth directory for.
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter the depths are calculated for.
+    mode : `str`
+        Depth calculation mode (e.g. ``"n_nearest"`` or ``"rolling"``),
+        used as the final directory component.
+
+    Returns
+    -------
+    `str`
+        Directory path for storing/loading depth outputs for `self`,
+        `aper_diam` and `mode`.
+
+    Raises
+    ------
+    ValueError
+        If `self` is not a `Band_Data`, `Stacked_Band_Data` or `Data`
+        instance.
+    """
     if self.__class__.__name__ in ["Band_Data", "Stacked_Band_Data"]:
         instr_name = self.instr_name
     elif self.__class__.__name__ == "Data":
@@ -853,6 +1055,27 @@ def get_depth_dir(
 
 
 def get_forced_phot_subdir(aper_diams: u.Quantity, forced_phot_args: Dict[str, Any]) -> str:
+    """Construct the subdirectory name identifying a forced photometry setup.
+
+    Strips version/date substrings from the forced photometry method name
+    and combines it with the error type, forced photometry band and
+    aperture diameters to give a unique, filesystem-safe subdirectory
+    name.
+
+    Parameters
+    ----------
+    aper_diams : `astropy.units.Quantity`
+        Aperture diameters used in forced photometry.
+    forced_phot_args : `dict`
+        Forced photometry configuration, must contain ``"method"``,
+        ``"err_type"`` and ``"forced_phot_band"`` keys.
+
+    Returns
+    -------
+    `str`
+        Subdirectory name encoding the forced photometry method, error
+        type, forced photometry band and aperture diameters.
+    """
     forced_phot_code = forced_phot_args["method"]
     dates = funcs.date_finder(forced_phot_code)
     for remove in dates + ["version", "(", ")", " "]:
@@ -868,6 +1091,30 @@ def get_grid_depth_path(
     aper_diam: u.Quantity,
     mode: str
 ) -> str:
+    """Construct (and ensure the parent directory of) the path to a band's grid depth ``.h5`` file.
+
+    Parameters
+    ----------
+    self : `Band_Data_Base`
+        Band data instance (must have `forced_phot_args` set) to
+        construct the grid depth path for.
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter the depths are calculated for.
+    mode : `str`
+        Depth calculation mode (e.g. ``"n_nearest"`` or ``"rolling"``).
+
+    Returns
+    -------
+    `str`
+        Path to the ``.h5`` file storing the grid depth output for
+        `self`.
+
+    Raises
+    ------
+    AssertionError
+        If `self` has not had forced photometry run (no
+        `forced_phot_args` attribute).
+    """
     depth_dir = get_depth_dir(self, aper_diam, mode)
     assert hasattr(self, "forced_phot_args"), \
         galfind_logger.critical(
@@ -880,6 +1127,36 @@ def get_grid_depth_path(
 
 
 def calc_band_depth(params: Tuple[Any]) -> NoReturn:
+    """Compute and save grid-based depths for a single band, if not already computed.
+
+    Intended to be called (e.g. via multiprocessing) with a single packed
+    `params` tuple. Unless the output ``.h5`` file already exists (and
+    `overwrite` is `False`), this places (or loads previously placed)
+    non-overlapping empty apertures across the unmasked image, measures
+    their fluxes, computes both catalogue and grid depths via
+    `calc_depths`, and writes the results to the band's grid depth
+    ``.h5`` file.
+
+    Parameters
+    ----------
+    params : `tuple`
+        Packed parameters, unpacked in order as: `self` (the
+        `Band_Data_Base` instance to compute depths for), `aper_diam`
+        (`astropy.units.Quantity`), `mode` (`str`, ``"n_nearest"`` or
+        ``"rolling"``), `scatter_size` (`float`), `distance_to_mask`
+        (`int`), `region_radius_used_pix` (`int`), `n_nearest` (`int`),
+        `coord_type` (`str`), `split_depth_min_size` (`int`),
+        `split_depths_factor` (`int`), `step_size` (`int`), `n_split`
+        (`int` or `str`), `n_retry_box` (`int`), `grid_offset_times`
+        (`int`), `overwrite` (`bool`), and `master_cat_path` (`str` or
+        `None`).
+
+    Returns
+    -------
+    `None`
+        Nothing is returned; results are written to the band's grid
+        depth ``.h5`` file as a side effect.
+    """
     # unpack input parameters
     (
         self,
@@ -1061,6 +1338,18 @@ def calc_band_depth(params: Tuple[Any]) -> NoReturn:
 
 
 def get_depth_tab_path(self: Data) -> str:
+    """Construct (and ensure the parent directory of) the path to a survey's depth table.
+
+    Parameters
+    ----------
+    self : `Data`
+        `Data` instance to construct the depth table path for.
+
+    Returns
+    -------
+    `str`
+        Path to the ``.ecsv`` depth table for `self.survey`/`self.version`.
+    """
     depth_dir = get_depth_tab_dir(self)
     depth_tab_path = f"{depth_dir}/{self.survey}_depths.ecsv"
     funcs.make_dirs(depth_tab_path)
@@ -1068,6 +1357,18 @@ def get_depth_tab_path(self: Data) -> str:
 
 
 def get_depth_tab_dir(self: Data) -> str:
+    """Construct the directory path used to store a survey's depth table.
+
+    Parameters
+    ----------
+    self : `Data`
+        `Data` instance to construct the depth table directory for.
+
+    Returns
+    -------
+    `str`
+        Directory path for `self.survey`/`self.version` depth tables.
+    """
     return (
         f"{config['Depths']['DEPTH_DIR']}/Depth_tables/"
         + f"{self.version}/{self.survey}"
@@ -1075,6 +1376,28 @@ def get_depth_tab_dir(self: Data) -> str:
 
 
 def make_depth_tab(self: Data) -> NoReturn:
+    """Create or update the summary depth table (``.ecsv``) for a `Data` object.
+
+    If the depth table for `self.survey`/`self.version` does not yet
+    exist, computes median and mean depths (per region label, from
+    `get_depths_from_h5`) for every band/aperture-diameter/mode
+    combination in `self` (plus the forced photometry band and any
+    stacked bands) and writes a new table. If it already exists, only
+    computes and appends rows for combinations not already present, and
+    writes the combined table back out.
+
+    Parameters
+    ----------
+    self : `Data`
+        `Data` instance to create/update the depth table for.
+
+    Returns
+    -------
+    `None`
+        Nothing is returned; the depth table is written to disk as a
+        side effect (unless there are no new rows to add, or no write
+        permission on an existing file).
+    """
     # create .ecsv holding all depths for an instrument if not already written
     depth_tab_path = get_depth_tab_path(self)
     if not Path(depth_tab_path).is_file():
@@ -1193,46 +1516,68 @@ def get_depths_from_h5(
     aper_diam: u.Quantity,
     mode: str,
 ) -> Tuple[Dict[str, float], Dict[str, float]]:
+    """Compute median and mean catalogue depths per region label from a band's grid depth ``.h5`` file.
+
+    Parameters
+    ----------
+    self : `Band_Data_Base`
+        Band data instance to load depths for.
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter the depths were calculated for.
+    mode : `str`
+        Depth calculation mode (e.g. ``"n_nearest"`` or ``"rolling"``).
+
+    Returns
+    -------
+    `tuple` of (`dict`, `dict`)
+        Dictionaries, keyed by region label (as `str`, plus an `"all"`
+        key for all regions combined), of median and mean catalogue
+        depths respectively.
+    """
     # open .h5
-    hf = h5py.File(get_grid_depth_path(self, aper_diam, mode), "r")
+    grid_depth_path = get_grid_depth_path(self, aper_diam, mode)
+    hf = h5py.File(grid_depth_path, "r")
     cat_depths = np.array(hf.get("depths"))
     depth_labels = np.array(hf.get("depth_labels"))
-    med_reg_band_depths = {
-        **{
-            str(int(depth_label)): np.nanmedian(
-                [
-                    depth
-                    for depth, label in zip(cat_depths, depth_labels)
-                    if label == depth_label
-                ]
-            )
-            for depth_label in np.unique(depth_labels)
-            if not np.isnan(depth_label)
-        },
-        **{"all": np.nanmedian(cat_depths)},
-    }
-    mean_reg_band_depths = {
-        **{
-            str(int(depth_label)): np.nanmean(
-                [
-                    depth
-                    for depth, label in zip(cat_depths, depth_labels)
-                    if label == depth_label
-                ]
-            )
-            for depth_label in np.unique(depth_labels)
-            if not np.isnan(depth_label)
-        },
-        **{"all": np.nanmean(cat_depths)},
-    }
     hf.close()
-    return med_reg_band_depths, mean_reg_band_depths
 
+    # compute median and mean depths for each region label
+    valid = ~np.isnan(depth_labels)
+    labels = depth_labels[valid]
+    depths = cat_depths[valid]
+    unique_labels, inverse = np.unique(labels, return_inverse=True)
+    order = np.argsort(inverse, kind="stable")
+    sorted_depths = depths[order]
+    group_bounds = np.searchsorted(inverse[order], np.arange(len(unique_labels) + 1))
+    med_reg_band_depths = {}
+    mean_reg_band_depths = {}
+    for i, label in enumerate(unique_labels):
+        group = sorted_depths[group_bounds[i]:group_bounds[i + 1]]
+        med_reg_band_depths[str(int(label))] = np.nanmedian(group)
+        mean_reg_band_depths[str(int(label))] = np.nanmean(group)
+    med_reg_band_depths["all"] = np.nanmedian(cat_depths)
+    mean_reg_band_depths["all"] = np.nanmean(cat_depths)
+    
+    return med_reg_band_depths, mean_reg_band_depths
 
 def get_depth_plot_path(
     self: Type[Band_Data_Base],
     aper_diam: u.Quantity
 ) -> str:
+    """Construct (and ensure the parent directory of) the path to a band's depth diagnostic plot.
+
+    Parameters
+    ----------
+    self : `Band_Data_Base`
+        Band data instance to construct the depth plot path for.
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter the depths were calculated for.
+
+    Returns
+    -------
+    `str`
+        Path to the ``.png`` depth diagnostic plot for `self`.
+    """
     depth_dir = f"{'/'.join(get_grid_depth_path(self, aper_diam, self.depth_args[aper_diam]['mode']).split('/')[:-1])}/plots"
     depth_plot_path = f"{depth_dir}/{self.filt_name}.png"
     funcs.make_dirs(depth_plot_path)
@@ -1240,6 +1585,19 @@ def get_depth_plot_path(
 
 
 def get_area_depth_dir(self: Union[Type[Band_Data_Base], Data]) -> str:
+    """Construct the directory path used to store area-depth outputs for `self`.
+
+    Parameters
+    ----------
+    self : `Band_Data_Base` or `Data`
+        Instance to construct the area-depth directory for.
+
+    Returns
+    -------
+    `str`
+        Directory path for `self.survey`/`self.version` area-depth
+        outputs.
+    """
     return (
         f"{config['Depths']['DEPTH_DIR']}/Depth_area/"
         + f"{self.version}/{self.survey}"
@@ -1254,6 +1612,33 @@ def get_area_depth_h5_path(
     invert_region: bool = False,
     zbin: Optional[Tuple[float, float]] = None,
 ) -> str:
+    """Construct (and ensure the parent directory of) the path to a band's area-depth ``.h5`` file.
+
+    Parameters
+    ----------
+    self : `Band_Data_Base`
+        Band data instance to construct the area-depth path for.
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter the area-depth was calculated for.
+    mask_selector : `str`, `list` of `str`, or `Mask_Selector`
+        Mask(s) to select when constructing the area mask, passed to
+        `Masking.sort_area_mask_names`.
+    mask_type : `str` or `list` of `str`
+        Mask column type(s) (e.g. ``"MASK"``) to use.
+    region_selector : `Region_Selector` or `list` of `Region_Selector`, optional
+        Region(s) to restrict the area mask to. Default is `None`.
+    invert_region : `bool`, optional
+        Whether to invert `region_selector`. Default is `False`.
+    zbin : `tuple` of `float`, optional
+        Redshift bin `(z_low, z_high)` to restrict the area mask to, if
+        relevant. Default is `None`.
+
+    Returns
+    -------
+    `str`
+        Path to the ``.h5`` file storing the area-depth output for
+        `self`, `aper_diam` and the given mask/region/zbin selection.
+    """
     mask_selector_name, mask_save_name, reg_name, mask_save_path = \
         Masking.sort_area_mask_names(
             self,
@@ -1277,6 +1662,33 @@ def get_area_depth_plot_path(
     invert_region: bool = False,
     zbin: Optional[Tuple[float, float]] = None,
 ) -> str:
+    """Construct (and ensure the parent directory of) the path to a `Data` object's area-depth plot.
+
+    Parameters
+    ----------
+    self : `Data`
+        `Data` instance to construct the area-depth plot path for.
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter the area-depth was calculated for.
+    mask_selector : `str`, `list` of `str`, or `Mask_Selector`
+        Mask(s) to select when constructing the area mask, passed to
+        `Masking.sort_area_mask_names`.
+    mask_type : `str` or `list` of `str`
+        Mask column type(s) (e.g. ``"MASK"``) to use.
+    region_selector : `Region_Selector` or `list` of `Region_Selector`, optional
+        Region(s) to restrict the area mask to. Default is `None`.
+    invert_region : `bool`, optional
+        Whether to invert `region_selector`. Default is `False`.
+    zbin : `tuple` of `float`, optional
+        Redshift bin `(z_low, z_high)` to restrict the area mask to, if
+        relevant. Default is `None`.
+
+    Returns
+    -------
+    `str`
+        Path to the ``.png`` area-depth plot for `self` and the given
+        mask/region/zbin selection.
+    """
     mask_selector_name, mask_save_name, reg_name, mask_save_path = \
         Masking.sort_area_mask_names(
             self,
@@ -1300,6 +1712,43 @@ def calc_band_data_area_depth(
     invert_region: bool = False,
     zbin: Optional[float] = None,
 ) -> Tuple[NDArray[float], NDArray[float], float]:
+    """Compute (or load cached) cumulative area-vs-depth data for a single band.
+
+    If the area-depth ``.h5`` file for `self`/`aper_diam`/mask selection
+    does not already exist, builds (or loads a cached) area mask,
+    re-bins it onto the grid depth map, computes the corresponding
+    unmasked area, and derives the cumulative area as a function of
+    depth from the (sorted, cleaned) grid depths. Results are cached to
+    an ``.h5`` file for subsequent calls.
+
+    Parameters
+    ----------
+    self : `Band_Data_Base`
+        Band data instance to compute the area-depth relation for.
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter to compute depths for. Must be a key of
+        `self.depth_args`.
+    mask_selector : `str`, `list` of `str`, or `Mask_Selector`, optional
+        Mask(s) to select when constructing the area mask. Default is
+        `None`.
+    mask_type : `str` or `list` of `str`, optional
+        Mask column type(s) (e.g. ``"MASK"``) to use. Default is
+        `"MASK"`.
+    region_selector : `Region_Selector` or `list` of `Region_Selector`, optional
+        Region(s) to restrict the area mask to. Default is `None`.
+    invert_region : `bool`, optional
+        Whether to invert `region_selector`. Default is `False`.
+    zbin : `float`, optional
+        Redshift bin to restrict the area mask to, if relevant. Default
+        is `None`.
+
+    Returns
+    -------
+    `tuple` of (`numpy.ndarray`, `numpy.ndarray`, `float`)
+        Sorted (descending) grid depths within the unmasked area, the
+        corresponding cumulative unmasked area at each depth, and the
+        total unmasked area.
+    """
     assert aper_diam in self.depth_args.keys()
     #galfind_logger.info(f"Calculating area-depth for {repr(self)} in sub-region {depth_subreg}")
     area_depth_save_path = get_area_depth_h5_path(self, aper_diam, mask_selector, mask_type, region_selector, invert_region, zbin)
@@ -1381,6 +1830,52 @@ def plot_band_data_area_depth(
     close: bool = False,
     **plot_kwargs: Dict[str, Any],
 ):
+    """Plot the cumulative area-vs-depth relation for a single band.
+
+    Computes (or loads) the area-depth relation via
+    `calc_band_data_area_depth` and plots cumulative area against depth
+    on `ax` as a step curve, optionally saving to/showing/closing the
+    figure.
+
+    Parameters
+    ----------
+    self : `Band_Data_Base`
+        Band data instance to plot the area-depth relation for.
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter to plot depths for.
+    mask_selector : `str`, `list` of `str`, or `Mask_Selector`, optional
+        Mask(s) to select when constructing the area mask. Default is
+        `None`.
+    mask_type : `str` or `list` of `str`, optional
+        Mask column type(s) (e.g. ``"MASK"``) to use. Default is
+        `"MASK"`.
+    region_selector : `Region_Selector` or `list` of `Region_Selector`, optional
+        Region(s) to restrict the area mask to. Default is `None`.
+    invert_region : `bool`, optional
+        Whether to invert `region_selector`. Default is `False`.
+    zbin : `float`, optional
+        Redshift bin to restrict the area mask to, if relevant. Default
+        is `None`.
+    fig : `matplotlib.figure.Figure`, optional
+        Figure to save if `save` is `True`. Default is `None`.
+    ax : `matplotlib.axes.Axes`, optional
+        Axes to plot the area-depth curve on. Default is `None`.
+    save : `bool`, optional
+        Whether to save the figure to disk. Default is `False`.
+    show : `bool`, optional
+        Whether to display the figure. Default is `False`.
+    close : `bool`, optional
+        Whether to close the figure after plotting. Default is `False`.
+    **plot_kwargs : `dict`
+        Additional keyword arguments passed to `ax.plot`, overriding the
+        default styling.
+
+    Returns
+    -------
+    `None`
+        Nothing is returned; the area-depth curve is drawn on `ax` (and
+        optionally saved/shown/closed) as a side effect.
+    """
     total_depths, cum_dist, area = calc_band_data_area_depth(
         self,
         aper_diam,
@@ -1431,6 +1926,39 @@ def calc_data_area_depth(
     invert_region: bool = True,
     zbin: Optional[Tuple[float, float]] = None,
 ) -> Tuple[Dict[str, NDArray[float]], Dict[str, NDArray[float]], Dict[str, float]]:
+    """Compute area-depth relations for every band in a `Data` object.
+
+    Builds the area mask for `self` (via `Masking.make_area_mask_from_data`)
+    and calls `calc_band_data_area_depth` for every band, the forced
+    photometry band, and any stacked bands.
+
+    Parameters
+    ----------
+    self : `Data`
+        `Data` instance to compute area-depth relations for.
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter to compute depths for.
+    mask_selector : `str`, `list` of `str`, or `Mask_Selector`, optional
+        Mask(s) to select when constructing the area mask. Default is
+        `None`.
+    mask_type : `str` or `list` of `str`, optional
+        Mask column type(s) (e.g. ``"MASK"``) to use. Default is
+        `"MASK"`.
+    region_selector : `Region_Selector` or `list` of `Region_Selector`, optional
+        Region(s) to restrict the area mask to. Default is `None`.
+    invert_region : `bool`, optional
+        Whether to invert `region_selector`. Default is `True`.
+    zbin : `tuple` of `float`, optional
+        Redshift bin `(z_low, z_high)` to restrict the area mask to, if
+        relevant. Default is `None`.
+
+    Returns
+    -------
+    `tuple` of (`dict`, `dict`, `dict`)
+        Dictionaries, keyed by filter name, of sorted grid depths,
+        cumulative unmasked area at each depth, and total unmasked area,
+        respectively, for each band in `self`.
+    """
     Masking.make_area_mask_from_data(
         self,
         mask_selector,
@@ -1478,6 +2006,60 @@ def plot_data_area_depth(
     close: bool = True,
     **kwargs: Dict[str, Any],
 ) -> None:
+    """Plot the cumulative area-vs-depth relation for every band in a `Data` object.
+
+    Plots the area-depth curve (via `Band_Data.plot_area_depth`) for
+    every band in `self`, the forced photometry band (dashed, black) and
+    any stacked bands (dotted, black) onto a single set of axes, with a
+    legend, inward-facing minor ticks and an inverted x-axis, optionally
+    saving to disk. Skips re-computation if the plot already exists on
+    disk, unless `overwrite` is `True`.
+
+    Parameters
+    ----------
+    self : `Data`
+        `Data` instance to plot area-depth relations for.
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter to plot depths for.
+    mask_selector : `str`, `list` of `str`, or `Mask_Selector`, optional
+        Mask(s) to select when constructing the area mask. Default is
+        `None`.
+    mask_type : `str` or `list` of `str`, optional
+        Mask column type(s) (e.g. ``"MASK"``) to use. Default is
+        `"MASK"`.
+    region_selector : `Region_Selector` or `list` of `Region_Selector`, optional
+        Region(s) to restrict the area mask to. Default is `None`.
+    invert_region : `bool`, optional
+        Whether to invert `region_selector`. Default is `True`.
+    fig : `matplotlib.figure.Figure`, optional
+        Figure to plot on/save. A new one is created if `None`. Default
+        is `None`.
+    ax : `matplotlib.axes.Axes`, optional
+        Axes to plot on. A new one is created if `None`. Default is
+        `None`.
+    cmap_name : `str`, optional
+        Name of the colormap used to colour each band's curve. Default
+        is `"RdYlBu_r"`.
+    overwrite : `bool`, optional
+        Whether to recompute and overwrite an existing plot. Default is
+        `False`.
+    save : `bool`, optional
+        Whether to save the figure to disk. Default is `True`.
+    show : `bool`, optional
+        Whether to display the figure. Default is `False`.
+    close : `bool`, optional
+        Whether to close the figure after plotting. Default is `True`.
+    **kwargs : `dict`
+        Additional keyword arguments; if a `"z"` key is given, selects
+        the unique `mask_selector` redshift bin containing that redshift
+        to use as `zbin`.
+
+    Returns
+    -------
+    `None`
+        Nothing is returned; the plot is drawn (and optionally
+        saved/shown/closed) as a side effect.
+    """
 
     if "z" in kwargs.keys():
         zbins = mask_selector.extract_zbins(self)
@@ -1618,6 +2200,27 @@ def get_hf_output(
     self: Type[Band_Data_Base], 
     aper_diam: u.Quantity,
 ) -> Dict[str, Any]:
+    """Load the contents of a band's grid depth ``.h5`` file into a dictionary.
+
+    Parameters
+    ----------
+    self : `Band_Data_Base`
+        Band data instance to load the grid depth output for.
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter the depths were calculated for.
+
+    Returns
+    -------
+    `dict`
+        Mapping from each dataset label in `get_depth_h5_labels` (present
+        in the file) to its stored `numpy.ndarray` value, with zeros in
+        ``"nmad_grid"`` replaced by `numpy.nan`.
+
+    Raises
+    ------
+    AssertionError
+        If the expected ``.h5`` file does not exist.
+    """
     # open .h5
     h5_path = get_grid_depth_path(self, aper_diam, self.depth_args[aper_diam]["mode"])
     assert Path(h5_path).is_file(), \
@@ -1638,6 +2241,23 @@ def get_cat_xy(
     self: Type[Band_Data_Base],
     master_cat_path: Optional[str]
 ) -> Tuple[np.ndarray, np.ndarray]:
+    """Compute catalogue source pixel coordinates for a band's image.
+
+    Parameters
+    ----------
+    self : `Band_Data_Base`
+        Band data instance whose WCS and forced photometry catalogue are
+        used.
+    master_cat_path : `str` or `None`
+        Path to the catalogue to read RA/Dec from; `self.forced_phot_path`
+        is used if `None`.
+
+    Returns
+    -------
+    `tuple` of (`numpy.ndarray`, `numpy.ndarray`)
+        x and y pixel coordinates of each catalogue source in `self`'s
+        WCS.
+    """
     # load catalogue to calculate x/y image coordinates
     if master_cat_path is None:
         cat = Table.read(self.forced_phot_path)
@@ -1661,6 +2281,45 @@ def plot_depth_diagnostic(
     cmap: str = "plasma",
     master_cat_path: Optional[str] = None
 ) -> NoReturn:
+    """Create and save/show a multi-panel depth diagnostic plot for a single band.
+
+    Produces a figure with panels for the rolling-average depth map, the
+    rolling-average diagnostic (number of apertures used), catalogue
+    source depths and diagnostics overlaid on the image, a depth
+    histogram, and (if more than one region is present) a region label
+    map. Empty panels are removed before saving/showing.
+
+    Parameters
+    ----------
+    self : `Band_Data_Base`
+        Band data instance to plot depth diagnostics for. Must have a
+        `depth_path` attribute.
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter the depths were calculated for.
+    save : `bool`, optional
+        Whether to save the figure to disk (via `get_depth_plot_path`).
+        Default is `True`.
+    show : `bool`, optional
+        Whether to display the figure. Default is `False`.
+    cmap : `str`, optional
+        Name of the colormap used for the image panels. Default is
+        `"plasma"`.
+    master_cat_path : `str`, optional
+        Path to the catalogue used to plot source positions; the band's
+        own forced photometry catalogue is used if `None`. Default is
+        `None`.
+
+    Returns
+    -------
+    `None`
+        Nothing is returned; the figure is saved to disk and/or
+        displayed as a side effect.
+
+    Raises
+    ------
+    AssertionError
+        If `self` does not have a `depth_path` attribute.
+    """
     plt.style.use("default")
     assert hasattr(self, "depth_path"), \
         galfind_logger.critical(
@@ -1727,11 +2386,25 @@ def plot_depth_diagnostic(
         plt.clf()
 
 def _plot_rolling_average(
-    fig: plt.Figure, 
-    ax: plt.Axes, 
+    fig: plt.Figure,
+    ax: plt.Axes,
     hf_output: Dict[str, Any],
     cmap: plt.Colormap
 ) -> NoReturn:
+    """Plot rolling-average depth map with filter size indicator circle.
+
+    Parameters
+    ----------
+    fig : `matplotlib.figure.Figure`
+        Figure to which the colorbar will be added.
+    ax : `matplotlib.axes.Axes`
+        Axes on which to draw the depth map.
+    hf_output : `dict`
+        Output from a depth calculation function containing ``nmad_grid``,
+        ``region_radius_used_pix``, and ``step_size``.
+    cmap : `matplotlib.colors.Colormap`
+        Colormap for the depth map visualization.
+    """
     # Make vmin and vmax the 1st and 99th percentile of the nmad_grid
     vmin, vmax = (
         np.nanpercentile(hf_output["nmad_grid"], 1),
@@ -1771,11 +2444,24 @@ def _plot_rolling_average(
     ax.set_title(r"Rolling Average 5$\sigma$ Depth")
 
 def _plot_rolling_average_diagnostic(
-    fig: plt.Figure, 
-    ax: plt.Axes, 
+    fig: plt.Figure,
+    ax: plt.Axes,
     hf_output: Dict[str, Any],
     cmap: plt.Colormap
 ) -> NoReturn:
+    """Plot rolling-average aperture count diagnostic map.
+
+    Parameters
+    ----------
+    fig : `matplotlib.figure.Figure`
+        Figure to which the colorbar will be added.
+    ax : `matplotlib.axes.Axes`
+        Axes on which to draw the diagnostic map.
+    hf_output : `dict`
+        Output from depth calculation containing ``num_grid`` (aperture counts).
+    cmap : `matplotlib.colors.Colormap`
+        Colormap for the diagnostic map visualization.
+    """
     mappable = ax.imshow(hf_output["num_grid"], origin="lower", cmap=cmap)
     divider = make_axes_locatable(ax)
     cax = divider.append_axes("right", size="5%", pad=0.05)
@@ -1786,6 +2472,28 @@ def _get_labels(
     hf_output: Dict[str, Any],
     cmap_name: str = "Set2"
 ) -> Tuple[List[str], List[int], List[plt.Color], plt.Colormap]:
+    """Extract and assign labels and colors for depth regions.
+
+    Parameters
+    ----------
+    hf_output : `dict`
+        Output from depth calculation containing ``labels_grid`` and ``nmad_grid``.
+    cmap_name : `str`, optional
+        Matplotlib colormap name for label colors. Default is ``"Set2"``.
+
+    Returns
+    -------
+    `tuple`
+        ``(labels_arr, possible_labels, colours, labels_cmap)`` where ``labels_arr``
+        are readable labels (e.g. "Shallow", "Deep"), ``possible_labels`` are unique
+        label values, ``colours`` are the assigned colors, and ``labels_cmap`` is
+        the colormap used.
+
+    Raises
+    ------
+    Exception
+        If more than 2 unique regions are found (currently unsupported).
+    """
     possible_labels = np.unique(hf_output["labels_grid"])
     av_depths = [
         np.nanmedian(hf_output["nmad_grid"][hf_output["labels_grid"] == label])
@@ -1821,6 +2529,17 @@ def _plot_labels(
     hf_output: Dict[str, Any],
     cmap: plt.Colormap,
 ) -> Tuple[List[str], List[int], List[plt.Color]]:
+    """Plot the labeled depth regions.
+
+    Parameters
+    ----------
+    ax : `matplotlib.axes.Axes`
+        Axes on which to draw the labels map.
+    hf_output : `dict`
+        Output from depth calculation containing ``labels_grid``.
+    cmap : `matplotlib.colors.Colormap`
+        Colormap for rendering the labeled regions.
+    """
     ax.imshow(
         hf_output["labels_grid"], cmap=cmap, origin="lower", interpolation="None"
     )
@@ -1835,6 +2554,25 @@ def _plot_cat_depths(
     cat_y: np.ndarray,
     combined_mask: np.ndarray,
 ) -> NoReturn:
+    """Plot catalogue source depths with region overlays.
+
+    Parameters
+    ----------
+    fig : `matplotlib.figure.Figure`
+        Figure to which the colorbar will be added.
+    ax : `matplotlib.axes.Axes`
+        Axes on which to draw the catalogue depths.
+    hf_output : `dict`
+        Output from depth calculation containing ``depths`` and ``final_labels``.
+    cmap : `matplotlib.colors.Colormap`
+        Colormap for the depth values.
+    cat_x : `numpy.ndarray`
+        x-coordinates of catalogue sources (pixels).
+    cat_y : `numpy.ndarray`
+        y-coordinates of catalogue sources (pixels).
+    combined_mask : `numpy.ndarray`
+        Boolean mask of valid regions.
+    """
     ax.set_title("Catalogue Depths")
     m = ax.scatter(
         cat_x, cat_y, s=1, zorder=5, c=hf_output["depths"], cmap=cmap, edgecolors=None
@@ -1868,6 +2606,25 @@ def _plot_cat_diagnostic(
     cat_y: np.ndarray,
     combined_mask: np.ndarray,
 ) -> NoReturn:
+    """Plot catalogue source diagnostic information.
+
+    Parameters
+    ----------
+    fig : `matplotlib.figure.Figure`
+        Figure to which the colorbar will be added.
+    ax : `matplotlib.axes.Axes`
+        Axes on which to draw the diagnostic plot.
+    hf_output : `dict`
+        Output from depth calculation containing ``diagnostic`` measurements.
+    cmap : `matplotlib.colors.Colormap`
+        Colormap for the diagnostic values.
+    cat_x : `numpy.ndarray`
+        x-coordinates of catalogue sources (pixels).
+    cat_y : `numpy.ndarray`
+        y-coordinates of catalogue sources (pixels).
+    combined_mask : `numpy.ndarray`
+        Boolean mask of valid regions.
+    """
     ax.set_title("Catalogue Diagnostic")
     m = ax.scatter(
         cat_x,
@@ -1897,6 +2654,29 @@ def _plot_depth_hist(
     label_suffix: Optional[str] = None,
     title: Optional[str] = None # default None prints "Depth Histogram"
 ) -> NoReturn:
+    """Plot histogram of depths, optionally split by region labels.
+
+    Parameters
+    ----------
+    fig : `matplotlib.figure.Figure`
+        Figure object (for reference).
+    ax : `matplotlib.axes.Axes`
+        Axes on which to draw the histogram.
+    hf_output : `dict`
+        Output from depth calculation containing ``nmad_grid`` and ``labels_grid``.
+    labels_arr : `list` of `str`
+        Readable labels for each region (e.g. ["Shallow", "Deep"]).
+    possible_labels : `list` of `int`
+        Label indices corresponding to ``labels_arr``.
+    colours : `list` of `matplotlib.colors.Color`
+        Colors for each label's histogram bars.
+    annotate : `bool`, optional
+        Whether to add depth value annotations to the bars. Default is `True`.
+    label_suffix : `str`, optional
+        Suffix to append to region labels in the legend. Default is `None`.
+    title : `str`, optional
+        Plot title. Default is `None` (uses "Depth Histogram").
+    """
     set_labels = [
         hf_output["depths"][hf_output["depth_labels"] == label] for label in possible_labels
     ]
@@ -1975,6 +2755,24 @@ def _plot_depth_hist(
 
 
 def get_depth_args(params: List[Tuple[Any, ...]]) -> Dict[str, Any]:
+    """Unpack a positional depth-parameter tuple into a keyword dictionary.
+
+    Parameters
+    ----------
+    params : `list` of `tuple`
+        Positional depth parameters, ordered as passed to
+        `calc_band_depth` (with `self` and `aper_diam` as the first two
+        elements).
+
+    Returns
+    -------
+    `dict`
+        Depth parameters keyed by name: ``"mode"``, ``"scatter_size"``,
+        ``"distance_to_mask"``, ``"region_radius_used_pix"``,
+        ``"n_nearest"``, ``"coord_type"``, ``"split_depth_min_size"``,
+        ``"split_depths_factor"``, ``"step_size"``, ``"n_split"``,
+        ``"n_retry_box"`` and ``"grid_offset_times"``.
+    """
     return {
         "mode": params[2],
         "scatter_size": params[3],
@@ -1992,6 +2790,14 @@ def get_depth_args(params: List[Tuple[Any, ...]]) -> Dict[str, Any]:
 
 
 def get_depth_h5_labels():
+    """List the dataset names stored in a band's grid depth ``.h5`` file.
+
+    Returns
+    -------
+    `list` of `str`
+        Names of the datasets written to/read from the grid depth
+        ``.h5`` file by `calc_band_depth` and `get_hf_output`.
+    """
     return [
         "mode",
         "aper_diam",
@@ -2017,9 +2823,53 @@ def get_depth_h5_labels():
 def append_loc_depth_cols(
     self: Data, 
     min_flux_pc_err: Optional[Union[int, float]] = None, 
-    update: bool = True,
-    overwrite: bool = False
+    update: bool = False,
+    overwrite: bool = False,
 ) -> None:
+    """Append local (empty-aperture) depth columns to a survey's photometric catalogue.
+
+    For each band (plus the forced photometry band and any stacked
+    bands) and aperture diameter, loads the pre-computed grid depths
+    from their ``.h5`` file (or fills with `numpy.nan` if not yet
+    computed), and adds per-source local depth, diagnostic and
+    significance columns to the catalogue, along with local-depth flux
+    error columns (converted to Jy, with a minimum percentage flux error
+    `min_flux_pc_err` imposed for non-stacked bands). Writes the updated
+    catalogue back to `self.phot_cat_path`, either replacing it entirely
+    or updating it in place if `update` is `True`. Does nothing if the
+    required local depth columns already exist and neither `update` nor
+    `overwrite` is set.
+
+    Parameters
+    ----------
+    self : `Data`
+        `Data` instance to append local depth columns to.
+    min_flux_pc_err : `int` or `float`, optional
+        Minimum percentage flux error to impose on local-depth flux
+        errors for non-stacked bands. Default is `None`.
+    update : `bool`, optional
+        Whether to only compute columns for bands not already present,
+        and update the catalogue file in place rather than overwriting
+        it. Default is `False`.
+    overwrite : `bool`, optional
+        Whether to overwrite pre-existing local depth columns. Not yet
+        implemented. Default is `False`.
+
+    Returns
+    -------
+    `None`
+        Nothing is returned; the catalogue at `self.phot_cat_path` is
+        updated as a side effect.
+
+    Raises
+    ------
+    NotImplementedError
+        If `overwrite` is `True` (not yet implemented).
+    AssertionError
+        If aperture-corrected flux columns are missing, if `self` has no
+        `forced_phot_band`, or if aperture diameters differ between
+        bands.
+    """
     from . import Catalogue, Stacked_Band_Data
     # open catalogue
     tab = Table.read(self.phot_cat_path)

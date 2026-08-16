@@ -82,7 +82,7 @@ dependencies = [
   "scipy",
   "sep", # 1.2.1 
   "photutils",
-  "opencv-python",
+  "opencv-python-headless", # headless build: no libGL/X11 dependency, needed for CI/RTD builds
   "joblib",
   "trilogy",
   "scikit-learn",
@@ -135,6 +135,7 @@ data = [
 # Documentation building
 docs = [
     "sphinx==7.4.7",
+    "sphinx_rtd_theme",
     "pandoc",
     "nbsphinx",
     "sphinx-copybutton",

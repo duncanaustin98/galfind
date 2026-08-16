@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Mon May 22 13:27:47 2023
+"""Galaxy catalogue with FITS I/O and catalogue-level operations.
 
-@author: austind
+Provides Catalogue class as a collection of Galaxy objects with FITS read/write,
+cropping, cross-matching, concatenation, and visualization capabilities.
 """
 
 from __future__ import annotations
@@ -74,18 +74,54 @@ from .Spectrum import Spectral_Catalogue
 
 
 def load_IDs_Table(
-    cat: Table, 
-    ID_label: str, 
+    cat: Table,
+    ID_label: str,
     **kwargs
 ) -> List[int]:
+    """Extract the galaxy ID column from a catalogue table.
+
+    Parameters
+    ----------
+    cat : `Table`
+        Catalogue table to load IDs from.
+    ID_label : `str`
+        Name of the column containing the galaxy IDs.
+    **kwargs
+        Unused, accepted for a consistent ``load_ID_func`` call signature.
+
+    Returns
+    -------
+    `list` of `int`
+        Galaxy IDs from the ``ID_label`` column.
+    """
     return list(cat[ID_label])
 
 def load_skycoords_Table(
-    cat: Table, 
-    skycoords_labels: Dict[str, str], 
-    skycoords_units: Dict[str, u.Unit], 
+    cat: Table,
+    skycoords_labels: Dict[str, str],
+    skycoords_units: Dict[str, u.Unit],
     **kwargs
 ) -> SkyCoord:
+    """Build a `SkyCoord` array from RA/Dec columns of a catalogue table.
+
+    Parameters
+    ----------
+    cat : `Table`
+        Catalogue table to load sky coordinates from.
+    skycoords_labels : `dict`
+        Mapping with keys ``"RA"`` and ``"DEC"`` giving the names of the
+        right ascension and declination columns in `cat`.
+    skycoords_units : `dict`
+        Mapping with keys ``"RA"`` and ``"DEC"`` giving the `astropy.units.Unit`
+        of the corresponding columns.
+    **kwargs
+        Unused, accepted for a consistent ``load_skycoords_func`` call signature.
+
+    Returns
+    -------
+    `SkyCoord`
+        Sky coordinates of every galaxy in `cat`.
+    """
     ra = cat[skycoords_labels["RA"]]
     dec = cat[skycoords_labels["DEC"]]
     ra_unit = skycoords_units["RA"]
@@ -111,6 +147,35 @@ def phot_property_from_galfind_tab(
     labels: Dict[u.Quantity, List[str]],
     **kwargs
 ) -> np.ndarray:
+    """Load a per-band, per-aperture-diameter property from a GALFIND-format table.
+
+    GALFIND catalogues store one column per band with all aperture diameters
+    stacked together in a single array-valued cell. This unpacks those
+    columns into a separate array for each requested aperture diameter.
+
+    Parameters
+    ----------
+    cat : `Table`
+        Catalogue table to load the property from.
+    labels : `dict`
+        Mapping from aperture diameter (`u.Quantity`) to the `list` of `str`
+        column names (one per band) storing the property for that aperture
+        diameter. All values must be identical lists of column names.
+    **kwargs
+        Must include ``cat_aper_diams`` (`u.Quantity` array) giving the full
+        set of aperture diameters stored in `cat`, used to work out which
+        index of the stacked column corresponds to each requested aperture
+        diameter. If not given, it is assumed to equal ``labels.keys()``,
+        with a warning logged. May also include ``reshape_by_aper_diams``
+        (`bool`) which is forwarded to `useful_funcs_austind.fits_cat_to_np`.
+
+    Returns
+    -------
+    `dict`
+        Mapping from aperture diameter (`u.Quantity`) to `np.ndarray` of the
+        requested property for that aperture diameter, or an empty `dict` if
+        `cat` is empty.
+    """
     if len(cat) == 0:
         galfind_logger.warning(
             "Catalogue is empty! Returning empty properties."
@@ -160,6 +225,30 @@ def phot_property_from_fits(
     labels: Dict[u.Quantity, List[str]],
     **kwargs
 ) -> np.ndarray:
+    """Load a per-band property from a plain (non-GALFIND) FITS table.
+
+    Unlike `phot_property_from_galfind_tab`, each aperture diameter is
+    assumed to already have its own set of per-band columns in `cat`, so no
+    unpacking of stacked aperture-diameter values is required.
+
+    Parameters
+    ----------
+    cat : `Table`
+        Catalogue table to load the property from.
+    labels : `dict`
+        Mapping from aperture diameter (`u.Quantity`) to the `list` of `str`
+        column names (one per band) storing the property for that aperture
+        diameter. All values must be identical lists of column names.
+    **kwargs
+        May include ``cat_aper_diams`` (`u.Quantity` array); if not given it
+        is assumed to equal ``labels.keys()``, with a warning logged.
+
+    Returns
+    -------
+    `dict`
+        Mapping from aperture diameter (`u.Quantity`) to `np.ndarray` of the
+        requested property for that aperture diameter.
+    """
     aper_diams = [label.value for label in labels.keys()] * list(labels.keys())[0].unit
     assert len(aper_diams) > 0, \
         galfind_logger.critical(f"{len(aper_diams)=} <= 0")
@@ -191,6 +280,30 @@ def load_galfind_phot(
     err_labels: Dict[u.Quantity, List[str]],
     **kwargs
 ) -> Tuple[Dict[u.Quantity, np.ndarray], Dict[u.Quantity, np.ndarray]]:
+    """Load photometric fluxes and errors from a GALFIND-format table, in Jy.
+
+    Parameters
+    ----------
+    cat : `Table`
+        Catalogue table to load photometry from.
+    phot_labels : `dict`
+        Mapping from aperture diameter (`u.Quantity`) to the `list` of `str`
+        flux column names (one per band), as returned by e.g. `galfind_phot_labels`.
+    err_labels : `dict`
+        Mapping from aperture diameter (`u.Quantity`) to the `list` of `str`
+        flux error column names (one per band). Must have the same keys as
+        `phot_labels`.
+    **kwargs
+        Must include ``ZP`` (image zeropoint) used to convert fluxes/errors
+        into Jy via `useful_funcs_austind.flux_image_to_Jy`. Forwarded to
+        `phot_property_from_galfind_tab`.
+
+    Returns
+    -------
+    `tuple` of `dict`
+        ``(phot, phot_err)``, each a mapping from aperture diameter
+        (`u.Quantity`) to `np.ndarray` fluxes/errors in Jy.
+    """
     assert phot_labels.keys() == err_labels.keys(), \
         galfind_logger.critical(f"{phot_labels.keys()=} != {err_labels.keys()=}!")
     assert "ZP" in kwargs.keys(), \
@@ -207,6 +320,31 @@ def load_phot(
     err_labels: Dict[u.Quantity, List[str]],
     **kwargs
 ) -> Tuple[Dict[u.Quantity, np.ndarray], Dict[u.Quantity, np.ndarray]]:
+    """Load photometric fluxes and errors from a plain FITS table, in Jy.
+
+    Parameters
+    ----------
+    cat : `Table`
+        Catalogue table to load photometry from.
+    phot_labels : `dict`
+        Mapping from aperture diameter (`u.Quantity`) to the `list` of `str`
+        flux column names (one per band).
+    err_labels : `dict`
+        Mapping from aperture diameter (`u.Quantity`) to the `list` of `str`
+        flux error column names (one per band). Must have the same keys as
+        `phot_labels`.
+    **kwargs
+        Must include ``ZP`` (image zeropoint) used to convert fluxes/errors
+        into Jy. If ``incl_errs`` is present and `False`, errors are not
+        loaded and an array of `None` is returned for `phot_err` instead.
+        Forwarded to `phot_property_from_fits`.
+
+    Returns
+    -------
+    `tuple` of `dict`
+        ``(phot, phot_err)``, each a mapping from aperture diameter
+        (`u.Quantity`) to `np.ndarray` fluxes/errors in Jy.
+    """
     assert phot_labels.keys() == err_labels.keys(), \
         galfind_logger.critical(f"{phot_labels.keys()=} != {err_labels.keys()=}!")
     assert "ZP" in kwargs.keys(), \
@@ -223,9 +361,27 @@ def load_phot(
 
 def load_galfind_mask(
     cat: Table,
-    mask_labels: List[str], 
+    mask_labels: List[str],
     **kwargs
 ) -> np.ndarray:
+    """Load a per-band masked-out flag array from a GALFIND-format table.
+
+    Parameters
+    ----------
+    cat : `Table`
+        Catalogue table to load the mask from.
+    mask_labels : `list` of `str`
+        Names of the ``unmasked_<band>`` boolean columns (`True` where a
+        galaxy is unmasked/has good data in that band).
+    **kwargs
+        Unused, accepted for a consistent ``load_mask_func`` call signature.
+
+    Returns
+    -------
+    `np.ndarray`
+        Boolean array of shape ``(n_gals, n_bands)``, `True` where a galaxy
+        is masked out in a given band (i.e. the inverse of `mask_labels`).
+    """
     mask = np.invert(
         funcs.fits_cat_to_np(
             cat, mask_labels, reshape_by_aper_diams=False
@@ -238,6 +394,24 @@ def load_galfind_depths(
     depth_labels: Dict[u.Quantity, List[str]],
     **kwargs
 ) -> Dict[u.Quantity, np.ndarray]:
+    """Load per-band local depths from a GALFIND-format table, in AB mag.
+
+    Parameters
+    ----------
+    cat : `Table`
+        Catalogue table to load depths from.
+    depth_labels : `dict`
+        Mapping from aperture diameter (`u.Quantity`) to the `list` of `str`
+        depth column names (one per band), as returned by e.g. `galfind_depth_labels`.
+    **kwargs
+        Forwarded to `phot_property_from_galfind_tab`.
+
+    Returns
+    -------
+    `dict`
+        Mapping from aperture diameter (`u.Quantity`) to `np.ndarray` of
+        depths in `u.ABmag` for each band.
+    """
     return {aper_diam: depth * u.ABmag for aper_diam, depth in \
         phot_property_from_galfind_tab(cat, depth_labels, **kwargs).items()}
 
@@ -249,6 +423,20 @@ def load_galfind_depths(
 #     return funcs.fits_cat_to_np(cat, labels)
 
 def check_hdu_exists(cat_path: str, hdu: str) -> bool:
+    """Check whether a named HDU extension exists in a FITS file.
+
+    Parameters
+    ----------
+    cat_path : `str`
+        Path to the FITS file to check.
+    hdu : `str`
+        Name of the HDU extension to look for (case-insensitive).
+
+    Returns
+    -------
+    `bool`
+        `True` if an HDU named `hdu` (upper-cased) exists in `cat_path`.
+    """
     # check whether the hdu extension exists
     hdul = fits.open(cat_path)
     return any(hdu_.name == hdu.upper() for hdu_ in hdul)
@@ -257,6 +445,24 @@ def open_galfind_cat(
     cat_path: str,
     cat_type: str,
 ) -> Optional[Table]:
+    """Open a single extension of a GALFIND-format multi-extension FITS catalogue.
+
+    Parameters
+    ----------
+    cat_path : `str`
+        Path to the multi-extension FITS catalogue.
+    cat_type : `str`
+        Extension to open. One of ``"ID"``, ``"sky_coord"``, ``"phot"``,
+        ``"mask"``, ``"depths"`` (all read from the primary/first extension),
+        or any other HDU extension name present in `cat_path`.
+
+    Returns
+    -------
+    `Table` or `None`
+        The requested table extension, or `None` if `cat_type` is not one of
+        the recognised keys and not a valid HDU extension name in `cat_path`
+        (a warning is logged in this case).
+    """
     first_ext_keys = ["ID", "sky_coord", "phot", "mask", "depths"]
     if cat_type in first_ext_keys:
         tab = Table.read(
@@ -280,13 +486,47 @@ def open_galfind_cat(
     return tab
 
 def open_galfind_hdr(cat_path: str, cat_type: str) -> Dict[str, str]:
+    """Load the FITS header (metadata) of a GALFIND catalogue extension.
+
+    Parameters
+    ----------
+    cat_path : `str`
+        Path to the multi-extension FITS catalogue.
+    cat_type : `str`
+        Extension to load the header of. See `open_galfind_cat` for the
+        recognised values.
+
+    Returns
+    -------
+    `dict`
+        Header/metadata of the requested table extension.
+    """
     return open_galfind_cat(cat_path, cat_type).meta
 
 def galfind_phot_labels(
-    filterset: Multiple_Filter, #Union[Multiple_Filter, List[Type[Band_Data_Base]]], 
-    aper_diams: u.Quantity, 
+    filterset: Multiple_Filter, #Union[Multiple_Filter, List[Type[Band_Data_Base]]],
+    aper_diams: u.Quantity,
     **kwargs
 ) -> Tuple[Dict[str, str], Dict[str, str]]:
+    """Construct GALFIND-format flux/error column names for each band and aperture diameter.
+
+    Parameters
+    ----------
+    filterset : `Multiple_Filter`
+        Set of filters/bands to construct column names for.
+    aper_diams : `u.Quantity`
+        Array of aperture diameters to construct column names for.
+    **kwargs
+        Must include ``min_flux_pc_err`` (`float`), the minimum percentage
+        flux error used in the local-depth error column naming convention.
+
+    Returns
+    -------
+    `tuple` of `dict`
+        ``(phot_labels, err_labels)``, each mapping aperture diameter
+        (`u.Quantity`) to the `list` of `str` flux/error column names (one
+        per band in `filterset`).
+    """
     assert "min_flux_pc_err" in kwargs.keys(), \
         galfind_logger.critical("min_flux_pc_err not in kwargs!")
     phot_labels = {aper_diam * aper_diams.unit: [f"FLUX_APER_{filt.filt_name}_aper_corr_Jy" for filt in filterset] for aper_diam in aper_diams.value}
@@ -294,10 +534,33 @@ def galfind_phot_labels(
     return phot_labels, err_labels
 
 def jaguar_phot_labels(
-    filterset: Multiple_Filter, 
-    aper_diams: u.Quantity, 
+    filterset: Multiple_Filter,
+    aper_diams: u.Quantity,
     **kwargs
 ) -> Tuple[Dict[str, str], Dict[str, str]]:
+    """Construct JAGUAR-format flux column names for each band and aperture diameter.
+
+    Instrument-specific column-name prefixes (``NRC_``, ``MIRI_``, ``HST_``)
+    are used depending on each filter's instrument. JAGUAR simulated
+    catalogues have no per-band error columns, so `err_labels` is empty.
+
+    Parameters
+    ----------
+    filterset : `Multiple_Filter`
+        Set of filters/bands to construct column names for.
+    aper_diams : `u.Quantity`
+        Array of aperture diameters to construct column names for.
+    **kwargs
+        Must include ``min_flux_pc_err`` (`float`), though it is not used in
+        the constructed column names for this convention.
+
+    Returns
+    -------
+    `tuple` of `dict`
+        ``(phot_labels, err_labels)``, mapping aperture diameter
+        (`u.Quantity`) to the `list` of `str` flux column names (one per
+        band in `filterset`) and to an empty `list` respectively.
+    """
     assert "min_flux_pc_err" in kwargs.keys(), \
         galfind_logger.critical("min_flux_pc_err not in kwargs!")
     phot_labels = {
@@ -314,10 +577,29 @@ def jaguar_phot_labels(
     return phot_labels, err_labels
 
 def scattered_phot_labels(
-    filterset: Multiple_Filter, 
-    aper_diams: u.Quantity, 
+    filterset: Multiple_Filter,
+    aper_diams: u.Quantity,
     **kwargs
 ) -> Tuple[Dict[str, str], Dict[str, str]]:
+    """Construct flux/error column names for scattered-photometry catalogues.
+
+    Parameters
+    ----------
+    filterset : `Multiple_Filter`
+        Set of filters/bands to construct column names for.
+    aper_diams : `u.Quantity`
+        Array of aperture diameters to construct column names for.
+    **kwargs
+        Must include ``min_flux_pc_err`` (`float`), though it is not used in
+        the constructed column names for this convention.
+
+    Returns
+    -------
+    `tuple` of `dict`
+        ``(phot_labels, err_labels)``, each mapping aperture diameter
+        (`u.Quantity`) to the `list` of `str` ``<instrument>.<band>_scattered``
+        / ``<instrument>.<band>_err`` column names (one per band in `filterset`).
+    """
     assert "min_flux_pc_err" in kwargs.keys(), \
         galfind_logger.critical("min_flux_pc_err not in kwargs!")
     phot_labels = {aper_diam * aper_diams.unit: [f"{filt.instrument_name}.{filt.filt_name}_scattered" for filt in filterset] for aper_diam in aper_diams.value}
@@ -336,16 +618,47 @@ def scattered_phot_labels(
 #     return phot_labels, err_labels
 
 def galfind_mask_labels(
-    filterset: Multiple_Filter, 
+    filterset: Multiple_Filter,
     **kwargs
 ) -> List[str]:
+    """Construct GALFIND-format ``unmasked_<band>`` column names.
+
+    Parameters
+    ----------
+    filterset : `Multiple_Filter`
+        Set of filters/bands to construct column names for.
+    **kwargs
+        Unused, accepted for a consistent ``get_mask_labels`` call signature.
+
+    Returns
+    -------
+    `list` of `str`
+        ``unmasked_<band>`` column names, one per band in `filterset`.
+    """
     return [f"unmasked_{filt_name}" for filt_name in filterset.filt_names]
 
 def galfind_depth_labels(
-    filterset: Multiple_Filter, 
-    aper_diams: u.Quantity, 
+    filterset: Multiple_Filter,
+    aper_diams: u.Quantity,
     **kwargs
 ) -> Dict[str, str]:
+    """Construct GALFIND-format ``loc_depth_<band>`` column names per aperture diameter.
+
+    Parameters
+    ----------
+    filterset : `Multiple_Filter`
+        Set of filters/bands to construct column names for.
+    aper_diams : `u.Quantity`
+        Array of aperture diameters to construct column names for.
+    **kwargs
+        Unused, accepted for a consistent ``get_depth_labels`` call signature.
+
+    Returns
+    -------
+    `dict`
+        Mapping from aperture diameter (`u.Quantity`) to the `list` of `str`
+        ``loc_depth_<band>`` column names (one per band in `filterset`).
+    """
     return {aper_diam * aper_diams.unit: [f"loc_depth_{filt_name}" \
         for filt_name in filterset.filt_names] \
         for aper_diam in aper_diams.value}
@@ -355,8 +668,25 @@ def scattered_depth_labels(
     aper_diams: u.Quantity,
     **kwargs
 ) -> Dict[str, str]:
+    """Construct ``loc_depth_<instrument>.<band>`` column names per aperture diameter.
+
+    Parameters
+    ----------
+    filterset : `Multiple_Filter`
+        Set of filters/bands to construct column names for.
+    aper_diams : `u.Quantity`
+        Array of aperture diameters to construct column names for.
+    **kwargs
+        Unused, accepted for a consistent ``get_depth_labels`` call signature.
+
+    Returns
+    -------
+    `dict`
+        Mapping from aperture diameter (`u.Quantity`) to the `list` of `str`
+        ``loc_depth_<instrument>.<band>`` column names (one per band in `filterset`).
+    """
     return {
-        aper_diam * aper_diams.unit: 
+        aper_diam * aper_diams.unit:
         [
             f"loc_depth_{filt.instrument_name}.{filt.filt_name}"
             for filt in filterset
@@ -366,15 +696,45 @@ def scattered_depth_labels(
 
 def load_bool_Table(
     tab: Table,
-    select_names: List[str], 
+    select_names: List[str],
     **kwargs
 ) -> Dict[str, List[bool]]:
+    """Load a set of boolean selection-flag columns from a table.
+
+    Parameters
+    ----------
+    tab : `Table`
+        Table (typically the ``SELECTION`` extension) to load flags from.
+    select_names : `list` of `str`
+        Names of the boolean columns to load.
+    **kwargs
+        Unused, accepted for a consistent ``load_selection_func`` call signature.
+
+    Returns
+    -------
+    `dict`
+        Mapping from column name to the `list` of `bool` values in that column.
+    """
     return {name: list(tab[name]) for name in select_names}
 
 def galfind_selection_labels(
     tab: Table,
     **kwargs
 ) -> List[str]:
+    """Get the names of all boolean (selection-flag) columns in a table.
+
+    Parameters
+    ----------
+    tab : `Table`
+        Table (typically the ``SELECTION`` extension) to inspect.
+    **kwargs
+        Unused, accepted for a consistent ``get_selection_labels`` call signature.
+
+    Returns
+    -------
+    `list` of `str`
+        Names of the columns in `tab` with a `bool`/`np.bool_` dtype.
+    """
     # load selection names dict from header
     return [name for name in tab.colnames if tab[name].dtype in (bool, np.bool_)]
 
@@ -383,6 +743,23 @@ def galfind_snr_labels(
     aper_diams: u.Quantity,
     **kwargs,
 ):
+    """Construct per-band, per-aperture-diameter stacked-detection SNR column names.
+
+    Parameters
+    ----------
+    filterset : `Multiple_Filter`
+        Set of filters/bands to construct column names for.
+    aper_diams : `u.Quantity`
+        Array of aperture diameters to construct column names for.
+    **kwargs
+        Unused, accepted for a consistent call signature.
+
+    Returns
+    -------
+    `dict`
+        Mapping from aperture diameter (`u.Quantity`) to the `list` of `str`
+        (truncated) ``sigma_<band>`` column names, one per band in `filterset`.
+    """
     return {
         aper_diam * aper_diams.unit: [
             funcs.truncate_colname(f"sigma_{filt.filt_name}") for filt in filterset
@@ -390,11 +767,136 @@ def galfind_snr_labels(
     }
 
 class Catalogue_Creator:
+    """Factory that builds a `Catalogue` (or a single `Galaxy`) from a catalogue FITS file.
+
+    Encapsulates everything needed to open a multi-extension catalogue FITS
+    file and turn its rows into `Galaxy`/`Photometry_obs` objects: which
+    extensions/columns to read for IDs, sky coordinates, photometry, masks,
+    depths and selection flags, how to crop the catalogue, and how to work
+    out which bands actually have data for each galaxy. Calling an instance
+    (`__call__`) performs the loading and returns a `Catalogue`.
+
+    Parameters
+    ----------
+    survey : `str`
+        Name of the survey/field this catalogue belongs to.
+    version : `str`
+        Data reduction version of the catalogue.
+    cat_path : `str`
+        Path to the catalogue FITS file.
+    filterset : `Multiple_Filter`
+        Full set of filters/bands available in the catalogue.
+    aper_diams : `u.Quantity`
+        Array of aperture diameters stored in the catalogue.
+    crops : `Selector` or `list` of `Selector`, optional
+        Selector(s) to crop the catalogue by when loading. Default is `None`
+        (no cropping).
+    open_cat : `Callable`, optional
+        Function used to open a named catalogue extension, called as
+        ``open_cat(cat_path, cat_type)``. Default is `open_galfind_cat`.
+    open_hdr : `Callable`, optional
+        Function used to load the header of a named catalogue extension.
+        Default is `open_galfind_hdr`.
+    load_ID_func : `Callable`, optional
+        Function used to load galaxy IDs from the ``"ID"`` extension.
+        Default is `load_IDs_Table`.
+    ID_label : `str`, optional
+        Name of the ID column. Default is ``"NUMBER"``.
+    load_ID_kwargs : `dict`, optional
+        Extra keyword arguments passed to `load_ID_func`. Default is ``{}``.
+    load_skycoords_func : `Callable`, optional
+        Function used to load sky coordinates from the ``"sky_coord"``
+        extension. Default is `load_skycoords_Table`.
+    skycoords_labels : `dict`, optional
+        Mapping of ``"RA"``/``"DEC"`` to their column names. Default is
+        ``{"RA": "ALPHA_J2000", "DEC": "DELTA_J2000"}``.
+    skycoords_units : `dict`, optional
+        Mapping of ``"RA"``/``"DEC"`` to their `astropy.units.Unit`. Default
+        is ``{"RA": u.deg, "DEC": u.deg}``.
+    load_skycoords_kwargs : `dict`, optional
+        Extra keyword arguments passed to `load_skycoords_func`. Default is ``{}``.
+    load_phot_func : `Callable`, optional
+        Function used to load photometric fluxes/errors from the ``"phot"``
+        extension. Default is `load_galfind_phot`.
+    get_phot_labels : `Callable`, optional
+        Function returning the flux/error column names for `filterset` and
+        `aper_diams`. Default is `galfind_phot_labels`.
+    load_phot_kwargs : `dict`, optional
+        Extra keyword arguments passed to `load_phot_func`/`get_phot_labels`.
+        Default is ``{"ZP": u.Jy.to(u.ABmag), "min_flux_pc_err": 10.}``.
+    load_mask_func : `Callable`, optional
+        Function used to load the per-band mask from the ``"mask"``
+        extension. Default is `load_galfind_mask`.
+    get_mask_labels : `Callable`, optional
+        Function returning the mask column names for `filterset`. Default is
+        `galfind_mask_labels`.
+    load_mask_kwargs : `dict`, optional
+        Extra keyword arguments passed to `load_mask_func`. Default is ``{}``.
+    load_depth_func : `Callable`, optional
+        Function used to load per-band depths from the ``"depths"``
+        extension. Default is `load_galfind_depths`.
+    get_depth_labels : `Callable`, optional
+        Function returning the depth column names for `filterset` and
+        `aper_diams`. Default is `galfind_depth_labels`.
+    load_depth_kwargs : `dict`, optional
+        Extra keyword arguments passed to `load_depth_func`. Default is ``{}``.
+    load_selection_func : `Callable`, optional
+        Function used to load selection flags from the ``"SELECTION"``
+        extension. Default is `load_bool_Table`.
+    get_selection_labels : `Callable`, optional
+        Function returning the names of the selection-flag columns. Default
+        is `galfind_selection_labels`.
+    load_selection_kwargs : `dict`, optional
+        Extra keyword arguments passed to `load_selection_func`. Default is ``{}``.
+    load_SED_result_func : `Callable`, optional
+        Function used to load SED fitting results. Default is `None`.
+    apply_gal_instr_mask : `bool`, optional
+        Whether to compute/apply a per-galaxy, per-band "has data" mask
+        (see `make_gal_instr_mask`) when loading photometry, masks and
+        depths. Default is `True`.
+    cache_fits_handle : `bool`, optional
+        Whether to keep a single FITS file handle open and reuse it for all
+        extension reads, instead of opening the file separately for each
+        extension. Significantly speeds up loading many galaxies from the
+        same catalogue by avoiding repeated file opens. Falls back to standard
+        reading if any errors occur. Default is `True`.
+    simulated : `bool`, optional
+        Whether the catalogue is simulated rather than observed. Default is
+        `False`.
+
+    Attributes
+    ----------
+    survey : `str`
+        Name of the survey/field this catalogue belongs to.
+    version : `str`
+        Data reduction version of the catalogue.
+    cat_path : `str`
+        Path to the catalogue FITS file.
+    filterset : `Multiple_Filter`
+        Full set of filters/bands available in the catalogue.
+    aper_diams : `u.Quantity`
+        Array of aperture diameters stored in the catalogue.
+    crops : `list` of `Selector`
+        Selector(s) the catalogue is cropped by, set by `load_crops`.
+    crop_mask : `np.ndarray` or `None`
+        Boolean row mask corresponding to `crops`, set by `load_crops`.
+    apply_gal_instr_mask : `bool`
+        Whether a per-galaxy, per-band "has data" mask is applied when
+        loading photometry, masks and depths.
+    simulated : `bool`
+        Whether the catalogue is simulated rather than observed.
+    gal_instr_mask : `np.ndarray`
+        Per-galaxy, per-band boolean "has data" mask, set the first time
+        `make_gal_instr_mask` is called.
+    data : `Data`
+        Dataset the catalogue was built from, set only when constructed via
+        `from_data`.
+    """
 
     def __init__(
         self: Self,
         survey: str,
-        version: str, 
+        version: str,
         cat_path: str,
         filterset: Multiple_Filter,
         aper_diams: u.Quantity,
@@ -422,8 +924,13 @@ class Catalogue_Creator:
         load_selection_kwargs: Dict[str, Any] = {},
         load_SED_result_func: Optional[Callable] = None,
         apply_gal_instr_mask: bool = True,
+        cache_fits_handle: bool = True,
         simulated: bool = False,
     ):
+        """Initialize the Catalogue_Creator with configuration for loading catalogues.
+
+        See the class docstring for detailed parameter descriptions.
+        """
         self.survey = survey
         self.version = version
         self.cat_path = cat_path
@@ -456,7 +963,10 @@ class Catalogue_Creator:
         self.load_selection_kwargs = load_selection_kwargs
         self.load_SED_result_func = load_SED_result_func
         self.apply_gal_instr_mask = apply_gal_instr_mask
+        self.cache_fits_handle = cache_fits_handle
         self.simulated = simulated
+        self._tab_cache = {}
+        self._fits_handle = None
 
         self.load_crops(crops)
 
@@ -473,7 +983,15 @@ class Catalogue_Creator:
                 galfind_logger.critical(
                     f"{hdr['VERSION']=} != {self.version=}"
                 )
-    
+
+    def __del__(self: Self) -> None:
+        """Close the cached FITS file handle when the object is destroyed."""
+        if self._fits_handle is not None:
+            try:
+                self._fits_handle.close()
+            except Exception:
+                pass  # Silently ignore errors on cleanup
+
     @classmethod
     def from_data(
         cls,
@@ -481,6 +999,28 @@ class Catalogue_Creator:
         crops: Optional[Union[Type[Selector], List[Type[Selector]]]] = None,
         **kwargs: Dict[str, Any],
     ) -> Catalogue_Creator:
+        """Construct a `Catalogue_Creator` from a `Data` object.
+
+        Derives `survey`, `version`, `cat_path`, `filterset` and `aper_diams`
+        from `data` rather than requiring them to be passed explicitly, and
+        attaches `data` to the resulting instance.
+
+        Parameters
+        ----------
+        data : `Data`
+            Dataset to build the catalogue creator from.
+        crops : `Selector` or `list` of `Selector`, optional
+            Selector(s) to crop the catalogue by when loading. Default is
+            `None` (no cropping).
+        **kwargs
+            Additional keyword arguments forwarded to the `Catalogue_Creator`
+            constructor.
+
+        Returns
+        -------
+        `Catalogue_Creator`
+            New instance with its `data` attribute set to `data`.
+        """
         cat_creator = cls(
             data.survey,
             data.version,
@@ -509,6 +1049,28 @@ class Catalogue_Creator:
         #     List[Type[Selector]]
         # ] = [],
     ) -> Catalogue:
+        """Load and construct a Catalogue from the configured FITS file.
+
+        Reads the catalogue table(s), applies any configured crops, and constructs
+        a Catalogue object with Galaxy instances. Applies PSF information and
+        selection flags if available.
+
+        Parameters
+        ----------
+        psfs : `dict`, `list`, `ndarray` of `PSF_Base`, or `None`, optional
+            PSF objects to associate with each band. Default is `None`.
+        cropped : `bool`, optional
+            Whether to apply configured crops to the loaded catalogue.
+            Default is `True`.
+        load_gals : `bool`, optional
+            Whether to construct Galaxy objects. If `False`, returns an empty
+            catalogue. Default is `True`.
+
+        Returns
+        -------
+        `Catalogue`
+            The loaded catalogue, possibly empty if load_gals is False.
+        """
         galfind_logger.info(
             f"Making {repr(self)} catalogue!"
         )
@@ -558,8 +1120,9 @@ class Catalogue_Creator:
                     selection_kwargs = selection_kwargs,
                     cat_filterset = self.filterset,
                     survey = self.survey,
+                    version = self.version,
                     simulated = self.simulated
-                ) for ID, sky_coord, phot_obs, selection_flags, selection_kwargs in 
+                ) for ID, sky_coord, phot_obs, selection_flags, selection_kwargs in
                 zip(IDs, sky_coords, phot_obs_arr, selection_flags_arr, selection_kwargs_arr)
             ]
             # if len(extra_crops) > 0:
@@ -574,15 +1137,26 @@ class Catalogue_Creator:
         #     setattr(cat, "extra_crops", extra_crops)
         if load_gals and cropped and len(self._crops_to_perform) != 0:
             # perform the crops
+            crops_performed = set()
             for crop in self._crops_to_perform:
                 galfind_logger.info(f"Performing {repr(crop)}!")
                 crop(cat, return_copy = False)
+                crops_performed.add(id(crop))
+            # Only recurse if there are new crops to perform
             self.load_crops(self.crops)
-            cat = self(
-                psfs = psfs,
-                cropped = True,
-                load_gals = load_gals,
-            )
+            if self._crops_to_perform and not all(
+                id(c) in crops_performed for c in self._crops_to_perform
+            ):
+                cat = self(
+                    psfs = psfs,
+                    cropped = True,
+                    load_gals = load_gals,
+                )
+            else:
+                # point to data if provided
+                if hasattr(self, "data"):
+                    cat.data = self.data
+                galfind_logger.info(f"Made {self.cat_path} catalogue!")
         else:
             # point to data if provided
             if hasattr(self, "data"):
@@ -592,19 +1166,86 @@ class Catalogue_Creator:
 
     @property
     def cat_name(self) -> str:
+        """`str`: Base name of the catalogue FITS file (no directory or extension)."""
         #f"{meta['SURVEY']}_{meta['VERSION']}_{meta['INSTR']}"
         return ".".join(self.cat_path.split("/")[-1].split(".")[:-1])
 
     @property
     def crop_name(self: Self) -> List[str]:
+        """`str`: Name describing the crop(s) currently applied via `crops`."""
         return funcs.get_crop_name(self.crops)
+
+    def _open_tab(self: Self, cat_type: str) -> Any:
+        """Open and cache a named catalogue table extension.
+
+        When `cache_fits_handle` is True, keeps a single FITS file handle open
+        and reads all extensions from it, avoiding repeated file opens.
+
+        Parameters
+        ----------
+        cat_type : `str`
+            Name of the catalogue extension to open (e.g., "ID", "phot").
+
+        Returns
+        -------
+        `Table` or `None`
+            The requested table extension, cached for future access.
+        """
+        if cat_type not in self._tab_cache:
+            if self.cache_fits_handle:
+                try:
+                    from astropy.io import fits
+                    # Open FITS file once and keep it open
+                    if self._fits_handle is None:
+                        self._fits_handle = fits.open(self.cat_path, memmap=True)
+
+                    # Read the requested extension from the open handle
+                    first_ext_keys = ["ID", "sky_coord", "phot", "mask", "depths"]
+                    if cat_type in first_ext_keys:
+                        # These are typically in the primary HDU
+                        hdu = self._fits_handle[0]
+                    else:
+                        # Look for the HDU by name
+                        hdu = self._fits_handle[cat_type]
+
+                    # Read with Table.read() to preserve metadata
+                    self._tab_cache[cat_type] = Table.read(hdu, format='fits')
+                except Exception as e:
+                    # Fall back to default behavior if caching fails
+                    galfind_logger.warning(
+                        f"FITS handle caching failed for {cat_type}: {e}. "
+                        f"Falling back to standard catalogue reading."
+                    )
+                    self._tab_cache[cat_type] = self.open_cat(self.cat_path, cat_type)
+            else:
+                # Use the original open_cat function (default behavior)
+                self._tab_cache[cat_type] = self.open_cat(self.cat_path, cat_type)
+
+        return self._tab_cache[cat_type]
 
     def load_tab(
         self: Self,
         cat_type: str,
         cropped: bool = True,
     ) -> Table:
-        tab = self.open_cat(self.cat_path, cat_type)
+        """Load (and cache) a named extension of the catalogue, optionally cropped.
+
+        Parameters
+        ----------
+        cat_type : `str`
+            Extension to load. See `open_galfind_cat` for the recognised
+            values.
+        cropped : `bool`, optional
+            Whether to apply `crop_mask` (from `load_crops`) to the loaded
+            table. Default is `True`.
+
+        Returns
+        -------
+        `Table` or `None`
+            The requested (optionally cropped) table extension, or `None` if
+            the extension does not exist.
+        """
+        tab = self._open_tab(cat_type)
         if tab is None:
             return None
         else:
@@ -621,6 +1262,18 @@ class Catalogue_Creator:
         #     List[Type[Selector]]
         # ] = [],
     ) -> None:
+        """Set the crop selector(s) to apply and (re)compute the resulting row mask.
+
+        Normalises `crops` into `self.crops`, recomputes `self.crop_mask`
+        (via `_get_crop_mask`), and, if `apply_gal_instr_mask` is `True`,
+        (re)computes `self.gal_instr_mask` (via `make_gal_instr_mask`).
+
+        Parameters
+        ----------
+        crops : `Selector` or `list` of `Selector`, optional
+            Selector(s) to crop the catalogue by. Default is `None`, which
+            clears `self.crops` (no cropping).
+        """
         if crops is None:
             self.crops = []
         elif not isinstance(crops, (list, np.ndarray)):
@@ -633,6 +1286,21 @@ class Catalogue_Creator:
 
     @staticmethod
     def _get_selection_kwarg_colnames(selector: Type[Selector]) -> List[str]:
+        """Extract selection keyword argument column names from a Selector.
+
+        Recursively retrieves the names of all columns storing selector parameters,
+        handling both single selectors and compound Multiple_Selector instances.
+
+        Parameters
+        ----------
+        selector : `Selector`
+            Selector to extract column names from.
+
+        Returns
+        -------
+        `list` of `str`
+            Column names of format ``<selector_name>__<kwarg_name>``.
+        """
         from galfind import Multiple_Selector
         kwarg_colnames = []
         if isinstance(selector, funcs.all_subclasses(Multiple_Selector)):
@@ -652,12 +1320,24 @@ class Catalogue_Creator:
         #     List[Type[Selector]]
         # ] = [],
     ) -> Optional[NDArray[bool]]:
+        """Compute the boolean row mask for configured crops.
+
+        Reads selection-flag columns from the SELECTION extension and computes
+        a boolean mask indicating which rows satisfy all configured crop selectors.
+        Stores crops that are not yet in the selection table for deferred application.
+
+        Returns
+        -------
+        `np.ndarray` of `bool` or `None`
+            Boolean mask of shape (n_rows,) where `True` indicates rows that pass
+            all crops. `None` if deferred crops remain.
+        """
         # from . import Selector
         # if isinstance(extra_crops, funcs.all_subclasses(Selector)):
         #     extra_crops = [extra_crops]
-        tab = self.open_cat(self.cat_path, "SELECTION")
+        tab = self._open_tab("SELECTION")
         if tab is None:
-            tab = self.open_cat(self.cat_path, "ID")
+            tab = self._open_tab("ID")
             self._crops_to_perform = self.crops
         elif len(self.crops) > 0: #  + extra_crops
             # crop table using crop dict
@@ -704,6 +1384,18 @@ class Catalogue_Creator:
         self: Self,
         cropped: bool = True
     ) -> List[int]:
+        """Load the galaxy IDs from the catalogue's ``"ID"`` extension.
+
+        Parameters
+        ----------
+        cropped : `bool`, optional
+            Whether to apply `crop_mask` before loading IDs. Default is `True`.
+
+        Returns
+        -------
+        `list` of `int`
+            Galaxy IDs, as returned by `load_ID_func`.
+        """
         tab = self.load_tab("ID", cropped)
         return self.load_ID_func(tab, self.ID_label, **self.load_ID_kwargs)
 
@@ -711,6 +1403,20 @@ class Catalogue_Creator:
         self: Self,
         cropped: bool = True
     ) -> SkyCoord:
+        """Load the sky coordinates from the catalogue's ``"sky_coord"`` extension.
+
+        Parameters
+        ----------
+        cropped : `bool`, optional
+            Whether to apply `crop_mask` before loading sky coordinates.
+            Default is `True`.
+
+        Returns
+        -------
+        `SkyCoord`
+            Sky coordinates of every (cropped) galaxy, as returned by
+            `load_skycoords_func`.
+        """
         tab = self.load_tab("sky_coord", cropped)
         return self.load_skycoords_func(tab, self.skycoords_labels, self.skycoords_units, **self.load_skycoords_kwargs)
 
@@ -718,6 +1424,26 @@ class Catalogue_Creator:
         self: Self,
         cropped: bool = True
     ) -> Tuple[np.ndarray, np.ndarray]:
+        """Load photometric fluxes and errors from the catalogue's ``"phot"`` extension.
+
+        Loads fluxes/errors via `load_phot_func`, optionally restricts each
+        galaxy's bands to those with data (via `gal_instr_mask`, if
+        `apply_gal_instr_mask` is `True`), and wraps the per-band values in
+        an `astropy.utils.masked.Masked` array using the catalogue mask (see
+        `load_mask`), if available.
+
+        Parameters
+        ----------
+        cropped : `bool`, optional
+            Whether to apply `crop_mask` before loading photometry. Default
+            is `True`.
+
+        Returns
+        -------
+        `tuple` of `dict`
+            ``(phot, phot_err)``, each a mapping from aperture diameter
+            (`u.Quantity`) to a per-galaxy list of flux/error arrays in Jy.
+        """
         tab = self.load_tab("phot", cropped)
         # load the photometric fluxes and errors in units of Jy
         phot_labels, err_labels = self.get_phot_labels(self.filterset, self.aper_diams, **self.load_phot_kwargs)
@@ -743,6 +1469,27 @@ class Catalogue_Creator:
         self: Self,
         cropped: bool = True
     ) -> Optional[NDArray[bool]]:
+        """Load the per-galaxy, per-band mask from the catalogue's ``"mask"`` extension.
+
+        Parameters
+        ----------
+        cropped : `bool`, optional
+            Whether to apply `crop_mask` before loading the mask. Default is
+            `True`.
+
+        Returns
+        -------
+        `np.ndarray` or `None`
+            Boolean mask array (`True` where a galaxy is masked out in a
+            given band), optionally restricted to bands with data via
+            `gal_instr_mask`, or `None` if there is no mask data or no
+            `load_mask_func`/`get_mask_labels` provided.
+
+        Raises
+        ------
+        Exception
+            If `load_mask_func` raises while loading the mask.
+        """
         tab = self.load_tab("mask", cropped)
         if len(tab) == 0:
             galfind_logger.warning(
@@ -771,6 +1518,28 @@ class Catalogue_Creator:
             return None #{aper_diam: list(itertools.repeat(None, len(tab))) for aper_diam in self.aper_diams}
 
     def load_depths(self, cropped: bool = True) -> np.ndarray:
+        """Load per-galaxy, per-band local depths from the catalogue's ``"depths"`` extension.
+
+        Parameters
+        ----------
+        cropped : `bool`, optional
+            Whether to apply `crop_mask` before loading depths. Default is
+            `True`.
+
+        Returns
+        -------
+        `dict`
+            Mapping from aperture diameter (`u.Quantity`) to a per-galaxy
+            array of depths, optionally restricted to bands with data via
+            `gal_instr_mask`. If no `load_depth_func`/`get_depth_labels` is
+            provided, a `dict` of `None`-filled lists is returned instead
+            (with a warning logged).
+
+        Raises
+        ------
+        Exception
+            If `load_depth_func` raises while loading the depths.
+        """
         tab = self.load_tab("depths", cropped)
         if self.load_depth_func is not None and self.get_depth_labels is not None:
             depth_labels = self.get_depth_labels(self.filterset, self.aper_diams)
@@ -800,6 +1569,35 @@ class Catalogue_Creator:
         self: Self,
         cropped: bool = True,
     ) -> Tuple[List[Dict[str, bool]], List[Dict[str, Dict[str, Any]]]]:
+        """Load per-galaxy selection flags and the keyword arguments used to make them.
+
+        Reads the boolean selection-flag columns from the catalogue's
+        ``"SELECTION"`` extension along with any accompanying
+        ``"<selector>__<kwarg>"`` columns storing the parameters used to
+        generate each flag.
+
+        Parameters
+        ----------
+        cropped : `bool`, optional
+            Whether to apply `crop_mask` before loading selection flags.
+            Default is `True`.
+
+        Returns
+        -------
+        `tuple` of `list`
+            ``(selection_flags, selection_kwargs)``. `selection_flags` is a
+            per-galaxy `list` of `dict` mapping selector name to `bool`.
+            `selection_kwargs` is a per-galaxy `list` of `dict` mapping
+            selector name to a `dict` of the keyword arguments used for that
+            selection. If the ``"SELECTION"`` extension does not exist, both
+            are `list` of `None` (one per galaxy).
+
+        Raises
+        ------
+        Exception
+            If the ``"SELECTION"`` extension exists but no
+            `load_selection_func`/`get_selection_labels` is provided.
+        """
         tab = self.load_tab("SELECTION", cropped)
         if self.load_selection_func is not None and self.get_selection_labels is not None and tab is not None:
             select_labels = self.get_selection_labels(tab, **self.load_selection_kwargs)
@@ -844,6 +1642,38 @@ class Catalogue_Creator:
         overwrite: bool = False,
         timed: bool = True
     ) -> NoReturn:
+        """Compute (or load a cached) per-galaxy, per-band "has data" mask.
+
+        For every galaxy and band in `filterset`, flags whether that band's
+        (uncropped) flux is finite and not one of `null_data_vals`, i.e.
+        whether real photometric data exists for that galaxy/band
+        combination. The result is cached to an HDF5 file under
+        ``GALFIND_WORK/Masks/<survey>/has_data_mask/...`` and stored as
+        `self.gal_instr_mask` (only set if not already present).
+
+        Parameters
+        ----------
+        null_data_vals : `list`, optional
+            Values (in addition to non-finite values) treated as "no data".
+            Default is ``[0.0]``.
+        overwrite : `bool`, optional
+            If `True`, recompute the mask even if a cached ``.h5`` file
+            already exists (rather than loading it). Default is `False`.
+        timed : `bool`, optional
+            Whether to show a progress bar while computing the mask.
+            Default is `True`.
+
+        Returns
+        -------
+        `None`
+
+        Raises
+        ------
+        Exception
+            If neither the catalogue header nor `self.survey`/`self.filterset`/
+            `self.aper_diams` provide enough information to determine the
+            cache directory.
+        """
         meta = self.open_hdr(self.cat_path, "ID")
         req_metakeys = ["SURVEY", "INSTR", "APERDIAM"]
         if all(name in meta.keys() for name in req_metakeys):
@@ -910,6 +1740,23 @@ class Catalogue_Creator:
         arr: np.ndarray,
         gal_instr_mask: np.ndarray,
     ) -> np.ndarray:
+        """Mask out bands with no data for each galaxy.
+
+        Applies a per-galaxy, per-band boolean mask to filter out bands where
+        data is unavailable, returning only data for bands with valid measurements.
+
+        Parameters
+        ----------
+        arr : `np.ndarray`
+            Per-galaxy array of per-band values to mask.
+        gal_instr_mask : `np.ndarray`
+            Boolean mask of shape (n_galaxies, n_bands), `True` where data exists.
+
+        Returns
+        -------
+        `list` of `np.ndarray`
+            Masked arrays, one per galaxy, containing only bands with data.
+        """
         assert len(gal_instr_mask) == len(arr), \
             galfind_logger.critical(f"{len(gal_instr_mask)} != {len(arr)}!")
         return [ele[mask] for ele, mask in zip(arr, gal_instr_mask)]
@@ -919,6 +1766,26 @@ class Catalogue_Creator:
         length: int,
         cropped: bool = True,
     ) -> List[Multiple_Filter]:
+        """Build the per-galaxy `Multiple_Filter` set of bands with available data.
+
+        If `apply_gal_instr_mask` is `True`, each galaxy is assigned the
+        subset of `filterset` for which `gal_instr_mask` indicates data is
+        present (unique combinations are computed once and re-used).
+        Otherwise every galaxy is assigned the full `filterset`.
+
+        Parameters
+        ----------
+        length : `int`
+            Number of galaxies to build filtersets for.
+        cropped : `bool`, optional
+            Whether to apply `crop_mask` to `gal_instr_mask` before use.
+            Default is `True`.
+
+        Returns
+        -------
+        `list` of `Multiple_Filter`
+            Filterset for each of the `length` galaxies.
+        """
         if self.apply_gal_instr_mask:
             # create set of filtersets to be pointed to by sources with these bands available
             galfind_logger.debug(f"Making {self.cat_name} unique filtersets!")
@@ -942,10 +1809,45 @@ class Catalogue_Creator:
         return filterset_arr
 
 class Catalogue(Catalogue_Base):
+    """A galaxy catalogue, storing a list of `Galaxy` objects for a single survey/version.
+
+    The central catalogue-level class in GALFIND: a thin, list-like wrapper
+    around a collection of `Galaxy` objects (see `Catalogue_Base` for
+    indexing, iteration and cross-matching behaviour) plus catalogue-wide
+    convenience methods for loading SExtractor/photometric properties,
+    making cutouts/RGBs, running photometry diagnostics, computing
+    number-density-function quantities (e.g. Vmax) and scattering
+    photometry. Instances are normally constructed via `pipeline`,
+    `from_data`, or by calling a `Catalogue_Creator` instance, rather than
+    directly.
+
+    Attributes not set directly on the instance (e.g. `survey`, `version`,
+    `filterset`, `aper_diams`, `data`) are transparently looked up on
+    `cat_creator`, or (failing that) collected from each `Galaxy` in `gals`,
+    via `Catalogue_Base.__getattr__`.
+
+    Parameters
+    ----------
+    gals : `list` of `Galaxy`
+        Galaxies making up this catalogue.
+    cat_creator : `Catalogue_Creator`
+        Creator object used to build this catalogue, providing access to
+        the underlying catalogue FITS file and loading configuration.
+
+    Attributes
+    ----------
+    gals : `list` of `Galaxy`
+        Galaxies making up this catalogue.
+    cat_creator : `Catalogue_Creator`
+        Creator object this catalogue was built with.
+    data : `Data`
+        Dataset the catalogue's photometry was extracted from, set when
+        available from `cat_creator.data`.
+    """
 
     @classmethod
     def pipeline(
-        cls, 
+        cls,
         survey: str,
         version: str,
         instrument_names: List[str] = json.loads(
@@ -975,6 +1877,75 @@ class Catalogue(Catalogue_Base):
         psf_method: Optional[str] = "empirical",
         psf_homog_filt: Optional[str] = "F444W",
     ) -> Catalogue:
+        """Run the full galfind data-reduction pipeline and load the resulting catalogue.
+
+        Convenience wrapper that runs `Data.pipeline` to reduce the imaging
+        for a survey/version into a photometric catalogue, then loads that
+        catalogue via `from_data`.
+
+        Parameters
+        ----------
+        survey : `str`
+            Name of the survey/field to process.
+        version : `str`
+            Data reduction version string.
+        instrument_names : `list` of `str`, optional
+            Names of instruments to search for imaging from. Default is
+            read from the galfind config (``Other.INSTRUMENT_NAMES``).
+        pix_scales : `astropy.units.Quantity` or `dict`, optional
+            Pixel scale to use, either a single value or one per
+            instrument. Default is
+            ``{"ACS_WFC": 0.03, "WFC3_IR": 0.03, "NIRCam": 0.03, "MIRI": 0.09} * u.arcsec``.
+        im_str : `list` of `str`, optional
+            Filename substrings identifying science images. Default is
+            ``["_sci", "_i2d", "_drz"]``.
+        rms_err_str : `list` of `str`, optional
+            Filename substrings identifying RMS error maps. Default is
+            ``["_rms_err", "_rms", "_err"]``.
+        wht_str : `list` of `str`, optional
+            Filename substrings identifying weight maps. Default is
+            ``["_wht", "_weight"]``.
+        version_to_dir_dict : `dict`, optional
+            Mapping from version string to data directory name, if
+            different from `version`. Default is `None`.
+        im_ext_name : `str` or `list` of `str`, optional
+            Expected FITS `EXTNAME`(s) for science images. Default is
+            ``"SCI"``.
+        rms_err_ext_name : `str` or `list` of `str`, optional
+            Expected FITS `EXTNAME`(s) for RMS error maps. Default is
+            ``"ERR"``.
+        wht_ext_name : `str` or `list` of `str`, optional
+            Expected FITS `EXTNAME`(s) for weight maps. Default is
+            ``"WHT"``.
+        aper_diams : `astropy.units.Quantity`, optional
+            Aperture diameters to use for photometry. Default is `None`.
+        forced_phot_band : `str`, `list` of `str`, or `Band_Data_Base`, optional
+            Band(s) to use for detection/forced photometry. Default is
+            `None`.
+        min_flux_pc_err : `int` or `float`, optional
+            Minimum flux percentage error floor applied when computing
+            local-depth-based flux errors. Default is `10.0`.
+        crops : `Selector` or `list` of `Selector`, optional
+            Selector(s) to crop the resulting catalogue by. Default is
+            `None`.
+        load_gals : `bool`, optional
+            Whether to load `Galaxy` objects into the returned catalogue.
+            Default is `True`.
+        mask_method : `str`, optional
+            Masking method to use, one of ``"auto"`` or ``"manual"``.
+            Default is ``"auto"``.
+        psf_method : `str`, optional
+            Method used to construct/retrieve PSFs. Default is
+            ``"empirical"``.
+        psf_homog_filt : `str`, optional
+            Filter to PSF-homogenize all bands to. If `None`, PSF
+            homogenization is skipped. Default is ``"F444W"``.
+
+        Returns
+        -------
+        `Catalogue`
+            The catalogue loaded from the pipeline's reduced data.
+        """
         data = Data.pipeline(
             survey,
             version,
@@ -1004,6 +1975,29 @@ class Catalogue(Catalogue_Base):
         load_gals: bool = True,
         **cat_creator_kwargs: Dict[str, Any],
     ) -> Catalogue:
+        """Construct a `Catalogue` directly from a `Data` object.
+
+        Builds a `Catalogue_Creator` via `Catalogue_Creator.from_data` and
+        immediately calls it to load and return the `Catalogue`.
+
+        Parameters
+        ----------
+        data : `Data`
+            Dataset to build the catalogue from.
+        crops : `Selector` or `list` of `Selector`, optional
+            Selector(s) to crop the catalogue by when loading. Default is
+            `None` (no cropping).
+        load_gals : `bool`, optional
+            Whether to load `Galaxy` objects into the returned catalogue.
+            Default is `True`.
+        **cat_creator_kwargs
+            Additional keyword arguments forwarded to `Catalogue_Creator.from_data`.
+
+        Returns
+        -------
+        `Catalogue`
+            The catalogue loaded from `data`.
+        """
         cat_creator = Catalogue_Creator.from_data(
             data,
             crops = crops,
@@ -1016,9 +2010,23 @@ class Catalogue(Catalogue_Base):
         )
 
     def __repr__(self):
+        """Return the official string representation of the Catalogue.
+
+        Returns
+        -------
+        `str`
+            Representation delegating to parent class.
+        """
         return super().__repr__()
-    
+
     def __str__(self) -> str:
+        """Return a human-readable string representation of the Catalogue.
+
+        Returns
+        -------
+        `str`
+            String representation delegating to parent class.
+        """
         return super().__str__()
 
     def load_stacked_band_data_snrs(
@@ -1027,6 +2035,29 @@ class Catalogue(Catalogue_Base):
         #filterset_arr: Union[Multiple_Filter, List[Multiple_Filter]],
         overwrite: bool = False,
     ) -> None:
+        """Load stacked-band-detection-image SNRs into each galaxy's aperture photometry.
+
+        Reads per-band, per-aperture-diameter SNR columns (named via
+        `get_snr_colnames`) from the ``"phot"`` extension for each of
+        `self.data.stacked_band_data_arr`, and stores them as a
+        ``stacked_band_snrs`` attribute on each galaxy's `Photometry_obs`
+        (one per aperture diameter). Does nothing (with a warning logged) if
+        the catalogue is empty, has no `data` attribute, or `data` has no
+        `stacked_band_data_arr`.
+
+        Parameters
+        ----------
+        get_snr_colnames : `Callable`, optional
+            Function returning the per-aperture-diameter SNR column names
+            for a set of bands. Default is `galfind_snr_labels`.
+        overwrite : `bool`, optional
+            Whether to overwrite an existing ``stacked_band_snrs`` attribute
+            on galaxies that already have one. Default is `False`.
+
+        Returns
+        -------
+        `None`
+        """
         if len(self) == 0:
             galfind_logger.warning("Catalogue is empty! Cannot load stacked band data!")
             return
@@ -1078,6 +2109,17 @@ class Catalogue(Catalogue_Base):
                 galfind_logger.debug(f"{repr(gal)} already has 'stacked_band_snrs' attribute! Not overwriting!")
 
     def save_phot_PDF_paths(self, PDF_paths, SED_fit_params):
+        """Store the paths to saved SED-fitting redshift/property PDFs for this catalogue.
+
+        Parameters
+        ----------
+        PDF_paths : `Any`
+            PDF path(s) to store, keyed under the SED fitting run's label.
+        SED_fit_params : `dict`
+            SED fitting parameters, must contain a ``"code"`` key (an
+            `SED_code` instance/subclass) used to derive the storage label
+            via ``SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)``.
+        """
         if "phot_PDF_paths" not in self.__dict__.keys():
             self.phot_PDF_paths = {}
         self.phot_PDF_paths[
@@ -1085,6 +2127,17 @@ class Catalogue(Catalogue_Base):
         ] = PDF_paths
 
     def save_phot_SED_paths(self, SED_paths, SED_fit_params):
+        """Store the paths to saved best-fit SED files for this catalogue.
+
+        Parameters
+        ----------
+        SED_paths : `Any`
+            SED path(s) to store, keyed under the SED fitting run's label.
+        SED_fit_params : `dict`
+            SED fitting parameters, must contain a ``"code"`` key (an
+            `SED_code` instance/subclass) used to derive the storage label
+            via ``SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)``.
+        """
         if "phot_SED_paths" not in self.__dict__.keys():
             self.phot_SED_paths = {}
         self.phot_SED_paths[
@@ -1092,6 +2145,17 @@ class Catalogue(Catalogue_Base):
         ] = SED_paths
 
     def update_SED_results(self, cat_SED_results, timed=True):
+        """Update each galaxy's stored SED fitting results.
+
+        Parameters
+        ----------
+        cat_SED_results : `list`
+            Per-galaxy SED fitting result objects, in the same order as
+            `self`. Must be the same length as `self`.
+        timed : `bool`, optional
+            Unused (accepted for a stable call signature); a progress bar is
+            always shown unless logging is suppressed. Default is `True`.
+        """
         assert (
             len(cat_SED_results) == len(self)
         )  # if this is not the case then instead should cross match IDs between self and gal_SED_result
@@ -1109,6 +2173,19 @@ class Catalogue(Catalogue_Base):
         ]
     
     def update_SED_result_lowz_zmax_info(self, aper_diam, SED_result_key, zmax_info_arr):
+        """Update each galaxy's low-redshift-solution zmax information for a given SED fit.
+
+        Parameters
+        ----------
+        aper_diam : `u.Quantity`
+            Aperture diameter identifying which `Photometry_obs` the SED
+            result belongs to.
+        SED_result_key : `str`
+            Key identifying which stored SED fitting result to update.
+        zmax_info_arr : `list`
+            Per-galaxy low-z zmax info, in the same order as `self`. Must be
+            the same length as `self`.
+        """
         assert len(zmax_info_arr) == len(self), \
             galfind_logger.critical(
                 "Length of zmax_info_dict must be the same as the catalogue!"
@@ -1131,6 +2208,23 @@ class Catalogue(Catalogue_Base):
         versions: List[str] = ["v1", "v2", "v3", "v4_2"],
         **match_kwargs: Dict[str, Any],
     ) -> Self:
+        """Cross-match with available spectra from JWST DJA spectroscopic releases.
+
+        Queries and cross-matches this photometric catalogue with spectroscopic
+        observations from specified JWST DJA data release versions.
+
+        Parameters
+        ----------
+        versions : `list` of `str`, optional
+            DJA release versions to query. Default is ["v1", "v2", "v3", "v4_2"].
+        **match_kwargs
+            Additional keyword arguments passed to cross-matching functions.
+
+        Returns
+        -------
+        `Catalogue`
+            New catalogue containing only galaxies with matching spectroscopy.
+        """
         # make catalogue consisting of spectra downloaded from the DJA
         for i, version in enumerate(versions):
             DJA_cat_ = Spectral_Catalogue.from_DJA(
@@ -1209,6 +2303,24 @@ class Catalogue(Catalogue_Base):
         dtype: Type = object,
         overwrite: bool = False,
     ) -> None:
+        """Append a computed galaxy property to a FITS catalogue table.
+
+        Computes a property from all galaxies in the catalogue and joins it with
+        the existing FITS table at the specified HDU extension.
+
+        Parameters
+        ----------
+        property_name : `str`
+            Name of the galaxy property to append (accessed via getattr).
+        hdu : `str`, optional
+            HDU extension to append to. One of "OBJECTS" or "SELECTION".
+            Default is "OBJECTS".
+        dtype : `type`, optional
+            Data type for the appended column. Default is `object`.
+        overwrite : `bool`, optional
+            Whether to overwrite an existing column with the same name.
+            Default is `False`.
+        """
         from . import Selector
         save_property_name = Selector.shorten_kwarg_colname(property_name)
         if hdu in ["OBJECTS", "SELECTION"]:
@@ -1269,7 +2381,17 @@ class Catalogue(Catalogue_Base):
     # def calc_new_property(self, func: Callable[..., float], arg_names: Union[list, np.array]):
     #     pass
 
-    def load_sextractor_Re(self):
+    def load_sextractor_Re(self) -> None:
+        """Load SExtractor effective radius (Re) for all galaxies and bands.
+
+        Extracts the FLUX_RADIUS parameter from SExtractor catalogues and
+        converts to physical units (arcsec) accounting for pixel scale.
+
+        Raises
+        ------
+        Exception
+            If data object is not available for unit conversion.
+        """
         if hasattr(self, "data"):
             # load Re from SExtractor
             pix_to_as_dict = {band_data.filt_name: band_data.pix_scale for band_data in self.data}
@@ -1280,7 +2402,11 @@ class Catalogue(Catalogue_Base):
             galfind_logger.critical(err_message)
             raise Exception(err_message)
         
-    def load_sextractor_auto_mags(self):
+    def load_sextractor_auto_mags(self) -> None:
+        """Load SExtractor AUTO magnitudes for all galaxies and bands.
+
+        Extracts MAG_AUTO (isophotal magnitudes) from SExtractor catalogues.
+        """
         if hasattr(self, "data"):
             # load Re from SExtractor
             self.load_band_properties_from_cat("MAG_AUTO", "sex_MAG_AUTO", multiply_factor = u.ABmag)
@@ -1297,6 +2423,22 @@ class Catalogue(Catalogue_Base):
         self: Self,
         multiply_factor: Optional[Dict[str, float]] = None
     ) -> None:
+        """Load SExtractor AUTO fluxes for all galaxies and bands.
+
+        Extracts FLUX_AUTO from SExtractor catalogues, converting to Jansky
+        using zero-points if data object is available.
+
+        Parameters
+        ----------
+        multiply_factor : `dict` of `str`: `float` or `None`, optional
+            Per-band multiplication factor for flux conversion. If `None`,
+            computed from data object zero-points. Default is `None`.
+
+        Raises
+        ------
+        Exception
+            If neither data object nor multiply_factor is provided.
+        """
         if hasattr(self, "data") or multiply_factor is not None:
             # load Re from SExtractor
             if multiply_factor is None:
@@ -1333,7 +2475,12 @@ class Catalogue(Catalogue_Base):
             galfind_logger.critical(err_message)
             raise Exception(err_message)
         
-    def load_sextractor_kron_radii(self):
+    def load_sextractor_kron_radii(self) -> None:
+        """Load SExtractor Kron radii and morphological parameters.
+
+        Extracts Kron radius, A_IMAGE, B_IMAGE, and THETA_IMAGE parameters
+        from SExtractor catalogues for morphological analysis.
+        """
         if hasattr(self, "data"):
             # load Kron radius from SExtractor
             kron_radii = self.load_band_properties_from_cat(
@@ -1406,13 +2553,24 @@ class Catalogue(Catalogue_Base):
                             setattr(gal.aper_phot[aper_diam], name, getattr(gal, name))
                         else:
                             galfind_logger.warning(f"{name} not in {gal.ID=}")
-            
-        
+
     def load_sextractor_ext_src_corrs(
         self: Self,
         multiply_factor: Optional[Dict[str, float]] = None,
-        aper_corrs: Optional[Dict[str, float]] = None, 
+        aper_corrs: Optional[Dict[str, float]] = None,
     ) -> None:
+        """Load extended source corrections from SExtractor AUTO fluxes.
+
+        Computes corrections to aperture photometry for extended sources
+        by comparing AUTO flux estimates with aperture photometry.
+
+        Parameters
+        ----------
+        multiply_factor : `dict` or `None`, optional
+            Per-band flux conversion factors. Default is `None`.
+        aper_corrs : `dict` or `None`, optional
+            Per-aperture correction values. Default is `None`.
+        """
         if multiply_factor is None:
             filt_names = None
         else:
@@ -1427,7 +2585,7 @@ class Catalogue(Catalogue_Base):
             )
         ]
 
-        if len(self) == len(self.cat_creator.open_cat(self.cat_path, "ID")):
+        if len(self) == len(self.cat_creator._open_tab("ID")):
             galfind_logger.info(
                 f"Saving SExtractor extended source corrections to {self.cat_name}!"
             )
@@ -1438,6 +2596,11 @@ class Catalogue(Catalogue_Base):
                         self._append_property_to_tab(f"ext_src_corr_{aper_diam.to(u.arcsec).value:.2f}as_{filt.filt_name}", "OBJECTS", dtype = float)
 
     def load_sextractor_params(self) -> None:
+        """Load all SExtractor parameters for all galaxies.
+
+        Convenience method that loads effective radius, AUTO magnitudes/fluxes,
+        Kron radii, and extended source corrections in sequence.
+        """
         self.load_sextractor_auto_mags()
         self.load_sextractor_auto_fluxes()
         self.load_sextractor_kron_radii()
@@ -1452,6 +2615,35 @@ class Catalogue(Catalogue_Base):
         dest: str = "gal",
         update: bool = True,
     ) -> Optional[List[Dict[str, Union[u.Quantity, u.Magnitude, u.Dex]]]]:
+        """Load a per-band property from the catalogue for all galaxies.
+
+        Reads a set of per-band columns from the catalogue FITS file,
+        optionally applies unit conversions, and stores on each galaxy object.
+
+        Parameters
+        ----------
+        cat_colname : `str`
+            Base name of the catalogue column (e.g., "FLUX_RADIUS").
+            Per-band columns are named as ``{colname}_{filt_name}``.
+        save_name : `str`
+            Name to store the property as on each galaxy object.
+        multiply_factor : `dict`, `Quantity`, `Magnitude`, or `None`, optional
+            Per-band multiplication factor(s) for unit conversion. Can be a
+            single value (applied to all bands) or a dictionary mapping filter
+            names to factors. Default is `None` (no conversion).
+        dest : `str`, optional
+            Destination to store the property on: either `"gal"` (galaxy object)
+            or `"phot_obs"` (photometry object). Default is `"gal"`.
+        update : `bool`, optional
+            Whether to update the galaxy objects with the loaded property.
+            Default is `True`.
+
+        Returns
+        -------
+        `list` of `dict`
+            List of dictionaries mapping band names to per-band property values
+            for each galaxy.
+        """
         if len(self) == 0:
             galfind_logger.warning(
                 f"No galaxies in {self.cat_name}, skipping loading {cat_colname=}"
@@ -1529,8 +2721,25 @@ class Catalogue(Catalogue_Base):
         cat_colname: str,
         save_name: str,
         multiply_factor: Union[u.Quantity, u.Magnitude] = 1.0 * u.dimensionless_unscaled,
-        dest: str = "gal",
-    ):
+    ) -> None:
+        """Load a single property column from the catalogue for all galaxies.
+
+        Reads a catalogue column and stores it on each galaxy object,
+        optionally applying a unit conversion factor.
+
+        Parameters
+        ----------
+        cat_colname : `str`
+            Name of the catalogue column to load.
+        save_name : `str`
+            Name to store the property as on each galaxy object.
+        multiply_factor : `Quantity` or `Magnitude`, optional
+            Multiplication factor for unit conversion. Default is dimensionless.
+        dest : `str`, optional
+            Destination: ``"gal"`` to store on galaxy, or ``"phot_obs"`` to
+            store on photometry object. Default is ``"gal"``.
+        """
+        dest = "gal"
         assert dest in ["gal", "phot_obs"]
         if dest == "gal":
             has_attr = hasattr(self[0], save_name)
@@ -1564,7 +2773,12 @@ class Catalogue(Catalogue_Base):
                     f"{cat_colname=} does not exist in {self.cat_path}, skipping!"
                 )
 
-    def load_sex_flux_mag_autos(self):
+    def load_sex_flux_mag_autos(self) -> None:
+        """Load SExtractor AUTO fluxes and magnitudes into photometry objects.
+
+        Extracts FLUX_AUTO and MAG_AUTO from SExtractor catalogues and
+        stores them on each galaxy's photometry object, converting fluxes to Jansky.
+        """
         # sex_filt_names = [filt_name for filt_name, cat_type in self.data.sex_cat_types.items() if "SExtractor" in cat_type]
         flux_im_to_Jy_conv = {
             filt_name: funcs.flux_image_to_Jy(1.0, self.data.im_zps[filt_name])
@@ -1588,7 +2802,23 @@ class Catalogue(Catalogue_Base):
         aper_diam: u.Quantity,
         z_arr: Union[List[float], NDArray[float]],
         z_label: str = "z",
-    ) -> NoReturn:
+    ) -> None:
+        """Load pre-computed fixed-redshift SED fitting results.
+
+        Parameters
+        ----------
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter that results correspond to.
+        z_arr : `list` or `ndarray` of `float`
+            Redshift value for each galaxy. Must have same length as catalogue.
+        z_label : `str`, optional
+            Label for the redshift parameter. Default is ``"z"``.
+
+        Raises
+        ------
+        AssertionError
+            If redshift array length doesn't match catalogue length.
+        """
         assert len(z_arr) == len(self), \
             galfind_logger.critical(
                 f"{len(z_arr)} != {len(self)}! {z_arr=} and {self=}"
@@ -1601,6 +2831,23 @@ class Catalogue(Catalogue_Base):
         cutout_size: Union[u.Quantity, dict] = 0.96 * u.arcsec,
         native: bool = False,
     ) -> List[Dict[str, Type[Band_Cutout_Base]]]:
+        """Generate multi-band cutout images for all galaxies in the catalogue.
+
+        Parameters
+        ----------
+        cutout_size : `astropy.units.Quantity` or `dict`, optional
+            Size of cutouts in angular units. Can be a single value (applied
+            to all bands) or a dictionary mapping band names to sizes.
+            Default is 0.96 arcsec.
+        native : `bool`, optional
+            Whether to use native (non-PSF-homogenized) data. Default is `False`.
+
+        Returns
+        -------
+        `list` of `dict`
+            List of cutout dictionaries, one per galaxy, each mapping band
+            names to `Band_Cutout_Base` objects.
+        """
         if native:
             assert hasattr(self.data, "native"), \
                 galfind_logger.critical("Native data not available")
@@ -1616,6 +2863,24 @@ class Catalogue(Catalogue_Base):
         native: bool = False,
         overwrite: bool = False,
     ) -> List[Band_Cutout]:
+        """Generate single-band cutout images for all galaxies.
+
+        Parameters
+        ----------
+        filt : `str` or `Filter`
+            Filter/band to extract cutouts for.
+        cutout_size : `astropy.units.Quantity`, optional
+            Size of cutouts. Default is 0.96 arcsec.
+        native : `bool`, optional
+            Whether to use native data. Default is `False`.
+        overwrite : `bool`, optional
+            Whether to regenerate cutouts. Default is `False`.
+
+        Returns
+        -------
+        `list` of `Band_Cutout`
+            Cutout objects, one per galaxy, for the specified band.
+        """
         if native:
             assert hasattr(self.data, "native"), \
                 galfind_logger.critical("Native data not available")
@@ -1645,7 +2910,25 @@ class Catalogue(Catalogue_Base):
         collate_dir: Optional[str] = None,
         overwrite: bool = False,
         overwrite_sample: bool = True,
-    ) -> NoReturn:
+    ) -> None:
+        """Plot multi-band cutout images for all galaxies.
+
+        Parameters
+        ----------
+        cutout_size : `astropy.units.Quantity`, optional
+            Size of cutouts. Default is 0.96 arcsec.
+        plot_kwargs : `dict`, optional
+            Keyword arguments for plotting. Default is empty.
+        crop_name : `str` or `None`, optional
+            Crop/selection name for organizing plots. Default is `None`.
+        collate_dir : `str` or `None`, optional
+            Directory to collate plots into. If `None`, uses default path
+            based on crop name. Default is `None`.
+        overwrite : `bool`, optional
+            Whether to overwrite existing cutouts. Default is `False`.
+        overwrite_sample : `bool`, optional
+            Whether to overwrite sample collation. Default is `True`.
+        """
         out_paths = np.full(len(self), None)
         for i, gal in enumerate(self):
             cutouts = gal.make_cutouts(self.data, cutout_size, overwrite = overwrite)
@@ -1663,6 +2946,21 @@ class Catalogue(Catalogue_Base):
     def stack_gals(
         self, cutout_size: u.Quantity = 0.96 * u.arcsec
     ) -> Multiple_Band_Cutout:
+        """Create a stacked multi-band cutout image from all galaxies in the catalogue.
+
+        Generates aligned cutouts of the specified size for all galaxies,
+        stacks them band-by-band, and caches the result for reuse.
+
+        Parameters
+        ----------
+        cutout_size : `astropy.units.Quantity`, optional
+            Size of individual cutouts. Default is 0.96 arcsec.
+
+        Returns
+        -------
+        `Multiple_Band_Cutout`
+            Stacked cutout image with one layer per band.
+        """
         # stack all galaxies in catalogue for a given band
         if not hasattr(self, "stacked_cutouts"):
             self.stacked_cutouts = {}
@@ -1678,6 +2976,19 @@ class Catalogue(Catalogue_Base):
         cutout_size: u.Quantity = 0.96 * u.arcsec,
         save_name: Optional[str] = None,
     ) -> NoReturn:
+        """Plot a visualization of the stacked galaxy cutouts.
+
+        Creates and displays a stacked multi-band cutout image from all
+        galaxies, with optional saving to file.
+
+        Parameters
+        ----------
+        cutout_size : `astropy.units.Quantity`, optional
+            Size of individual cutouts. Default is 0.96 arcsec.
+        save_name : `str` or `None`, optional
+            File path to save the plot to. If `None`, plot is not saved.
+            Default is `None`.
+        """
         stacked_cutouts = self.stack_gals(cutout_size=cutout_size)
         stacked_cutouts.plot(save_name=save_name)
 
@@ -1690,6 +3001,24 @@ class Catalogue(Catalogue_Base):
             "R": ["F444W"],
         },
     ) -> Multiple_RGB:
+        """Generate RGB composite images for all galaxies in the catalogue.
+
+        Creates cutout images from specified bands, combines them into RGB
+        composites, and caches the results for reuse.
+
+        Parameters
+        ----------
+        cutout_size : `astropy.units.Quantity`, optional
+            Size of individual galaxy cutouts. Default is 0.96 arcsec.
+        rgb_bands : `dict` of `str` to `list` of `str`, optional
+            Mapping of RGB channels ("B", "G", "R") to lists of band names
+            to use for each channel. Default uses F090W, F200W, F444W.
+
+        Returns
+        -------
+        `Multiple_RGB`
+            RGB composite images for all galaxies.
+        """
         if not hasattr(self, "RGBs"):
             self.RGBs = {}
         cutout_size_str = f"{cutout_size.to(u.arcsec).value:.2f}as"
@@ -1719,6 +3048,22 @@ class Catalogue(Catalogue_Base):
         method: str = "trilogy",
         save_name: Optional[str] = None,
     ) -> NoReturn:
+        """Plot RGB composite images for all galaxies.
+
+        Generates and displays RGB composite images from specified filter bands,
+        optionally saving to file.
+
+        Parameters
+        ----------
+        cutout_size : `astropy.units.Quantity`, optional
+            Size of individual galaxy cutouts. Default is 0.96 arcsec.
+        rgb_bands : `dict`, optional
+            Mapping of RGB channels to band names. Default uses standard bands.
+        method : `str`, optional
+            RGB combination method (e.g., "trilogy"). Default is "trilogy".
+        save_name : `str` or `None`, optional
+            File path to save the plot to. Default is `None`.
+        """
         RGBs = self.make_RGBs(cutout_size=cutout_size, rgb_bands=rgb_bands)
         RGBs.plot(save_name=save_name)
 
@@ -1731,6 +3076,23 @@ class Catalogue(Catalogue_Base):
             "R": ["F444W"],
         },
     ) -> Stacked_RGB:
+        """Create a stacked RGB composite image from all galaxies in the catalogue.
+
+        Generates RGB composites for each galaxy, stacks them, and caches
+        the result for reuse.
+
+        Parameters
+        ----------
+        cutout_size : `astropy.units.Quantity`, optional
+            Size of individual galaxy cutouts. Default is 0.96 arcsec.
+        rgb_bands : `dict`, optional
+            Mapping of RGB channels to band names. Default uses standard bands.
+
+        Returns
+        -------
+        `Stacked_RGB`
+            Stacked RGB composite image.
+        """
         if not hasattr(self, "stacked_RGB"):
             self.stacked_RGB = {}
         cutout_size_str = f"{cutout_size.to(u.arcsec).value:.2f}as"
@@ -1756,10 +3118,95 @@ class Catalogue(Catalogue_Base):
         norm_kwargs: Dict[str, Any] = {},
         aper_kwargs: Dict[str, Any] = {},
         kron_kwargs: Dict[str, Any] = {},
+        cutout_label_kwargs: Dict[str, Any] = {},
+        sed_plot_kwargs: Dict[str, Any] = {},
+        cutout_gridspec_kwargs: Dict[str, Any] = {},
+        legend_kwargs: Dict[str, Any] = {"loc": "best"},
+        errorbar_kwargs: Dict[str, Any] = {},
+        SNR_label_kwargs: Dict[str, Any] = {},
+        phot_axes_labels_kwargs: Dict[str, Any] = {},
+        phot_axes_ticks_kwargs: Dict[str, Any] = {},
+        PDF_axes_ticks_kwargs: Dict[str, Any] = {},
+        PDF_axes_labels_kwargs: Dict[str, Any] = {},
+        PDF_axes_title_kwargs: Dict[str, Any] = {},
+        title_kwargs: Dict[str, Any] = {},
         n_cutout_rows: int = 2,
         overwrite: bool = False,
+        split_by_instr: bool = True,
+        split_by_instr_cmap: str = "plasma",
+        SED_cmap: Optional[str] = None,
         #fig_axs: Optional[Tuple[plt.Figure, NDArray[plt.Axes]]] = None,
     ):
+        """Generate and save photometry diagnostic plots for all galaxies.
+
+        Creates multi-panel diagnostic figures showing cutouts, photometric SEDs,
+        and redshift PDFs for each galaxy, saving them to a results directory.
+
+        Parameters
+        ----------
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter to plot diagnostics for.
+        SED_arr : `list` of `SED_code`
+            List of SED fitting code instances for each SED model type.
+        zPDF_arr : `list` of `SED_code`
+            List of redshift PDF code instances for each PDF type.
+        plot_lowz : `bool`, optional
+            Whether to plot low-redshift solutions. Default is `True`.
+        wav_unit : `astropy.units.Unit`, optional
+            Wavelength unit for plots. Default is micrometers.
+        flux_unit : `astropy.units.Unit`, optional
+            Flux unit for plots. Default is AB magnitudes.
+        log_fluxes : `bool`, optional
+            Whether to use logarithmic flux scale. Default is `False`.
+        cutout_size : `astropy.units.Quantity`, optional
+            Size of galaxy cutout images. Default is 0.96 arcsec.
+        crop_name : `str` or `None`, optional
+            Name of crop/selection for organizing outputs. Default is `None`.
+        collate_dir : `str` or `None`, optional
+            Directory to collate symlinks to diagnostic plots. Default is `None`.
+        imshow_kwargs : `dict`, optional
+            Keyword arguments for imshow. Default is empty.
+        norm_kwargs : `dict`, optional
+            Normalization keyword arguments. Default is empty.
+        aper_kwargs : `dict`, optional
+            Aperture marking keyword arguments. Default is empty.
+        kron_kwargs : `dict`, optional
+            Kron radius marking keyword arguments. Default is empty.
+        cutout_label_kwargs : `dict`, optional
+            Label keyword arguments for cutouts. Default is empty.
+        sed_plot_kwargs : `dict`, optional
+            SED plot keyword arguments. Default is empty.
+        cutout_gridspec_kwargs : `dict`, optional
+            Gridspec keyword arguments. Default is empty.
+        legend_kwargs : `dict`, optional
+            Legend keyword arguments. Default is {"loc": "best"}.
+        errorbar_kwargs : `dict`, optional
+            Error bar keyword arguments. Default is empty.
+        SNR_label_kwargs : `dict`, optional
+            SNR label keyword arguments. Default is empty.
+        phot_axes_labels_kwargs : `dict`, optional
+            Photometry axes labels keyword arguments. Default is empty.
+        phot_axes_ticks_kwargs : `dict`, optional
+            Photometry axes ticks keyword arguments. Default is empty.
+        PDF_axes_ticks_kwargs : `dict`, optional
+            PDF axes ticks keyword arguments. Default is empty.
+        PDF_axes_labels_kwargs : `dict`, optional
+            PDF axes labels keyword arguments. Default is empty.
+        PDF_axes_title_kwargs : `dict`, optional
+            PDF axes title keyword arguments. Default is empty.
+        title_kwargs : `dict`, optional
+            Figure title keyword arguments. Default is empty.
+        n_cutout_rows : `int`, optional
+            Number of rows for cutout grid. Default is 2.
+        overwrite : `bool`, optional
+            Whether to overwrite existing plots. Default is `False`.
+        split_by_instr : `bool`, optional
+            Whether to color-code by instrument. Default is `True`.
+        split_by_instr_cmap : `str`, optional
+            Colormap for instrument colors. Default is "plasma".
+        SED_cmap : `str` or `None`, optional
+            Colormap for SED plotting. Default is `None`.
+        """
         self.load_sextractor_params()
 
         # if fig_axs is None:
@@ -1784,9 +3231,25 @@ class Catalogue(Catalogue_Base):
                 norm_kwargs = norm_kwargs,
                 aper_kwargs = aper_kwargs,
                 kron_kwargs = kron_kwargs,
+                cutout_label_kwargs = cutout_label_kwargs,
+                sed_plot_kwargs = sed_plot_kwargs,
+                legend_kwargs = legend_kwargs,
+                errorbar_kwargs = errorbar_kwargs,
+                SNR_label_kwargs = SNR_label_kwargs,
+                phot_axes_labels_kwargs = phot_axes_labels_kwargs,
+                phot_axes_ticks_kwargs = phot_axes_ticks_kwargs,
+                PDF_axes_ticks_kwargs = PDF_axes_ticks_kwargs,
+                PDF_axes_labels_kwargs = PDF_axes_labels_kwargs,
+                PDF_axes_title_kwargs = PDF_axes_title_kwargs,
+                title_kwargs = title_kwargs,
                 overwrite = overwrite,
                 save = True,
                 show = False,
+                incl_nodata_cutouts = True,
+                split_by_instr = split_by_instr,
+                split_by_instr_cmap = split_by_instr_cmap,
+                SED_cmap = SED_cmap,
+                cutout_gridspec_kwargs = cutout_gridspec_kwargs,
             )
             for gal in tqdm(
                 self,
@@ -1809,6 +3272,20 @@ class Catalogue(Catalogue_Base):
         collate_dir: str,
         overwrite: bool = True,
     ):
+        """Create symlinks to plots in a collation directory for quick access.
+
+        Organizes individual galaxy plots by creating symbolic links in a
+        collation directory, useful for browsing selected subsets of results.
+
+        Parameters
+        ----------
+        out_paths : `list` of `str`
+            Paths to individual galaxy plot files, one per galaxy.
+        collate_dir : `str`
+            Directory to create symlinks in.
+        overwrite : `bool`, optional
+            Whether to remove and recreate existing symlinks. Default is `True`.
+        """
         # make a folder to store symlinked photometric diagnostic plots for selected galaxies
         if self.crops != []:
             if overwrite:
@@ -1840,6 +3317,36 @@ class Catalogue(Catalogue_Base):
         Vmax_method: str = "uniform_depth",
         n_jobs: int = 1,
     ) -> NDArray[float]:
+        """Calculate maximum co-moving volume (Vmax) for galaxies in a redshift bin.
+
+        Computes Vmax corrections for luminosity/mass function calculations,
+        accounting for observational limits and survey sensitivity as a
+        function of redshift.
+
+        Parameters
+        ----------
+        z_bin : `list` of `float`
+            Redshift bin edges [z_min, z_max] to calculate Vmax over.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter for photometry.
+        SED_fit_code : `SED_code`
+            SED fitting code used for redshift determination.
+        z_step : `float`, optional
+            Redshift step size for integration. Default is 0.01.
+        unmasked_area : `str`, `list` of `str`, `Quantity`, or `Mask_Selector`, optional
+            Definition of survey area with data. Can be "selection", a region
+            selector, or an area value. Default is "selection".
+        Vmax_method : `str`, optional
+            Method for Vmax calculation ("uniform_depth" or other). Default is
+            "uniform_depth".
+        n_jobs : `int`, optional
+            Number of parallel jobs for calculation. Default is 1.
+
+        Returns
+        -------
+        `np.ndarray` of `float`
+            Vmax values for each galaxy in the catalogue.
+        """
         assert hasattr(self, "data"), \
             galfind_logger.critical(
                 f"{repr(self)} does not have data loaded!"
@@ -1867,6 +3374,27 @@ class Catalogue(Catalogue_Base):
         min_flux_pc_err: float = 10.0,
         update_errs: bool = True,
     ):
+        """Add random scatter to photometry based on local depth measurements.
+
+        Applies Gaussian scatter to galaxy fluxes at a given aperture diameter,
+        scaled by photometric errors derived from the survey's local depths.
+        Useful for simulating measurement uncertainties.
+
+        Parameters
+        ----------
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter to scatter fluxes for.
+        mode : `str`, optional
+            Method for depth calculation ("n_nearest" or other). Default is
+            "n_nearest".
+        depth_region : `str`, optional
+            Region to calculate depth statistics from ("all" or region name).
+            Default is "all".
+        min_flux_pc_err : `float`, optional
+            Minimum flux percentage error floor. Default is 10.0.
+        update_errs : `bool`, optional
+            Whether to recompute flux errors after scattering. Default is `True`.
+        """
         assert all(aper_diam in gal.aper_phot.keys() for gal in self)
         # load galaxy depths from the average depths of the field
         if hasattr(self, "data"):
@@ -1893,6 +3421,20 @@ class Catalogue(Catalogue_Base):
         mode: str = "n_nearest",
         depth_region: str = "all",
     ) -> NoReturn:
+        """Update all galaxy depths to values from the survey data object.
+
+        Queries depth measurements from the loaded data object and assigns
+        them to each galaxy's photometry.
+
+        Parameters
+        ----------
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter to update depths for.
+        mode : `str`, optional
+            Method for depth calculation. Default is "n_nearest".
+        depth_region : `str`, optional
+            Region to calculate depth statistics from. Default is "all".
+        """
         assert hasattr(self, "data"), \
             galfind_logger.critical(
                 f"{self.cat_name} does not have data loaded!"
@@ -1913,6 +3455,20 @@ class Catalogue(Catalogue_Base):
         default_min_flux_pc_err: float = 10.0,
         apply_min_flux_pc_err: bool = True,
     ) -> NoReturn:
+        """Recompute all galaxy flux errors from their depths.
+
+        Updates each galaxy's photometric errors based on the local depths,
+        applying an optional minimum percentage error floor.
+
+        Parameters
+        ----------
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter to update errors for.
+        default_min_flux_pc_err : `float`, optional
+            Minimum percentage error if not found in configuration. Default is 10.0.
+        apply_min_flux_pc_err : `bool`, optional
+            Whether to apply a minimum percentage error floor. Default is `True`.
+        """
         if apply_min_flux_pc_err:
             if "min_flux_pc_err" in self.cat_creator.load_phot_kwargs.keys():
                 min_flux_pc_err = self.cat_creator.load_phot_kwargs["min_flux_pc_err"]
@@ -1938,6 +3494,25 @@ class Catalogue(Catalogue_Base):
         invert_region: bool = False,
         update_ecsv: bool = False,
     ) -> None:
+        """Load and compute local depths for a given aperture diameter.
+
+        Queries depth measurements from the survey data, optionally filtering
+        by a region selector. Can save computed depths to an ECSV file.
+
+        Parameters
+        ----------
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter to load depths for.
+        mode : `str`
+            Method for depth calculation (e.g., "n_nearest").
+        region_selector : `Region_Selector` or `None`, optional
+            Region to compute depths over. If `None`, uses all data.
+            Default is `None`.
+        invert_region : `bool`, optional
+            Whether to invert the region selection. Default is `False`.
+        update_ecsv : `bool`, optional
+            Whether to save computed depths to ECSV file. Default is `False`.
+        """
         if region_selector is None:
             self.data._load_depths(
                 aper_diam,
@@ -2024,6 +3599,18 @@ class Catalogue(Catalogue_Base):
         update: bool = False,
         hdu_divider: str = "------------------",
     ) -> None:
+        """Generate or update a README file documenting the catalogue.
+
+        Creates a human-readable README file describing the catalogue contents,
+        column definitions, and data provenance for each HDU extension.
+
+        Parameters
+        ----------
+        update : `bool`, optional
+            Whether to update an existing README. Default is `False`.
+        hdu_divider : `str`, optional
+            String to use as divider between HDU sections. Default is 18 dashes.
+        """
         out_path = f"{self.fits_path.replace('.fits', '')}_README.txt"
         if not Path(out_path).is_file() or update:
             out_str = ""
@@ -2041,6 +3628,22 @@ class Catalogue(Catalogue_Base):
     def _readme_info_from_fits_tab(
         fits_path: str
     ) -> Dict[str, Dict[str, str]]:
+        """Extract column metadata from a FITS catalogue for README generation.
+
+        Parses a multi-extension FITS catalogue file, extracting header and
+        column information from each HDU to generate documentation.
+
+        Parameters
+        ----------
+        fits_path : `str`
+            Path to the FITS catalogue file.
+
+        Returns
+        -------
+        `dict` of `str` to `dict` of `str` to `str`
+            Nested dictionary mapping HDU names to dictionaries of column
+            names and their descriptions.
+        """
         hdul = fits.open(fits_path)
         hdu_names = [hdu.name for hdu in hdul]
         readme_info = {}

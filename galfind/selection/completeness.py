@@ -21,6 +21,48 @@ from .. import galfind_logger
 from ..Catalogue_Base import Catalogue_Base
 
 class Completeness:
+    """Completeness curve of a selection as a function of one property.
+
+    Stores a 1D completeness curve (fraction of simulated sources
+    recovered by a selection) tabulated on a grid of a single derived
+    property (e.g. magnitude or redshift), and provides interpolation
+    of the completeness at arbitrary values of that property for a
+    given galaxy or catalogue via `__call__`.
+
+    Parameters
+    ----------
+    x : `numpy.ndarray` of `float`
+        Grid of values of the property against which completeness is
+        tabulated.
+    x_calculator : `Type[Property_Calculator]`
+        Calculator class used to compute the value of the relevant
+        property for a given `Galaxy`.
+    completeness : `numpy.ndarray` of `float`
+        Completeness fraction tabulated at each value of `x`.
+    x_completeness_lim : `Callable`, optional
+        Function of `(x_gal, compl_gal)` returning `bool`, used to flag
+        galaxies whose derived property lies beyond the regime where the
+        tabulated completeness curve is reliable; when it returns
+        `True` the completeness is replaced by `high_x_val`. Default is
+        `None`.
+    origin : `str`, optional
+        Label identifying the survey/depth region this completeness
+        curve was derived from (e.g. used to look up the correct curve
+        in `Catalogue_Completeness`). Default is `None`.
+
+    Attributes
+    ----------
+    x : `numpy.ndarray` of `float`
+        Grid of property values.
+    x_calculator : `Type[Property_Calculator]`
+        Calculator used to compute the property for a galaxy.
+    completeness : `numpy.ndarray` of `float`
+        Tabulated completeness fractions.
+    x_completeness_lim : `Callable` or `None`
+        Limit-flagging function, if provided.
+    origin : `str` or `None`
+        Origin label of this completeness curve.
+    """
 
     def __init__(
         self: Self,
@@ -46,6 +88,34 @@ class Completeness:
         x_completeness_lim: Optional[Callable[[float, float], bool]] = None,
         origin: Optional[str] = None,
     ):
+        """Construct a `Completeness` curve from a saved HDF5 file.
+
+        Parameters
+        ----------
+        h5_path : `str`
+            Path to the HDF5 file containing the tabulated `x` and
+            completeness datasets.
+        x_calculator : `Type[Property_Calculator]`
+            Calculator class used to compute the relevant property for
+            a given `Galaxy`.
+        x_label : `str`, optional
+            Name of the HDF5 dataset containing the `x` grid values.
+            Default is `"x"`.
+        completeness_label : `str`, optional
+            Name of the HDF5 dataset containing the completeness
+            values. Default is `"completeness"`.
+        x_completeness_lim : `Callable`, optional
+            Function used to flag galaxies outside the reliable regime
+            of the completeness curve. Default is `None`.
+        origin : `str`, optional
+            Label identifying the survey/depth region this curve came
+            from. Default is `None`.
+
+        Returns
+        -------
+        `Completeness`
+            A new `Completeness` instance built from the HDF5 data.
+        """
         # TODO: Extract origin from h5 path
         # open h5 file
         hf = h5.File(h5_path, "r")
@@ -77,6 +147,53 @@ class Completeness:
         # MUV_arr: NDArray[float] = np.arange(-22.5, -16.5, 0.5),
         # cmap: str = "viridis",
     ):
+        """Construct a `Completeness` curve from a simulated FITS catalogue.
+
+        Reads a simulated catalogue and its associated `"SELECTION"`
+        HDU, bins sources by redshift and the property of interest, and
+        computes the completeness in each `x` bin as the ratio of
+        selected to simulated source counts (marginalised over the
+        single provided redshift bin).
+
+        Parameters
+        ----------
+        cat_path : `str`
+            Path to the simulated FITS catalogue. Must also contain a
+            `"SELECTION"` HDU with the same number of rows.
+        selection_column : `str`
+            Name of the boolean column in the `"SELECTION"` HDU used to
+            mask selected sources.
+        z_bin : `list` of `float`
+            Two-element list giving the redshift bin edges to include.
+        x_bins : `list` of `float`
+            Bin edges for the property of interest.
+        z_colname : `str`
+            Name of the redshift column in the catalogue.
+        x_colname : `str`
+            Name of the property column in the catalogue.
+        x_calculator : `Type[Property_Calculator]`, optional
+            Calculator class used to compute the property for a given
+            `Galaxy`. Default is `None`.
+        x_completeness_lim : `Callable`, optional
+            Function used to flag galaxies outside the reliable regime
+            of the completeness curve. Default is `None`.
+        origin : `str`, optional
+            Label identifying the survey/depth region this curve came
+            from. Default is `None`.
+
+        Returns
+        -------
+        `Completeness`
+            A new `Completeness` instance with `x` set to the bin
+            midpoints of `x_bins` and `completeness` set to the
+            selected/simulated ratio in each bin.
+
+        Raises
+        ------
+        AssertionError
+            If the simulated catalogue and `"SELECTION"` HDU do not
+            have the same number of rows.
+        """
         tab = Table.read(cat_path)
         select_tab = Table.read(cat_path, hdu = "SELECTION")
         assert len(tab) == len(select_tab)
@@ -100,6 +217,13 @@ class Completeness:
 
     @property
     def high_x_val(self: Self) -> float:
+        """`float`: Completeness value assumed beyond the tabulated limit.
+
+        Value substituted for the interpolated completeness when
+        `x_completeness_lim` flags a galaxy's property value as being
+        beyond the regime where the tabulated curve is reliable.
+        Currently always returns `1.0`.
+        """
         return 1.0
         # # calculate the mean of the completeness values above the completeness limit
         # if self.x_completeness_lim is None:
@@ -187,10 +311,31 @@ class Completeness:
         return compl_gal
 
     def plot():
+        """Plot the completeness curve. Not yet implemented."""
         pass
 
 
 class Catalogue_Completeness: #(Completeness)
+    """Collection of `Completeness` curves keyed by origin.
+
+    Aggregates several `Completeness` objects (typically one per
+    survey/depth-region combination) and dispatches a lookup for a
+    given galaxy or catalogue to the appropriate curve based on its
+    `origin`.
+
+    Parameters
+    ----------
+    compl_arr : `list` of `Completeness`
+        The individual completeness curves to combine.
+
+    Attributes
+    ----------
+    compl_arr : `list` of `Completeness`
+        The stored completeness curves.
+    origins : `list` of `str`
+        Origin labels of each curve in `compl_arr` (see `origins`
+        property).
+    """
 
     def __init__(
         self: Self,
@@ -200,6 +345,7 @@ class Catalogue_Completeness: #(Completeness)
 
     @property
     def origins(self: Self) -> List[str]:
+        """`numpy.ndarray` of `str`: Origin label of each stored completeness curve."""
         return np.array([compl.origin for compl in self.compl_arr])
     
     def __call__(
@@ -258,4 +404,11 @@ class Catalogue_Completeness: #(Completeness)
 
 
 class Completeness_2D(Grid_2D):
+    """Grid of completeness as a function of two properties.
+
+    `Grid_2D` subclass intended for characterising completeness (the
+    ratio of selected to simulated source counts) as a function of two
+    derived properties (e.g. redshift and absolute UV magnitude), using
+    the interpolation and plotting behaviour inherited from `Grid_2D`.
+    """
     pass

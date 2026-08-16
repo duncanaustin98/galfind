@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Wed May 31 00:17:39 2023
+"""Abstract base class for external SED-fitting code wrappers.
 
-@author: austind
+Defines uniform interface for building input catalogues, running fits,
+and parsing results into GALFIND-native objects for SED fitting codes.
 """
 
 from __future__ import annotations
@@ -17,11 +17,11 @@ import logging
 import numpy as np
 from copy import deepcopy
 from numpy.typing import NDArray
-from astropy.table import Table, join
+from astropy.table import Table, vstack
 from tqdm import tqdm
 from typing import TYPE_CHECKING, NoReturn, Tuple, Union, List, Dict, Any, Optional
 if TYPE_CHECKING:
-    from . import Catalogue, Spectral_Catalogue, Multiple_Filter, SED_obs, PDF
+    from . import Galaxy, Catalogue, Spectral_Catalogue, Multiple_Filter, SED_obs, PDF
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -31,9 +31,42 @@ from . import SED_result, config, galfind_logger
 from . import useful_funcs_austind as funcs
 
 class SED_code(ABC):
+    """Abstract base class defining the common interface for external SED-fitting codes.
+
+    Subclasses (e.g. `LePhare`, `EAZY`) wrap an external photometric
+    redshift / SED-fitting tool, providing a uniform interface for
+    building input catalogues, running the fit, and parsing the results
+    back into GALFIND-native `SED_result`, `SED_obs` and PDF objects.
+    Instances are also callable (see `__call__`), which drives the full
+    pipeline of pre-fitting, input catalogue creation, fitting, and
+    result loading for a `Galaxy`, `Catalogue` or `Spectral_Catalogue`.
+
+    Parameters
+    ----------
+    SED_fit_params : `dict`
+        Dictionary of SED fitting parameters/options for this run. Must
+        contain the keys named in `required_SED_fit_params`.
+    **kwargs : `dict`
+        Additional keyword arguments. Each key/value pair is set as an
+        instance attribute.
+
+    Attributes
+    ----------
+    SED_fit_params : `dict`
+        SED fitting parameters/options for this run.
+    gal_property_labels : `dict`
+        Mapping from galaxy property name to output catalogue column name.
+    gal_property_err_labels : `dict`
+        Mapping from galaxy property name to a two-element list of
+        lower/upper output catalogue error column names.
+    gal_property_units : `dict`
+        Mapping from galaxy property name to `astropy.units.Unit`.
+    """
+
     def __init__(
         self,
         SED_fit_params: Dict[str, Any],
+        **kwargs: Dict[str, Any],
     ):
         # assert isinstance(SED_fit_params, dict), \
         #     galfind_logger.critical(
@@ -44,10 +77,25 @@ class SED_code(ABC):
         self._load_gal_property_labels()
         self._load_gal_property_err_labels()
         self._load_gal_property_units()
+        for key, val in kwargs.items():
+            setattr(self, key, val)
 
     @classmethod
     @abstractmethod
     def from_label(cls, label: str) -> Type[SED_code]:
+        """Construct an `SED_code` instance from a saved catalogue label.
+
+        Parameters
+        ----------
+        label : `str`
+            Label string identifying a previous fitting run.
+
+        Returns
+        -------
+        `SED_code`
+            An instance of the concrete `SED_code` subclass reconstructed
+            from `label`.
+        """
         pass
 
     # @property
@@ -58,30 +106,59 @@ class SED_code(ABC):
     @property
     @abstractmethod
     def label(self) -> str:
+        """`str`: Unique label identifying this fitting run.
+
+        Must be implemented by each `SED_code` subclass.
+        """
         pass
 
     @property
     @abstractmethod
     def hdu_name(self) -> str:
+        """`str`: Name of the FITS HDU/extension this code's output is stored under.
+
+        Must be implemented by each `SED_code` subclass.
+        """
         pass
 
     @property
     @abstractmethod
     def tab_suffix(self) -> str:
+        """`str`: Column-name suffix used to distinguish this run's output columns.
+
+        Must be implemented by each `SED_code` subclass.
+        """
         pass
 
     @property
     @abstractmethod
     def required_SED_fit_params(self) -> List[str]:
+        """`list` of `str`: Names of the `SED_fit_params` keys required by this code.
+
+        Must be implemented by each `SED_code` subclass.
+        """
         pass
 
     @property
     @abstractmethod
     def are_errs_percentiles(self) -> bool:
+        """`bool`: Whether output property errors are stored as percentiles rather than 1-sigma values.
+
+        Must be implemented by each `SED_code` subclass.
+        """
         pass
 
     @property
     def excl_bands_label(self) -> str:
+        """`str`: Suffix encoding any bands excluded from this fitting run.
+
+        Returns an empty string if no bands are excluded
+        (``SED_fit_params["excl_bands"] == []``); if
+        ``SED_fit_params["excl_bands"]`` is a list of lists, returns
+        ``SED_fit_params["excl_bands_label"]`` prefixed with ``"_"``;
+        otherwise returns the excluded band names joined with ``"_"``,
+        prefixed with ``"_"``.
+        """
         if self.SED_fit_params["excl_bands"] == []:
             return ""
         if isinstance(self.SED_fit_params["excl_bands"][0], list):
@@ -111,12 +188,54 @@ class SED_code(ABC):
         pass
 
     @abstractmethod
+    def pre_fitting(
+        self: Type[Self],
+        cat: Union[Catalogue, Spectral_Catalogue],
+        aper_diam: u.Quantity,
+        overwrite: bool = False,
+        save_name: Optional[str] = None,
+    ) -> None:
+        """Perform any pre-fitting setup required before running the fit.
+
+        Parameters
+        ----------
+        cat : `Catalogue` or `Spectral_Catalogue`
+            Catalogue of galaxies about to be fitted.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter of the photometry to be fitted.
+        overwrite : `bool`, optional
+            Whether to overwrite any existing pre-fitting products. Default
+            is `False`.
+        save_name : `str`, optional
+            Optional custom name used when saving pre-fitting products.
+            Default is `None`.
+        """
+        pass
+
+    @abstractmethod
     def make_in(
-        self, 
-        cat: Catalogue, 
-        aper_diam: u.Quantity, 
+        self: Type[Self],
+        cat: Catalogue,
+        aper_diam: u.Quantity,
         overwrite: bool = False
     ) -> str:
+        """Build the input photometric catalogue required by the external code.
+
+        Parameters
+        ----------
+        cat : `Catalogue`
+            Catalogue of galaxies to build the input file for.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter of the photometry to extract.
+        overwrite : `bool`, optional
+            Whether to remake the input file if one already exists. Default
+            is `False`.
+
+        Returns
+        -------
+        `str`
+            Path to the (possibly newly written) input catalogue.
+        """
         pass
 
     @abstractmethod
@@ -129,45 +248,125 @@ class SED_code(ABC):
         overwrite: bool = False,
         **kwargs: Dict[str, Any],
     ) -> None:
+        """Run the external SED-fitting code on a catalogue's input file.
+
+        Parameters
+        ----------
+        cat : `Catalogue`
+            Catalogue of galaxies to fit.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter of the photometry being fitted.
+        save_SEDs : `bool`, optional
+            Whether to save the best-fit SEDs. Default is `True`.
+        save_PDFs : `bool`, optional
+            Whether to save the property PDFs. Default is `True`.
+        overwrite : `bool`, optional
+            Whether to re-run the fit even if the output already exists.
+            Default is `False`.
+        **kwargs : `dict`
+            Additional keyword arguments passed through to the concrete
+            implementation.
+        """
         pass
 
     @abstractmethod
     def make_fits_from_out(self, out_path):
+        """Convert the raw output of the external code into a FITS binary table.
+
+        Parameters
+        ----------
+        out_path : `str`
+            Path to the raw output catalogue produced by `fit`.
+        """
         pass
 
     @abstractmethod
     def _get_out_paths(
         self: Self, 
         cat: Catalogue, 
-        aper_diam: u.Quantity
+        aper_diam: u.Quantity,
+        save_name: Optional[str] = None,
     ) -> Tuple[str, str, str, Dict[str, List[str]], List[str]]:
         pass
 
     @abstractmethod
     def extract_SEDs(
-        self: Self, 
-        IDs: List[int], 
+        self: Self,
+        IDs: List[int],
         SED_paths: Union[str, List[str]],
         *args,
         **kwargs
     ) -> List[SED_obs]:
+        """Extract best-fit SEDs from the external code's output files.
+
+        Parameters
+        ----------
+        IDs : `list` of `int`
+            Galaxy IDs to extract SEDs for.
+        SED_paths : `str` or `list` of `str`
+            Path(s) to the file(s) containing each galaxy's best-fit SED.
+        *args : `tuple`
+            Additional positional arguments, implementation-specific.
+        **kwargs : `dict`
+            Additional keyword arguments, implementation-specific.
+
+        Returns
+        -------
+        `list` of `SED_obs`
+            Best-fit galaxy SED for each requested ID, in the same order
+            as `IDs`.
+        """
         pass
 
     @abstractmethod
     def extract_PDFs(
-        self: Self, 
-        gal_property: str, 
-        IDs: List[int], 
-        PDF_paths: Union[str, List[str]], 
+        self: Self,
+        gal_property: str,
+        IDs: List[int],
+        PDF_paths: Union[str, List[str]],
     ) -> List[Type[PDF]]:
+        """Extract posterior PDFs for a galaxy property from the external code's output files.
+
+        Parameters
+        ----------
+        gal_property : `str`
+            Name of the galaxy property to extract PDFs for.
+        IDs : `list` of `int`
+            Galaxy IDs to extract PDFs for.
+        PDF_paths : `str` or `list` of `str`
+            Path(s) to the file(s) containing each galaxy's PDF for
+            `gal_property`.
+
+        Returns
+        -------
+        `list` of `PDF`
+            PDF object for `gal_property`, one per ID in `IDs`.
+        """
         pass
 
     @abstractmethod
     def load_cat_property_PDFs(
-        self: Self, 
+        self: Self,
         PDF_paths: Union[List[str], List[Dict[str, str]]],
         IDs: List[int]
     ) -> List[Dict[str, Optional[Type[PDF]]]]:
+        """Load per-galaxy property PDFs from a set of PDF file paths.
+
+        Parameters
+        ----------
+        PDF_paths : `list` of `str` or `list` of `dict`
+            PDF file path(s) for each requested property, keyed
+            appropriately by the concrete implementation.
+        IDs : `list` of `int`
+            Galaxy IDs to load PDFs for.
+
+        Returns
+        -------
+        `list` of `dict`
+            One dictionary per galaxy (in the order of `IDs`), mapping
+            property name to its PDF object, or `None` for galaxies with
+            no available PDFs.
+        """
         pass
 
     def _assert_SED_fit_params(self) -> NoReturn:
@@ -183,7 +382,6 @@ class SED_code(ABC):
             galfind_logger.critical(
                 f"{self.SED_fit_params['excl_bands']=} != list"
             )
-
     
     def __str__(self) -> str:
         output_str = funcs.line_sep
@@ -227,7 +425,7 @@ class SED_code(ABC):
 
     def __call__(
         self: Self,
-        cat: Union[Catalogue, Spectral_Catalogue],
+        target: Union[Galaxy, Catalogue, Spectral_Catalogue],
         aper_diam: u.Quantity,
         save_PDFs: bool = True,
         save_SEDs: bool = True,
@@ -236,65 +434,109 @@ class SED_code(ABC):
         timed: bool = True,
         overwrite: bool = False,
         update: bool = True,
-        **fit_kwargs
+        save_name: Optional[str] = None,
+        **fit_kwargs,
     ) -> List[SED_result]:
+        from . import Galaxy
+        # Make length 1 catalogue if required
+        if isinstance(target, Galaxy):
+            cat = funcs.cat_from_gal(
+                target,
+                data = fit_kwargs.get("data", None),
+                gal_creator_kwargs = fit_kwargs.get("gal_creator_kwargs", {}),
+            )
+            # TODO: check loading from cache
+            fits_cat = cat.open_cat(hdu=self)
+            if fits_cat is None:
+                fit = True
+            elif target.ID in np.array(fits_cat[self.ID_label], dtype=int):
+                fit = False
+            else:
+                fit = True
+                if save_name is None:
+                    save_name = ""
+                else:
+                    save_name += "_"
+                save_name += f"ID={target.ID}"
+            cat = self(
+                cat,
+                aper_diam,
+                save_PDFs = save_PDFs,
+                save_SEDs = save_SEDs,
+                load_PDFs = load_PDFs,
+                load_SEDs = load_SEDs,
+                overwrite = overwrite,
+                update = update,
+                save_name = save_name,
+                fit = fit,
+                **fit_kwargs,
+            )
+            # return galaxy rather than catalogue if input was a galaxy
+            return cat[0]
 
         if timed:
             start = time.time()
 
-        galfind_logger.info(
-            f"Making .in file for {self.label} SED fitting for " + \
-            f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
-        )
-        self.make_in(cat, aper_diam, overwrite)
-        galfind_logger.info(
-            f"Made .in file for {self.label} SED fitting for " + \
-            f"{cat.survey} {cat.version} {cat.filterset.instrument_name}. "
-        )
-
-        in_path, out_path, fits_out_path, PDF_paths, SED_paths = self._get_out_paths(cat, aper_diam)
+        in_path, out_path, fits_out_path, PDF_paths, SED_paths = \
+            self._get_out_paths(
+                target,
+                aper_diam,
+                save_name = save_name,
+            )
         # run the SED fitting if not already done so or if wanted overwriting
-        fits_cat = cat.open_cat(hdu=self) # could be cached
-        if "z" not in self.gal_property_labels.keys():
-            fit = True
-        elif fits_cat is None or self.gal_property_labels["z"] \
-                not in fits_cat.colnames:
-            fit = True
+        self.pre_fitting(target, aper_diam, overwrite, save_name = save_name)
+        # TODO: check loading from cache
+        if fit_kwargs.get("fit", None) is not None:
+            fit = fit_kwargs["fit"]
         else:
-            fit = False
-
+            fits_cat = target.open_cat(hdu=self)
+            if "z" not in self.gal_property_labels.keys():
+                fit = True
+            elif fits_cat is None or self.gal_property_labels["z"] not in fits_cat.colnames:
+                fit = True
+            else:
+                fit = False
         if fit:
+            galfind_logger.info(
+                f"Making .in file for {self.label} SED fitting for {repr(target)}!"
+            )
+            self.make_in(target, aper_diam, overwrite, save_name = save_name)
+            galfind_logger.info(
+                f"Made .in file for {self.label} SED fitting for {repr(target)}!"
+            )
             self.fit(
-                cat,
+                target,
                 aper_diam,
                 save_SEDs=save_SEDs,
                 save_PDFs=save_PDFs,
                 overwrite=overwrite,
+                save_name=save_name,
                 **fit_kwargs
             )
-            self.make_fits_from_out(out_path)
-            self.update_fits_cat(cat, fits_out_path)
+            self.make_fits_from_out(out_path, save_name = save_name)
+            self.update_fits_cat(target, fits_out_path)
 
         if timed:
             mid = time.time()
             print(f"Running SED fitting took {(mid - start):.1f}s")
 
         if update:
-            SED_fit_cat = cat.open_cat(cropped=True, hdu=self)
-            aper_phot_IDs = [gal.ID for gal in cat]
-            phot_arr = [gal.aper_phot[aper_diam] for gal in cat]
+            SED_fit_cat = target.open_cat(cropped=True, hdu=self)
+            aper_phot_IDs = [gal.ID for gal in target]
+            phot_arr = [gal.aper_phot[aper_diam] for gal in target]
             # assume properties all come from the same table if only a single catalogue is given
             SED_fit_IDs = SED_fit_cat[self.ID_label]
             assert all(aper_phot_ID == SED_fit_ID for aper_phot_ID, SED_fit_ID \
                 in zip(aper_phot_IDs, SED_fit_IDs)), galfind_logger.critical(
                 f"IDs in SED_fit_cat do not match those in the catalogue"
             )
+
             cat_properties = [{gal_property: SED_fit_cat[label][i] * \
                 self.gal_property_units[gal_property] if gal_property in \
                 self.gal_property_units.keys() else SED_fit_cat[label][i] * \
                 u.dimensionless_unscaled for gal_property, label in \
                 self.gal_property_labels.items()} for i in range(len(aper_phot_IDs))]
-            
+
             # TODO: When instantiating the class, ensure that all errors have an associated property
             assert all(
                 err_key in self.gal_property_labels.keys()
@@ -333,24 +575,17 @@ class SED_code(ABC):
                     f"Loading properties and associated errors took {(mid - start):.1f}s"
                 )
 
-        # save PDF and SED paths in galfind catalogue object
-        #cat.save_phot_PDF_paths(PDF_paths)
-        #cat.save_phot_SED_paths(SED_paths)
-
             if load_PDFs:
                 galfind_logger.info(
-                    f"Loading {self.hdu_name} property PDFs into " + \
-                    f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
+                    f"Loading {self.hdu_name} property PDFs into {repr(target)}!"
                 )
                 cat_property_PDFs = self.load_cat_property_PDFs(PDF_paths, aper_phot_IDs)
                 galfind_logger.info(
-                    f"Finished loading {self.hdu_name} property PDFs into " + \
-                    f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
+                    f"Finished loading {self.hdu_name} property PDFs into {repr(target)}!"
                 )
             else:
                 galfind_logger.info(
-                    f"Not loading {self.hdu_name} property PDFs into " + \
-                    f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
+                    f"Not loading {self.hdu_name} property PDFs into {repr(target)}!"
                 )
                 cat_property_PDFs = np.array(
                     list(itertools.repeat(None, len(cat_properties)))
@@ -358,22 +593,19 @@ class SED_code(ABC):
 
             if load_SEDs:
                 galfind_logger.info(
-                    f"Loading {self.hdu_name} SEDs into " + \
-                    f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
+                    f"Loading {self.hdu_name} SEDs into {repr(target)}!"
                 )
                 if all("z" in pdf.keys() if pdf is not None else False for pdf in cat_property_PDFs):
                     zPDFs = [pdf["z"] for pdf in cat_property_PDFs]
                 else:
                     zPDFs = None
-                cat_SEDs = self.extract_SEDs(aper_phot_IDs, SED_paths, cat = cat, aper_diam = aper_diam, zPDFs = zPDFs)
+                cat_SEDs = self.extract_SEDs(aper_phot_IDs, SED_paths, cat = target, aper_diam = aper_diam, zPDFs = zPDFs)
                 galfind_logger.info(
-                    f"Finished loading {self.hdu_name} SEDs into " + \
-                    f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
+                    f"Finished loading {self.hdu_name} SEDs into {repr(target)}!"
                 )
             else:
                 galfind_logger.info(
-                    f"Not loading {self.hdu_name} SEDs into " + \
-                    f"{cat.survey} {cat.version} {cat.filterset.instrument_name}"
+                    f"Not loading {self.hdu_name} SEDs into {repr(target)}!"
                 )
                 cat_SEDs = np.array(
                     list(itertools.repeat(None, len(cat_properties)))
@@ -394,20 +626,20 @@ class SED_code(ABC):
                         cat_property_PDFs,
                         cat_SEDs
                     ),
-                    desc=f"Creating {repr(self)} cat_SED_results for {repr(cat)}",
-                    total=len(cat),
+                    desc=f"Creating {repr(self)} cat_SED_results for {repr(target)}",
+                    total=len(target),
                     disable=galfind_logger.getEffectiveLevel() > logging.INFO,
                 )
             ]
 
-            cat.update_SED_results(cat_SED_results, timed = timed)
-            if not hasattr(cat, "SED_results"):
-                cat.SED_results = {}
-            if not aper_diam in cat.SED_results.keys():
-                cat.SED_results[aper_diam] = []
-            cat.SED_results[aper_diam].append(self)
+            target.update_SED_results(cat_SED_results, timed = timed)
+            if not hasattr(target, "SED_results"):
+                target.SED_results = {}
+            if not aper_diam in target.SED_results.keys():
+                target.SED_results[aper_diam] = []
+            target.SED_results[aper_diam].append(self)
 
-        #return cat_SED_results
+        return target
             
 
     def _load_phot(self,
@@ -529,6 +761,18 @@ class SED_code(ABC):
         cat: Catalogue,
         fits_out_path: str,
     ) -> None:
+        """Update catalogue FITS file with SED fitting results.
+
+        Adds or merges SED fitting results into the appropriate HDU of the
+        catalogue FITS file, handling various column name conflict scenarios.
+
+        Parameters
+        ----------
+        cat : `Catalogue`
+            Catalogue to update.
+        fits_out_path : `str`
+            Path to the FITS file containing SED fitting results.
+        """
         # open relevant catalogue hdu extension
         orig_tab = cat.open_cat(hdu=self)
         SED_fitting_tab = Table.read(fits_out_path)
@@ -536,22 +780,35 @@ class SED_code(ABC):
         if orig_tab is None:
             cat.write_hdu(SED_fitting_tab, hdu=self.hdu_name.upper())
         else:
+            if all(
+                name in orig_tab.colnames for name in SED_fitting_tab.colnames
+            ) and all(
+                name in SED_fitting_tab.colnames for name in orig_tab.colnames
+            ):
+                # combine catalogues
+                combined_tab = vstack(
+                    [orig_tab, SED_fitting_tab],
+                    metadata_conflicts = "silent",
+                )
+                # sort by ID
+                combined_tab = combined_tab[np.argsort(combined_tab[self.ID_label].astype(int))]
+                # write out ID
+                cat.write_hdu(combined_tab, hdu=self.hdu_name.upper())
             # if any of the column names are the same
-            if any(name in orig_tab.colnames for name in SED_fitting_tab.colnames if name != self.ID_label):
+            elif any(name in orig_tab.colnames for name in SED_fitting_tab.colnames if name != self.ID_label):
                 galfind_logger.warning(
                     f"Column names in {self.hdu_name=} table already exist in catalogue table. " + \
                     "Will not update catalogue table."
                 )
                 # TODO: merge tables appropriately
-            else:
-                # combine catalogues
-                combined_tab = join(
-                    orig_tab,
-                    SED_fitting_tab,
-                    keys=self.ID_label,
-                    join_type="outer",
+                raise NotImplementedError(
+                    "Merging tables with non-totally overlapping column names is not yet implemented."
                 )
-                cat.write_hdu(combined_tab, hdu=self.hdu_name.upper())
+            else:
+                err_msg = f"Column names in {self.hdu_name=} != those in {fits_out_path}. " + \
+                    "Will not update catalogue table."
+                galfind_logger.critical(err_msg)
+                raise Exception(err_msg)
 
     # def update_lowz_zmax(SED_results):
     #     if "dz" in SED_fit_params.keys():

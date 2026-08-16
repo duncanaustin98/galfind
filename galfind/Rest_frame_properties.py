@@ -1,3 +1,8 @@
+"""Rest-frame property calculators for galaxies.
+
+Derives rest-frame properties from rest-frame photometry with flux scattering,
+uncertainty propagation, and PDF caching for efficient computation.
+"""
 
 from __future__ import annotations
 
@@ -74,6 +79,46 @@ from .Dust_Attenuation import AUV_from_beta, Dust_Law, Calzetti00, M99
 #     return dlambda
 
 class Rest_Frame_Property_Calculator(Property_Calculator):
+    """Abstract base class for calculators deriving rest-frame properties from SED-fit photometry.
+
+    Concrete subclasses compute quantities (e.g. UV continuum slope,
+    absolute magnitude, dust attenuation, line fluxes) from the
+    rest-frame photometry (`Photometry_rest`) associated with a given
+    SED-fitting run, optionally propagating uncertainties by scattering
+    fluxes into `n_chains` posterior samples and caching the result as a
+    `PDF`. Any `pre_req_properties` are calculated first and their
+    results are looked up (via `phot_rest.properties`/`property_PDFs`)
+    inside `_calculate`.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter of the photometry used to compute this property.
+    SED_fit_label : `str` or `Type[SED_code]`
+        Label (or `SED_code` instance, from which the label is taken)
+        identifying the SED-fitting run whose `Photometry_rest` this
+        property is calculated from.
+    pre_req_properties : `list` of `Rest_Frame_Property_Calculator`, optional
+        Other rest-frame property calculators that must be run before
+        this one, since this calculator's `_calculate` depends on their
+        results. Default is `[]`.
+    **global_kwargs : `dict`
+        Additional keyword arguments specific to the subclass, stored on
+        `global_kwargs` and validated by `_kwarg_assertions`.
+
+    Attributes
+    ----------
+    SED_fit_label : `str`
+        Label identifying the SED-fitting run associated with this
+        calculator.
+    pre_req_properties : `list` of `Rest_Frame_Property_Calculator`
+        Prerequisite property calculators run before this one.
+    global_kwargs : `dict`
+        Subclass-specific keyword arguments supplied at construction.
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter associated with this calculator, set by
+        `Property_Calculator.__init__`.
+    """
 
     def __init__(
         self: Self,
@@ -99,6 +144,29 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
         overwrite: bool = False,
         n_jobs: int = 1,
     ) -> Optional[Union[Type[Catalogue_Base], Galaxy, Photometry_rest]]:
+        """Calculate and cache rest-frame properties for galaxy/catalogue objects.
+
+        Computes prerequisite properties first, then calculates this property.
+        PDFs are cached to disk when applicable.
+
+        Parameters
+        ----------
+        object : `Catalogue_Base`, `Galaxy`, or `Photometry_rest`
+            Object to process (catalogue, single galaxy, or photometry).
+        n_chains : `int`, optional
+            Number of PDF chains for uncertainty estimation. Default is `10_000`.
+        output : `bool`, optional
+            Whether to return the modified object. Default is `True`.
+        overwrite : `bool`, optional
+            Whether to overwrite existing cached properties. Default is `False`.
+        n_jobs : `int`, optional
+            Number of parallel jobs for catalogue processing. Default is `1`.
+
+        Returns
+        -------
+        Modified object or `None`
+            If `output=True`, returns the modified object. Otherwise returns `None`.
+        """
         # calculate pre-requisite properties first
         [rest_frame_property(object, n_chains, output = False, \
             overwrite = overwrite, n_jobs = n_jobs) for \
@@ -126,6 +194,28 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
         n_jobs: int = 1,
         dtype: np.dtype = np.float32,
     ) -> Optional[Catalogue]:
+        """Calculate and cache properties for all galaxies in a catalogue.
+
+        Parameters
+        ----------
+        cat : `Catalogue`
+            Catalogue of galaxies to process.
+        n_chains : `int`, optional
+            Number of PDF chains. Default is `10_000`.
+        output : `bool`, optional
+            Whether to return the modified catalogue. Default is `False`.
+        overwrite : `bool`, optional
+            Whether to overwrite existing properties. Default is `False`.
+        n_jobs : `int`, optional
+            Number of parallel jobs. Default is `1`.
+        dtype : `numpy.dtype`, optional
+            Floating-point precision for saved arrays. Default is `numpy.float32`.
+
+        Returns
+        -------
+        `Catalogue` or `None`
+            Modified catalogue if `output=True`, else `None`.
+        """
         assert isinstance(n_jobs, int), \
             galfind_logger.critical(
                 f"{n_jobs=} with {type(n_jobs)=} != int"
@@ -267,9 +357,33 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
         n_chains: int = 10_000,
         output: bool = False,
         overwrite: bool = False,
-        save_dir: str = "",
+        save_dir: Optional[str] = None,
         dtype: np.dtype = np.float32,
     ) -> Optional[Galaxy]:
+        """Update the relevant Photometry_rest object stored in the Galaxy.
+
+        Parameters
+        ----------
+        gal : `Galaxy`
+            Galaxy object to process.
+        n_chains : `int`, optional
+            Number of PDF chains. Default is `10_000`.
+        output : `bool`, optional
+            Whether to return the modified galaxy. Default is `False`.
+        overwrite : `bool`, optional
+            Whether to overwrite existing properties. Default is `False`.
+        save_dir : `str` or `None`, optional
+            Directory to save PDFs. If `None`, auto-constructs path from config.
+            If provided, should already include property name in path.
+            Default is `None`.
+        dtype : `numpy.dtype`, optional
+            Floating-point precision for saved arrays. Default is `numpy.float32`.
+
+        Returns
+        -------
+        `Galaxy` or `None`
+            Modified galaxy if `output=True`, else `None`.
+        """
         # update the relevant Photometry_rest object stored in the Galaxy
         assert self.aper_diam in gal.aper_phot.keys(), \
             galfind_logger.critical(
@@ -280,16 +394,30 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
                 f"{self.SED_fit_label=} not in " + \
                 "+".join(list(gal.aper_phot[self.aper_diam].SED_results.keys()))
             )
-        if save_dir != "":
-            save_dir += "/"
-        save_path = f"{save_dir}{gal.ID}.npy"
+        # Auto-construct save_dir if not provided
+        if save_dir is None:
+            # Use full path structure if survey and version are available, else use simpler fallback
+            if gal.survey is not None and gal.version is not None:
+                save_dir = f"{config['PhotProperties']['PDF_SAVE_DIR']}/" + \
+                    f"{gal.version}/{gal.survey}/{gal.cat_filterset.instrument_name}/" + \
+                    f"{self.aper_diam.to(u.arcsec).value:.2f}as" + \
+                    f"/{self.SED_fit_label}/{self.name}"
+            else:
+                # Fallback path for galaxies without survey/version metadata
+                save_dir = f"{config['PhotProperties']['PDF_SAVE_DIR']}/" + \
+                    f"uncatalogued/{gal.cat_filterset.instrument_name}/" + \
+                    f"{self.aper_diam.to(u.arcsec).value:.2f}as" + \
+                    f"/{self.SED_fit_label}/{self.name}"
+        else:
+            save_dir = save_dir.rstrip("/")
+        save_path = f"{save_dir}/{gal.ID}.npy"
         self._call_phot_rest(gal.aper_phot[self.aper_diam]. \
-            SED_results[self.SED_fit_label].phot_rest, n_chains = n_chains, 
+            SED_results[self.SED_fit_label].phot_rest, n_chains = n_chains,
             output = False, overwrite = overwrite, save_path = save_path, dtype = dtype)
         
         if output:
             return gal
-    
+
     def _call_phot_rest(
         self: Self,
         phot_rest: Photometry_rest,
@@ -300,6 +428,31 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
         save_scattered_fluxes: bool = False,
         dtype: np.dtype = np.float32,
     ) -> Optional[Photometry_rest]:
+        """Calculate and cache rest-frame properties for photometry.
+
+        Parameters
+        ----------
+        phot_rest : `Photometry_rest`
+            Rest-frame photometry object to calculate properties for.
+        n_chains : `int`, optional
+            Number of PDF chains for uncertainty estimation. Default is `10_000`.
+        output : `bool`, optional
+            Whether to return the modified photometry. Default is `False`.
+        overwrite : `bool`, optional
+            Whether to overwrite existing properties. Default is `False`.
+        save_path : `str` or `None`, optional
+            Full path (including filename) to save PDF. If `None`, PDFs are not
+            saved to disk. Default is `None`.
+        save_scattered_fluxes : `bool`, optional
+            Whether to save scattered fluxes alongside PDF. Default is `False`.
+        dtype : `numpy.dtype`, optional
+            Floating-point precision for saved arrays. Default is `numpy.float32`.
+
+        Returns
+        -------
+        `Photometry_rest` or `None`
+            Modified photometry if `output=True`, else `None`.
+        """
         property_name = self.name
         calculated = False
         # if any pre-requisite properties are NaN, set this property to NaN
@@ -311,7 +464,7 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
                for property in properties_to_nan_check):
             phot_rest.properties[property_name] = np.nan
             if n_chains > 1:
-                phot_rest.property_errs[property_name] = np.nan
+                phot_rest.property_errs[property_name] = (np.nan, np.nan)
                 phot_rest.property_PDFs[property_name] = None
                 phot_rest.property_kwargs[property_name] = {}
         else:
@@ -385,7 +538,7 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
                     if self._fail_criteria(phot_rest):
                         phot_rest.property_PDFs[property_name] = None
                         phot_rest.properties[property_name] = np.nan
-                        phot_rest.property_errs[property_name] = np.nan
+                        phot_rest.property_errs[property_name] = (np.nan, np.nan)
                         phot_rest.property_kwargs[property_name] = {}
                     else: # phot_rest has not failed
                         galfind_logger.debug("Making PDF")
@@ -394,7 +547,7 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
                         if PDF_obj is None:
                             phot_rest.property_PDFs[property_name] = None
                             phot_rest.properties[property_name] = np.nan
-                            phot_rest.property_errs[property_name] = np.nan
+                            phot_rest.property_errs[property_name] = (np.nan, np.nan)
                             phot_rest.property_kwargs[property_name] = {}
                         else:
                             if n_new_chains != n_chains:
@@ -463,9 +616,31 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
         return PDF_obj, scattered_fluxes
 
     def extract_vals(
-        self: Self, 
+        self: Self,
         object: Union[Type[Catalogue_Base], Galaxy, Photometry_rest],
     ) -> Union[u.Quantity, u.Magnitude, u.Dex]:
+        """Extract the previously-calculated property value(s) from an object.
+
+        Parameters
+        ----------
+        object : `Catalogue_Base`, `Galaxy`, or `Photometry_rest`
+            The object to extract this property's value(s) from.
+
+        Returns
+        -------
+        `astropy.units.Quantity`, `astropy.units.Magnitude`, or `astropy.units.Dex`
+            The property value for a single `Galaxy` or `Photometry_rest`,
+            or an array of values (one per galaxy, with consistent units)
+            for a `Catalogue_Base` subclass instance.
+
+        Raises
+        ------
+        AssertionError
+            If the per-galaxy property units are not all consistent.
+        TypeError
+            If `object` is not a `Catalogue_Base` subclass instance,
+            `Galaxy`, or `Photometry_rest`.
+        """
         if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
             cat_vals = [gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label].phot_rest.properties[self.name] for gal in object]
             cat_vals_no_nans = [val for val in cat_vals if not np.isnan(val)]
@@ -488,9 +663,32 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
 
     # TODO: Propagate from parent class
     def extract_errs(
-        self: Self, 
+        self: Self,
         object: Union[Type[Catalogue_Base], Galaxy, Photometry_rest],
     ) -> Union[u.Quantity, u.Magnitude, u.Dex]:
+        """Extract the previously-calculated property uncertainty/uncertainties from an object.
+
+        Parameters
+        ----------
+        object : `Catalogue_Base`, `Galaxy`, or `Photometry_rest`
+            The object to extract this property's uncertainty/uncertainties from.
+
+        Returns
+        -------
+        `astropy.units.Quantity`, `astropy.units.Magnitude`, or `astropy.units.Dex`
+            The (lower, upper) uncertainty for a single `Galaxy` or
+            `Photometry_rest`, or an array of uncertainties (one per
+            galaxy, with consistent units) for a `Catalogue_Base`
+            subclass instance.
+
+        Raises
+        ------
+        AssertionError
+            If the per-galaxy property error units are not all consistent.
+        TypeError
+            If `object` is not a `Catalogue_Base` subclass instance,
+            `Galaxy`, or `Photometry_rest`.
+        """
         if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
             cat_errs = [gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label].phot_rest.property_errs[self.name] for gal in object]
             if all(isinstance(val, tuple([u.Quantity, u.Magnitude, u.Dex])) for val in cat_errs):
@@ -514,6 +712,26 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
         self: Self,
         object: Union[Type[Catalogue_Base], Galaxy, Photometry_rest],
     ) -> Union[Type[PDF], List[Type[PDF]]]:
+        """Extract the previously-calculated property PDF(s) from an object.
+
+        Parameters
+        ----------
+        object : `Catalogue_Base`, `Galaxy`, or `Photometry_rest`
+            The object to extract this property's PDF(s) from.
+
+        Returns
+        -------
+        `PDF` or `list` of `PDF`
+            The PDF (or `None` if unavailable) for a single `Galaxy` or
+            `Photometry_rest`, or a list of PDFs (one per galaxy) for a
+            `Catalogue_Base` subclass instance.
+
+        Raises
+        ------
+        TypeError
+            If `object` is not a `Catalogue_Base` subclass instance,
+            `Galaxy`, or `Photometry_rest`.
+        """
         if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
             return [gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label].phot_rest.property_PDFs[self.name] for gal in object]
         elif isinstance(object, Galaxy):
@@ -561,9 +779,44 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
 
 
 class beta_fit:
+    """Callable model function for fitting a UV power-law (beta) spectrum to photometry.
+
+    Pre-computes, for each filter in `filterset`, the rest-frame
+    wavelength grid, transmission curve and normalisation (integral of
+    the transmission curve over the rest-frame wavelength grid) needed
+    to synthesise power-law photometry via `get_fluxes`. Instances are
+    callable with a signature compatible with e.g.
+    `scipy.optimize.curve_fit`.
+
+    Parameters
+    ----------
+    z : `float`
+        Redshift used to convert observed-frame filter wavelengths to
+        the rest frame.
+    filterset : `Multiple_Filter`
+        Set of filters to synthesise power-law photometry through.
+
+    Attributes
+    ----------
+    filterset : `Multiple_Filter`
+        Filters associated with this fit.
+    wavelength_rest : `dict`
+        Rest-frame wavelength grid (`numpy.ndarray`, in Angstrom) for
+        each filter, keyed by filter name.
+    mid_wav_rest : `dict`
+        Rest-frame central wavelength (in Angstrom) for each filter,
+        keyed by filter name.
+    transmission : `dict`
+        Filter transmission curve (`numpy.ndarray`) for each filter,
+        keyed by filter name.
+    norm : `dict`
+        Normalisation (integral of the transmission curve over the
+        rest-frame wavelength grid) for each filter, keyed by filter name.
+    """
+
     def __init__(
-        self: Self, 
-        z: float, 
+        self: Self,
+        z: float,
         filterset: Multiple_Filter
     ) -> NoReturn:
         self.filterset = filterset
@@ -601,6 +854,34 @@ class beta_fit:
 
 @njit
 def get_fluxes(wav_rest, A, beta, trans, norm):
+    """Synthesise per-filter fluxes for a UV power-law spectrum.
+
+    For each filter, integrates the power-law spectrum
+    :math:`f_\\lambda = 10^{A} \\lambda_{\\mathrm{rest}}^{\\beta}` against
+    the filter's rest-frame transmission curve and divides by the
+    filter's normalisation, giving the transmission-weighted mean flux
+    density in that band.
+
+    Parameters
+    ----------
+    wav_rest : `numpy.ndarray`
+        Rest-frame wavelength grid for each filter, one row per filter.
+    A : `float`
+        Power-law amplitude (in log10 space).
+    beta : `float`
+        Power-law (UV continuum slope) index.
+    trans : `numpy.ndarray`
+        Filter transmission curve for each filter, one row per filter,
+        matching the shape of `wav_rest`.
+    norm : `numpy.ndarray`
+        Normalisation (integral of the transmission curve over
+        `wav_rest`) for each filter.
+
+    Returns
+    -------
+    `numpy.ndarray`
+        Synthesised flux density in each filter.
+    """
     return np.array(
         [
             np.trapz(
@@ -616,8 +897,40 @@ def get_fluxes(wav_rest, A, beta, trans, norm):
 
 @njit
 def fit_beta_gradient_descent(wav_rest, mid_wav_rest, flux, trans, norm, init_A, init_beta, learning_rate=1e-6, max_iter=1000, tol=1e-6):
-    """
-    Perform gradient descent to minimize the residual sum of squares.
+    """Perform gradient descent to minimize the residual sum of squares.
+
+    Fits power-law parameters A and beta to synthesized photometry by
+    minimizing the residual sum of squares via gradient descent.
+
+    Parameters
+    ----------
+    wav_rest : `numpy.ndarray`
+        Rest-frame wavelength grid for each filter, one row per filter.
+    mid_wav_rest : `numpy.ndarray`
+        Mid-wavelength (in Angstrom) for each filter.
+    flux : `numpy.ndarray`
+        Observed photometric fluxes for each filter.
+    trans : `numpy.ndarray`
+        Filter transmission curve for each filter, one row per filter,
+        matching the shape of `wav_rest`.
+    norm : `numpy.ndarray`
+        Normalisation (integral of the transmission curve over
+        `wav_rest`) for each filter.
+    init_A : `float`
+        Initial power-law amplitude (in log10 space).
+    init_beta : `float`
+        Initial power-law (UV continuum slope) index.
+    learning_rate : `float`, optional
+        Learning rate for gradient descent updates. Default is `1e-6`.
+    max_iter : `int`, optional
+        Maximum number of gradient descent iterations. Default is `1000`.
+    tol : `float`, optional
+        Convergence tolerance for gradient magnitude. Default is `1e-6`.
+
+    Returns
+    -------
+    `float`
+        The fitted power-law slope (beta).
     """
     A = init_A
     beta = init_beta
@@ -648,6 +961,19 @@ def fit_beta_gradient_descent(wav_rest, mid_wav_rest, flux, trans, norm, init_A,
     return beta #A, beta, i  # Return optimized parameters and iterations taken
 
 def rest_UV_wavs_name(rest_UV_wav_lims):
+    """Build a compact label string for a pair of rest-frame UV wavelength limits.
+
+    Parameters
+    ----------
+    rest_UV_wav_lims : `astropy.units.Quantity`
+        Two-element array of rest-frame UV wavelength limits.
+
+    Returns
+    -------
+    `str`
+        The wavelength limits (converted to integer Angstrom), formatted
+        as e.g. ``"[1250,3000]AA"``.
+    """
     rest_UV_wav_lims = [
         int(
             funcs.convert_wav_units(
@@ -660,7 +986,25 @@ def rest_UV_wavs_name(rest_UV_wav_lims):
 
 
 class UV_Beta_Calculator(Rest_Frame_Property_Calculator):
-    
+    """Calculates the rest-frame UV continuum slope, beta.
+
+    Fits a power-law :math:`f_\\lambda \\propto \\lambda^{\\beta}` (via a
+    linear fit in log-log space) to the photometric bands that fall
+    entirely within the rest-frame UV wavelength limits, giving the UV
+    continuum slope beta.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter of the photometry used to compute this property.
+    SED_fit_label : `str` or `Type[SED_code]`
+        Label (or `SED_code` instance) identifying the SED-fitting run
+        whose `Photometry_rest` this property is calculated from.
+    rest_UV_wav_lims : `astropy.units.Quantity`, optional
+        Two-element rest-frame wavelength range defining the UV
+        continuum. Default is `[1_250.0, 3_000.0] * u.AA`.
+    """
+
     def __init__(
         self: Self,
         aper_diam: u.Quantity,
@@ -672,10 +1016,12 @@ class UV_Beta_Calculator(Rest_Frame_Property_Calculator):
 
     @property
     def name(self: Self) -> str:
+        """`str`: Short identifier, ``"beta_{rest_UV_wav_lims}"``."""
         return f"beta_{rest_UV_wavs_name(self.global_kwargs['rest_UV_wav_lims'])}"
 
     @property
     def plot_name(self: Self) -> str:
+        """`str`: Human-readable plot label for the UV continuum slope."""
         return r"$\beta_{\mathrm{UV}}$"
     
     def _kwarg_assertions(self: Self) -> None:
@@ -749,6 +1095,9 @@ class UV_Beta_Calculator(Rest_Frame_Property_Calculator):
             self.obj_kwargs["rest_UV_band_wavs"],
             fluxes_arr, u.erg / (u.s * u.AA * u.cm**2),
             ).value)
+        # ensure fluxes_arr is always 2D (n_chains, n_bands)
+        if fluxes_arr.ndim == 1:
+            fluxes_arr = fluxes_arr[np.newaxis, :]
         beta_arr = np.array([funcs.linear_fit(np.log10(self.obj_kwargs \
             ["rest_UV_band_wavs"].value, dtype=np.float64), \
             fluxes)[0] for fluxes in fluxes_arr]) * u.dimensionless_unscaled
@@ -788,11 +1137,37 @@ class UV_Beta_Calculator(Rest_Frame_Property_Calculator):
 
 
 class UV_Dust_Attenuation_Calculator(Rest_Frame_Property_Calculator):
-    
+    """Calculates the UV dust attenuation, A(ref_wav), from the UV continuum slope.
+
+    Requires a `UV_Beta_Calculator` as a prerequisite, then converts the
+    fitted UV continuum slope (beta) to a dust attenuation at `ref_wav`
+    using the supplied `beta_dust_conv` beta-to-A(UV) conversion.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter of the photometry used to compute this property.
+    SED_fit_label : `str` or `Type[SED_code]`
+        Label (or `SED_code` instance) identifying the SED-fitting run
+        whose `Photometry_rest` this property is calculated from.
+    rest_UV_wav_lims : `astropy.units.Quantity`, optional
+        Two-element rest-frame wavelength range defining the UV
+        continuum used to fit beta. Default is `[1_250.0, 3_000.0] * u.AA`.
+    beta_dust_conv : `str` or `Type[AUV_from_beta]`, optional
+        Beta-to-A(UV) conversion to use, either the name of an
+        `AUV_from_beta` subclass or an instance/class thereof. Default
+        is `M99`.
+    ref_wav : `astropy.units.Quantity`, optional
+        Rest-frame reference wavelength at which the dust attenuation is
+        computed. Default is `1_500.0 * u.AA`.
+    keep_valid : `bool`, optional
+        Whether to clip negative attenuations to zero. Default is `True`.
+    """
+
     def __init__(
         self: Self,
-        aper_diam: u.Quantity, 
-        SED_fit_label: Union[str, Type[SED_code]], 
+        aper_diam: u.Quantity,
+        SED_fit_label: Union[str, Type[SED_code]],
         rest_UV_wav_lims: u.Quantity = [1_250.0, 3_000.0] * u.AA,
         beta_dust_conv: Union[str, Type[AUV_from_beta]] = M99,
         ref_wav: u.Quantity = 1_500.0 * u.AA,
@@ -810,17 +1185,19 @@ class UV_Dust_Attenuation_Calculator(Rest_Frame_Property_Calculator):
 
     @property
     def name(self: Self) -> str:
+        """`str`: Short identifier, ``"A{ref_wav}_{beta_dust_conv}_{rest_UV_wav_lims}[_A>0]"``."""
         label = f"A{self.global_kwargs['ref_wav'].to(u.AA).value:.0f}" + \
             f"_{self.global_kwargs['beta_dust_conv'].__class__.__name__}" + \
             f"_{rest_UV_wavs_name(self.pre_req_properties[0].global_kwargs['rest_UV_wav_lims'])}"
         if self.global_kwargs["keep_valid"]:
             label += "_A>0"
         return label
-    
+
     @property
     def plot_name(self: Self) -> str:
+        """`str`: Human-readable plot label for the dust attenuation at `ref_wav`."""
         return r"$A_{{}}$".format(int(self.global_kwargs['ref_wav'].to(u.AA).value))
-    
+
     def _kwarg_assertions(self: Self) -> None:
         assert u.get_physical_type(self.global_kwargs["ref_wav"]) == "length"
         assert self.global_kwargs["ref_wav"] > self.pre_req_properties[0].global_kwargs["rest_UV_wav_lims"][0]
@@ -867,11 +1244,36 @@ class UV_Dust_Attenuation_Calculator(Rest_Frame_Property_Calculator):
     
 
 class Fesc_From_Beta_Calculator(Rest_Frame_Property_Calculator):
-    
+    """Calculates the Lyman-continuum escape fraction, fesc, from the UV continuum slope.
+
+    Requires a `UV_Beta_Calculator` as a prerequisite, then converts the
+    fitted UV continuum slope (beta) to an escape fraction using the
+    `fesc_conv` conversion registered in
+    `useful_funcs_austind.fesc_from_beta_conversions`.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter of the photometry used to compute this property.
+    SED_fit_label : `str` or `Type[SED_code]`
+        Label (or `SED_code` instance) identifying the SED-fitting run
+        whose `Photometry_rest` this property is calculated from.
+    rest_UV_wav_lims : `astropy.units.Quantity`, optional
+        Two-element rest-frame wavelength range defining the UV
+        continuum used to fit beta. Default is `[1_250.0, 3_000.0] * u.AA`.
+    fesc_conv : `str`, optional
+        Name of the beta-to-fesc conversion to use, a key into
+        `useful_funcs_austind.fesc_from_beta_conversions`. Default is
+        `"Chisholm22"`.
+    keep_valid : `bool`, optional
+        Whether to clip the escape fraction to the physical range
+        `[0, 1]`. Default is `False`.
+    """
+
     def __init__(
-        self: Self, 
-        aper_diam: u.Quantity, 
-        SED_fit_label: Union[str, Type[SED_code]], 
+        self: Self,
+        aper_diam: u.Quantity,
+        SED_fit_label: Union[str, Type[SED_code]],
         rest_UV_wav_lims: u.Quantity = [1_250.0, 3_000.0] * u.AA,
         fesc_conv: str = "Chisholm22",
         keep_valid: bool = False,
@@ -882,6 +1284,7 @@ class Fesc_From_Beta_Calculator(Rest_Frame_Property_Calculator):
 
     @property
     def name(self: Self) -> str:
+        """`str`: Short identifier, ``"fesc={fesc_conv}_{rest_UV_wav_lims}[_0<fesc<1]"``."""
         #if isinstance(self.global_kwargs["fesc_conv"], str):
         label = f"fesc={self.global_kwargs['fesc_conv']}_" + \
             rest_UV_wavs_name(self.pre_req_properties[0].global_kwargs["rest_UV_wav_lims"])
@@ -893,6 +1296,7 @@ class Fesc_From_Beta_Calculator(Rest_Frame_Property_Calculator):
 
     @property
     def plot_name(self: Self) -> str:
+        """`str`: Human-readable plot label for the escape fraction."""
         return r"$f_{\mathrm{esc}}$" # type of fesc here too
     
     def _kwarg_assertions(self: Self) -> None:
@@ -946,11 +1350,46 @@ class Fesc_From_Beta_Calculator(Rest_Frame_Property_Calculator):
 
 
 class mUV_Calculator(Rest_Frame_Property_Calculator):
+    """Calculates the apparent UV magnitude, mUV, at a rest-frame reference wavelength.
+
+    Requires a `UV_Beta_Calculator` as a prerequisite, re-creates the
+    fitted UV power-law flux over a top-hat window centred on `ref_wav`,
+    and takes the median AB magnitude across that window (converted to
+    the observed frame). Optionally applies an extended-source
+    correction.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter of the photometry used to compute this property.
+    SED_fit_label : `str` or `Type[SED_code]`
+        Label (or `SED_code` instance) identifying the SED-fitting run
+        whose `Photometry_rest` this property is calculated from.
+    rest_UV_wav_lims : `astropy.units.Quantity`, optional
+        Two-element rest-frame wavelength range defining the UV
+        continuum used to fit beta. Default is `[1_250.0, 3_000.0] * u.AA`.
+    ref_wav : `astropy.units.Quantity`, optional
+        Rest-frame reference wavelength at which mUV is computed.
+        Default is `1_500.0 * u.AA`.
+    top_hat_width : `astropy.units.Quantity`, optional
+        Width of the top-hat wavelength window (centred on `ref_wav`)
+        averaged over. Default is `100.0 * u.AA`.
+    resolution : `astropy.units.Quantity`, optional
+        Wavelength spacing of the top-hat window grid. Default is
+        `1.0 * u.AA`.
+    ext_src_corrs : `str` or `None`, optional
+        Key identifying the extended-source correction to apply (either
+        `"UV"` or a filter name), or `None` to skip the correction.
+        Default is `"UV"`.
+    ext_src_uplim : `int`, `float`, or `None`, optional
+        Upper limit applied to the extended-source correction, or
+        `None` for no limit. Default is `10.0`.
+    """
 
     def __init__(
-        self: Self, 
-        aper_diam: u.Quantity, 
-        SED_fit_label: Union[str, Type[SED_code]], 
+        self: Self,
+        aper_diam: u.Quantity,
+        SED_fit_label: Union[str, Type[SED_code]],
         rest_UV_wav_lims: u.Quantity = [1_250.0, 3_000.0] * u.AA,
         ref_wav: u.Quantity = 1_500.0 * u.AA,
         top_hat_width: u.Quantity = 100.0 * u.AA,
@@ -970,6 +1409,7 @@ class mUV_Calculator(Rest_Frame_Property_Calculator):
 
     @property
     def name(self: Self) -> str:
+        """`str`: Short identifier, ``"m{ref_wav}_{rest_UV_wav_lims}{ext_src_label}"``."""
         ext_src_label = funcs.get_ext_src_corr_label(
             ext_src_key = self.global_kwargs["ext_src_corrs"],
             ext_src_uplim = self.global_kwargs["ext_src_uplim"],
@@ -980,6 +1420,7 @@ class mUV_Calculator(Rest_Frame_Property_Calculator):
 
     @property
     def plot_name(self: Self) -> str:
+        """`str`: Human-readable plot label for the apparent UV magnitude."""
         return r"$m_{\mathrm{UV}}$"
     
     def _kwarg_assertions(self: Self) -> None:
@@ -1031,7 +1472,9 @@ class mUV_Calculator(Rest_Frame_Property_Calculator):
         # appropriately convert flux units to rest frame
         fluxes_arr = np.log10(funcs.convert_mag_units(band_wavs, \
             fluxes_arr, u.erg / (u.s * u.AA * u.cm ** 2)).value)
-        # calculate fit amplitudes
+        # calculate fit amplitudes - ensure fluxes_arr is always 2D (n_chains, n_bands)
+        if fluxes_arr.ndim == 1:
+            fluxes_arr = fluxes_arr[np.newaxis, :]
         amplitude_arr = np.array([funcs.linear_fit(np.log10( \
             band_wavs.value, dtype=np.float64), \
             fluxes)[1] for fluxes in fluxes_arr]) \
@@ -1114,10 +1557,44 @@ class mUV_Calculator(Rest_Frame_Property_Calculator):
         )
 
 class MUV_Calculator(Rest_Frame_Property_Calculator):
+    """Calculates the absolute UV magnitude, MUV, from the apparent UV magnitude.
+
+    Requires an `mUV_Calculator` as a prerequisite and converts the
+    apparent magnitude to an absolute magnitude using the standard
+    distance modulus, including a K-correction for the redshifted
+    bandpass.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter of the photometry used to compute this property.
+    SED_fit_label : `str` or `Type[SED_code]`
+        Label (or `SED_code` instance) identifying the SED-fitting run
+        whose `Photometry_rest` this property is calculated from.
+    rest_UV_wav_lims : `astropy.units.Quantity`, optional
+        Two-element rest-frame wavelength range defining the UV
+        continuum used to fit beta. Default is `[1_250.0, 3_000.0] * u.AA`.
+    ref_wav : `astropy.units.Quantity`, optional
+        Rest-frame reference wavelength at which MUV is computed.
+        Default is `1_500.0 * u.AA`.
+    top_hat_width : `astropy.units.Quantity`, optional
+        Width of the top-hat wavelength window (centred on `ref_wav`)
+        used when computing mUV. Default is `100.0 * u.AA`.
+    resolution : `astropy.units.Quantity`, optional
+        Wavelength spacing of the top-hat window grid used when
+        computing mUV. Default is `1.0 * u.AA`.
+    ext_src_corrs : `str` or `None`, optional
+        Key identifying the extended-source correction applied when
+        computing mUV, or `None` to skip the correction. Default is
+        `"UV"`.
+    ext_src_uplim : `int`, `float`, or `None`, optional
+        Upper limit applied to the extended-source correction, or
+        `None` for no limit. Default is `10.0`.
+    """
 
     def __init__(
-        self: Self, 
-        aper_diam: u.Quantity, 
+        self: Self,
+        aper_diam: u.Quantity,
         SED_fit_label: Union[str, Type[SED_code]],
         rest_UV_wav_lims: u.Quantity = [1_250.0, 3_000.0] * u.AA,
         ref_wav: u.Quantity = 1_500.0 * u.AA,
@@ -1140,6 +1617,7 @@ class MUV_Calculator(Rest_Frame_Property_Calculator):
 
     @property
     def name(self: Self) -> str:
+        """`str`: Short identifier, ``"M{ref_wav}_{rest_UV_wav_lims}[_extsrc_...]"``."""
         ext_src_label = f"_extsrc_{self.pre_req_properties[0].global_kwargs['ext_src_corrs']}" \
             if self.pre_req_properties[0].global_kwargs["ext_src_corrs"] is not None else ""
         ext_src_lim_label = f"<{self.pre_req_properties[0].global_kwargs['ext_src_uplim']:.0f}" if \
@@ -1148,9 +1626,10 @@ class MUV_Calculator(Rest_Frame_Property_Calculator):
         return f"M{self.pre_req_properties[0].global_kwargs['ref_wav'].to(u.AA).value:.0f}_" + \
             rest_UV_wavs_name(self.pre_req_properties[0].pre_req_properties[0]. \
             global_kwargs["rest_UV_wav_lims"]) + ext_src_label + ext_src_lim_label
-    
+
     @property
     def plot_name(self: Self) -> str:
+        """`str`: Human-readable plot label for the absolute UV magnitude."""
         return r"$M_{\mathrm{UV}}$"
 
     def _kwarg_assertions(self: Self) -> NoReturn:
@@ -1194,10 +1673,54 @@ class MUV_Calculator(Rest_Frame_Property_Calculator):
     
 
 class LUV_Calculator(Rest_Frame_Property_Calculator):
+    """Calculates the rest-frame UV luminosity, LUV, from the apparent UV magnitude.
+
+    Requires an `mUV_Calculator` as a prerequisite and converts mUV to a
+    luminosity using the observed-frame reference wavelength and
+    redshift. If `beta_dust_conv` is not `None`, also runs a
+    `UV_Dust_Attenuation_Calculator` as a further prerequisite and
+    dust-corrects the resulting luminosity.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter of the photometry used to compute this property.
+    SED_fit_label : `str` or `Type[SED_code]`
+        Label (or `SED_code` instance) identifying the SED-fitting run
+        whose `Photometry_rest` this property is calculated from.
+    rest_UV_wav_lims : `astropy.units.Quantity`, optional
+        Two-element rest-frame wavelength range defining the UV
+        continuum used to fit beta. Default is `[1_250.0, 3_000.0] * u.AA`.
+    ref_wav : `astropy.units.Quantity`, optional
+        Rest-frame reference wavelength at which LUV is computed.
+        Default is `1_500.0 * u.AA`.
+    beta_dust_conv : `str`, `Type[AUV_from_beta]`, or `None`, optional
+        Beta-to-A(UV) conversion used to dust-correct the luminosity, or
+        `None` to skip dust correction. Default is `M99`.
+    top_hat_width : `astropy.units.Quantity`, optional
+        Width of the top-hat wavelength window used when computing mUV.
+        Default is `100.0 * u.AA`.
+    resolution : `astropy.units.Quantity`, optional
+        Wavelength spacing of the top-hat window grid used when
+        computing mUV. Default is `1.0 * u.AA`.
+    ext_src_corrs : `str` or `None`, optional
+        Key identifying the extended-source correction applied when
+        computing mUV, or `None` to skip the correction. Default is
+        `"UV"`.
+    ext_src_uplim : `int`, `float`, or `None`, optional
+        Upper limit applied to the extended-source correction, or
+        `None` for no limit. Default is `10.0`.
+
+    Attributes
+    ----------
+    dust_calculator : `UV_Dust_Attenuation_Calculator` or `None`
+        Prerequisite dust attenuation calculator, or `None` if
+        `beta_dust_conv` was `None`.
+    """
 
     def __init__(
-        self: Self, 
-        aper_diam: u.Quantity, 
+        self: Self,
+        aper_diam: u.Quantity,
         SED_fit_label: Union[str, Type[SED_code]],
         #frame: str = "obs",
         rest_UV_wav_lims: u.Quantity = [1_250.0, 3_000.0] * u.AA,
@@ -1242,6 +1765,7 @@ class LUV_Calculator(Rest_Frame_Property_Calculator):
 
     @property
     def name(self: Self) -> str:
+        """`str`: Short identifier, ``"L{ref_wav}[_{dust}dust]_{rest_UV_wav_lims}[_extsrc_...]"``."""
         if self.dust_calculator is not None:
             dust_label = "_" + "_".join(self.dust_calculator.name.split("_")[1:2]) + "dust"
         else:
@@ -1256,9 +1780,10 @@ class LUV_Calculator(Rest_Frame_Property_Calculator):
         # {self.global_kwargs['frame']}
         return f"L{self.pre_req_properties[0].global_kwargs['ref_wav'].to(u.AA).value:.0f}" + \
             f"{dust_label}_{rest_wavs_label}{ext_src_label}{ext_src_lim_label}"
-    
+
     @property
     def plot_name(self: Self) -> str:
+        """`str`: Human-readable plot label for the UV luminosity."""
         return r"$L_{\mathrm{UV}}$" # frame and units here too
 
     def _kwarg_assertions(self: Self) -> NoReturn:
@@ -1318,10 +1843,49 @@ class LUV_Calculator(Rest_Frame_Property_Calculator):
 
 
 class SFR_UV_Calculator(Rest_Frame_Property_Calculator):
+    """Calculates the UV-derived star formation rate, SFR_UV, from the UV luminosity.
+
+    Requires an `LUV_Calculator` as a prerequisite and converts LUV to a
+    star formation rate using the `SFR_conv` conversion registered in
+    `useful_funcs_austind.SFR_conversions`.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter of the photometry used to compute this property.
+    SED_fit_label : `str` or `Type[SED_code]`
+        Label (or `SED_code` instance) identifying the SED-fitting run
+        whose `Photometry_rest` this property is calculated from.
+    rest_UV_wav_lims : `astropy.units.Quantity`, optional
+        Two-element rest-frame wavelength range defining the UV
+        continuum used to fit beta. Default is `[1_250.0, 3_000.0] * u.AA`.
+    ref_wav : `astropy.units.Quantity`, optional
+        Rest-frame reference wavelength at which LUV is computed.
+        Default is `1_500.0 * u.AA`.
+    beta_dust_conv : `str`, `Type[AUV_from_beta]`, or `None`, optional
+        Beta-to-A(UV) conversion used to dust-correct LUV, or `None` to
+        skip dust correction. Default is `M99`.
+    SFR_conv : `str`, optional
+        Name of the LUV-to-SFR conversion to use, a key into
+        `useful_funcs_austind.SFR_conversions`. Default is `"MD14"`.
+    top_hat_width : `astropy.units.Quantity`, optional
+        Width of the top-hat wavelength window used when computing mUV.
+        Default is `100.0 * u.AA`.
+    resolution : `astropy.units.Quantity`, optional
+        Wavelength spacing of the top-hat window grid used when
+        computing mUV. Default is `1.0 * u.AA`.
+    ext_src_corrs : `str` or `None`, optional
+        Key identifying the extended-source correction applied when
+        computing mUV, or `None` to skip the correction. Default is
+        `"UV"`.
+    ext_src_uplim : `int`, `float`, or `None`, optional
+        Upper limit applied to the extended-source correction, or
+        `None` for no limit. Default is `10.0`.
+    """
 
     def __init__(
-        self: Self, 
-        aper_diam: u.Quantity, 
+        self: Self,
+        aper_diam: u.Quantity,
         SED_fit_label: Union[str, Type[SED_code]],
         rest_UV_wav_lims: u.Quantity = [1_250.0, 3_000.0] * u.AA,
         ref_wav: u.Quantity = 1_500.0 * u.AA,
@@ -1350,6 +1914,7 @@ class SFR_UV_Calculator(Rest_Frame_Property_Calculator):
 
     @property
     def name(self: Self) -> str:
+        """`str`: Short identifier, ``"SFR{ref_wav}[_{dust}dust]_{rest_UV_wav_lims}_{SFR_conv}[_extsrc_...]"``."""
         if self.pre_req_properties[0].dust_calculator is not None:
             dust_label = "_" + "_".join(self.pre_req_properties \
                 [0].dust_calculator.name.split("_")[1:2]) + "dust"
@@ -1366,9 +1931,10 @@ class SFR_UV_Calculator(Rest_Frame_Property_Calculator):
         return f"SFR{ref_wav_label}{dust_label}_" + \
             f"{rest_wavs_label}_{self.global_kwargs['SFR_conv']}" + \
             ext_src_label + ext_src_lim_label
-    
+
     @property
     def plot_name(self: Self) -> str:
+        """`str`: Human-readable plot label for the UV-derived star formation rate."""
         return r"$\mathrm{SFR}_{\mathrm{UV}}$" # units here too
 
     def _kwarg_assertions(self: Self) -> NoReturn:
@@ -1409,7 +1975,32 @@ class SFR_UV_Calculator(Rest_Frame_Property_Calculator):
 
 
 class Optical_Continuum_Calculator(Rest_Frame_Property_Calculator):
-    
+    """Calculates the rest-frame optical continuum flux density near a strong emission line.
+
+    Identifies the photometric band nearest to (and containing) the
+    first of `strong_line_names`, then finds the other bands within
+    `rest_optical_wavs` that are free of strong optical emission lines
+    to use as continuum bands. If there are two or more continuum
+    bands, the continuum flux at the emission line band is estimated by
+    linear interpolation; if there is only one, its flux is used
+    directly.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter of the photometry used to compute this property.
+    SED_fit_label : `str` or `Type[SED_code]`
+        Label (or `SED_code` instance) identifying the SED-fitting run
+        whose `Photometry_rest` this property is calculated from.
+    strong_line_names : `str` or `list`
+        Name(s) of the strong optical emission line(s) (keys of
+        `Emission_lines.line_diagnostics`) whose continuum is being
+        calculated. A `"+"`-delimited string is split into a list.
+    rest_optical_wavs : `astropy.units.Quantity`, optional
+        Two-element rest-frame wavelength range within which continuum
+        bands are searched for. Default is `[4_200.0, 10_000.0] * u.AA`.
+    """
+
     def __init__(
         self: Self,
         aper_diam: u.Quantity,
@@ -1424,10 +2015,12 @@ class Optical_Continuum_Calculator(Rest_Frame_Property_Calculator):
 
     @property
     def name(self: Self) -> str:
+        """`str`: Short identifier, ``"cont_{strong_line_names}"``."""
         return f"cont_{'+'.join(self.global_kwargs['strong_line_names'])}"
-    
+
     @property
     def plot_name(self: Self) -> str:
+        """`str`: Human-readable plot label for the continuum flux density."""
         return f"{'+'.join(self.global_kwargs['strong_line_names'])} continuum / nJy"
 
     def _kwarg_assertions(self: Self) -> None:
@@ -1575,6 +2168,33 @@ class Optical_Continuum_Calculator(Rest_Frame_Property_Calculator):
     
 
 class Optical_Line_EW_Calculator(Rest_Frame_Property_Calculator):
+    """Calculates the equivalent width of a strong rest-frame optical emission line.
+
+    Requires an `Optical_Continuum_Calculator` as a prerequisite, then
+    computes the equivalent width as
+    ``(band_flux / continuum_flux - 1) * bandwidth``, where `bandwidth`
+    is the 50%-throughput width of the emission line's photometric band
+    (optionally de-redshifted if `frame` is `"rest"`).
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter of the photometry used to compute this property.
+    SED_fit_label : `str` or `Type[SED_code]`
+        Label (or `SED_code` instance) identifying the SED-fitting run
+        whose `Photometry_rest` this property is calculated from.
+    strong_line_names : `str` or `list`
+        Name(s) of the strong optical emission line(s) (keys of
+        `Emission_lines.line_diagnostics`) whose equivalent width is
+        being calculated. A `"+"`-delimited string is split into a list.
+    frame : `str`, optional
+        Either `"rest"` or `"obs"`, determining whether the emission
+        band's bandwidth is de-redshifted before use. Default is
+        `"rest"`.
+    rest_optical_wavs : `astropy.units.Quantity`, optional
+        Two-element rest-frame wavelength range within which continuum
+        bands are searched for. Default is `[4_200.0, 10_000.0] * u.AA`.
+    """
 
     def __init__(
         self: Self,
@@ -1592,10 +2212,12 @@ class Optical_Line_EW_Calculator(Rest_Frame_Property_Calculator):
 
     @property
     def name(self: Self) -> str:
+        """`str`: Short identifier, ``"EW{frame}_{strong_line_names}"``."""
         return f"EW{self.global_kwargs['frame']}_{'+'.join(self.global_kwargs['strong_line_names'])}"
-    
+
     @property
     def plot_name(self: Self) -> str:
+        """`str`: Human-readable plot label for the emission line equivalent width."""
         return f"{'+'.join(self.global_kwargs['strong_line_names'])} EW / " + r"$\mathrm{\AA}$"
 
     def _kwarg_assertions(self: Self) -> None:
@@ -1719,6 +2341,37 @@ class Optical_Line_EW_Calculator(Rest_Frame_Property_Calculator):
 
 
 class Dust_Attenuation_From_UV_Calculator(Rest_Frame_Property_Calculator):
+    """Calculates the dust attenuation at an arbitrary wavelength, scaled from the UV attenuation.
+
+    Requires a `UV_Dust_Attenuation_Calculator` as a prerequisite
+    (giving A(UV_ref_wav)), then rescales it to `calc_wav` using the
+    ratio of the `dust_law` attenuation curve evaluated at `calc_wav`
+    and at `UV_ref_wav`.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter of the photometry used to compute this property.
+    SED_fit_label : `str` or `Type[SED_code]`
+        Label (or `SED_code` instance) identifying the SED-fitting run
+        whose `Photometry_rest` this property is calculated from.
+    calc_wav : `astropy.units.Quantity`
+        Rest-frame wavelength at which the dust attenuation is computed.
+    dust_law : `str` or `Type[Dust_Law]`, optional
+        Dust attenuation law to use, either the name of a `Dust_Law`
+        subclass or an instance/class thereof. Default is `Calzetti00`.
+    beta_dust_conv : `str` or `Type[AUV_from_beta]`, optional
+        Beta-to-A(UV) conversion used to obtain the UV attenuation.
+        Default is `M99`.
+    UV_ref_wav : `astropy.units.Quantity`, optional
+        Rest-frame reference wavelength at which the UV attenuation is
+        computed. Default is `1_500.0 * u.AA`.
+    UV_wav_lims : `astropy.units.Quantity`, optional
+        Two-element rest-frame wavelength range defining the UV
+        continuum used to fit beta. Default is `[1_250.0, 3_000.0] * u.AA`.
+    keep_valid : `bool`, optional
+        Whether to clip negative attenuations to zero. Default is `False`.
+    """
 
     def __init__(
         self: Self,
@@ -1755,6 +2408,7 @@ class Dust_Attenuation_From_UV_Calculator(Rest_Frame_Property_Calculator):
 
     @property
     def name(self: Self) -> str:
+        """`str`: Short identifier, ``"A{calc_wav}_{beta_dust_conv}_{dust_law}[_A>0]"``."""
         label = f"A{self.global_kwargs['calc_wav'].to(u.AA).value:.0f}" + \
             f"_{self.pre_req_properties[0].global_kwargs['beta_dust_conv'].__class__.__name__}" + \
             f"_{self.global_kwargs['dust_law'].__class__.__name__}"
@@ -1764,6 +2418,7 @@ class Dust_Attenuation_From_UV_Calculator(Rest_Frame_Property_Calculator):
 
     @property
     def plot_name(self: Self) -> str:
+        """`str`: Human-readable plot label for the dust attenuation at `calc_wav`."""
         return r"$A_{{}}$".format(int(self.global_kwargs['calc_wav'].to(u.AA).value))
     
     def _kwarg_assertions(self: Self) -> None:
@@ -1814,9 +2469,46 @@ class Dust_Attenuation_From_UV_Calculator(Rest_Frame_Property_Calculator):
 
 
 class Line_Dust_Attenuation_From_UV_Calculator(Dust_Attenuation_From_UV_Calculator):
+    """Calculates the dust attenuation at the wavelength of a given emission line, scaled from the UV attenuation.
+
+    Convenience subclass of `Dust_Attenuation_From_UV_Calculator` that
+    looks up `calc_wav` from `line_name`'s rest-frame wavelength in
+    `Emission_lines.line_diagnostics`.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter of the photometry used to compute this property.
+    SED_fit_label : `str` or `Type[SED_code]`
+        Label (or `SED_code` instance) identifying the SED-fitting run
+        whose `Photometry_rest` this property is calculated from.
+    line_name : `str`
+        Name of the emission line (a key of
+        `Emission_lines.line_diagnostics`) at whose rest-frame
+        wavelength the dust attenuation is computed.
+    dust_law : `str` or `Type[Dust_Law]`, optional
+        Dust attenuation law to use, either the name of a `Dust_Law`
+        subclass or an instance/class thereof. Default is `Calzetti00`.
+    beta_dust_conv : `str` or `Type[AUV_from_beta]`, optional
+        Beta-to-A(UV) conversion used to obtain the UV attenuation.
+        Default is `M99`.
+    UV_ref_wav : `astropy.units.Quantity`, optional
+        Rest-frame reference wavelength at which the UV attenuation is
+        computed. Default is `1_500.0 * u.AA`.
+    UV_wav_lims : `astropy.units.Quantity`, optional
+        Two-element rest-frame wavelength range defining the UV
+        continuum used to fit beta. Default is `[1_250.0, 3_000.0] * u.AA`.
+    keep_valid : `bool`, optional
+        Whether to clip negative attenuations to zero. Default is `False`.
+
+    Raises
+    ------
+    AssertionError
+        If `line_name` is not a key of `Emission_lines.line_diagnostics`.
+    """
 
     def __init__(
-        self: Self, 
+        self: Self,
         aper_diam: u.Quantity,
         SED_fit_label: Union[str, Type[SED_code]],
         line_name: str,
@@ -1843,6 +2535,53 @@ class Line_Dust_Attenuation_From_UV_Calculator(Dust_Attenuation_From_UV_Calculat
 
 
 class Optical_Line_Flux_Calculator(Rest_Frame_Property_Calculator):
+    """Calculates the flux of a strong rest-frame optical emission line.
+
+    Requires an `Optical_Continuum_Calculator` and an
+    `Optical_Line_EW_Calculator` as prerequisites, and computes the line
+    flux as ``EW * continuum_flux_density``. If dust-law/conversion
+    arguments are all given, also runs a
+    `Line_Dust_Attenuation_From_UV_Calculator` as a further prerequisite
+    and dust-corrects the resulting flux.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter of the photometry used to compute this property.
+    SED_fit_label : `str` or `Type[SED_code]`
+        Label (or `SED_code` instance) identifying the SED-fitting run
+        whose `Photometry_rest` this property is calculated from.
+    strong_line_names : `str` or `list`
+        Name(s) of the strong optical emission line(s) (keys of
+        `Emission_lines.line_diagnostics`) whose flux is being
+        calculated. A `"+"`-delimited string is split into a list.
+    frame : `str`, optional
+        Either `"rest"` or `"obs"`, passed through to the prerequisite
+        `Optical_Line_EW_Calculator`. Default is `"rest"`.
+    rest_optical_wavs : `astropy.units.Quantity`, optional
+        Two-element rest-frame wavelength range within which continuum
+        bands are searched for. Default is `[4_200.0, 10_000.0] * u.AA`.
+    dust_law : `str`, `Type[Dust_Law]`, or `None`, optional
+        Dust attenuation law used to dust-correct the line flux, or
+        `None` (together with the other dust arguments) to skip dust
+        correction. Default is `Calzetti00`.
+    beta_dust_conv : `str`, `Type[AUV_from_beta]`, or `None`, optional
+        Beta-to-A(UV) conversion used to obtain the UV attenuation for
+        dust correction. Default is `M99`.
+    UV_ref_wav : `astropy.units.Quantity` or `None`, optional
+        Rest-frame reference wavelength at which the UV attenuation is
+        computed. Default is `1_500.0 * u.AA`.
+    UV_wav_lims : `astropy.units.Quantity` or `None`, optional
+        Two-element rest-frame wavelength range defining the UV
+        continuum used to fit beta. Default is `[1_250.0, 3_000.0] * u.AA`.
+
+    Attributes
+    ----------
+    dust_calculator : `Line_Dust_Attenuation_From_UV_Calculator` or `None`
+        Prerequisite dust attenuation calculator, or `None` if any of
+        `dust_law`, `beta_dust_conv`, `UV_ref_wav`, or `UV_wav_lims`
+        was `None`.
+    """
 
     def __init__(
         self: Self,
@@ -1893,6 +2632,7 @@ class Optical_Line_Flux_Calculator(Rest_Frame_Property_Calculator):
 
     @property
     def name(self: Self) -> str:
+        """`str`: Short identifier, ``"flux_{frame}_{strong_line_names}[_{dust}_...]"``."""
         if self.dust_calculator is not None:
             dust_label = "_" + "_".join(self.dust_calculator.name.split("_")[1:2]) \
                 + "_" + self.dust_calculator.name.split("_")[-1]
@@ -1900,9 +2640,10 @@ class Optical_Line_Flux_Calculator(Rest_Frame_Property_Calculator):
             dust_label = ""
         return f"flux_{self.pre_req_properties[1].global_kwargs['frame']}_" + \
             f"{'+'.join(self.pre_req_properties[1].global_kwargs['strong_line_names'])}{dust_label}"
-    
+
     @property
     def plot_name(self: Self) -> str:
+        """`str`: Human-readable plot label for the emission line flux."""
         return f"{'+'.join(self.pre_req_properties[1].global_kwargs['strong_line_names'])} flux / " + \
             r"$\mathrm{erg\,s^{-1}\,cm^{-2}}$"
 
@@ -1972,6 +2713,39 @@ class Optical_Line_Flux_Calculator(Rest_Frame_Property_Calculator):
 
 
 class Optical_Line_Luminosity_Calculator(Rest_Frame_Property_Calculator):
+    """Calculates the luminosity of a strong rest-frame optical emission line.
+
+    Requires an observed-frame `Optical_Line_Flux_Calculator` as a
+    prerequisite and converts the line flux to a luminosity assuming
+    isotropic emission, ``L = 4 pi d_L^2 F``.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter of the photometry used to compute this property.
+    SED_fit_label : `str` or `Type[SED_code]`
+        Label (or `SED_code` instance) identifying the SED-fitting run
+        whose `Photometry_rest` this property is calculated from.
+    strong_line_names : `str` or `list`
+        Name(s) of the strong optical emission line(s) (keys of
+        `Emission_lines.line_diagnostics`) whose luminosity is being
+        calculated. A `"+"`-delimited string is split into a list.
+    rest_optical_wavs : `astropy.units.Quantity`, optional
+        Two-element rest-frame wavelength range within which continuum
+        bands are searched for. Default is `[4_200.0, 10_000.0] * u.AA`.
+    dust_law : `str`, `Type[Dust_Law]`, or `None`, optional
+        Dust attenuation law used to dust-correct the underlying line
+        flux, or `None` to skip dust correction. Default is `Calzetti00`.
+    beta_dust_conv : `str`, `Type[AUV_from_beta]`, or `None`, optional
+        Beta-to-A(UV) conversion used to obtain the UV attenuation for
+        dust correction. Default is `M99`.
+    UV_ref_wav : `astropy.units.Quantity` or `None`, optional
+        Rest-frame reference wavelength at which the UV attenuation is
+        computed. Default is `1_500.0 * u.AA`.
+    UV_wav_lims : `astropy.units.Quantity` or `None`, optional
+        Two-element rest-frame wavelength range defining the UV
+        continuum used to fit beta. Default is `[1_250.0, 3_000.0] * u.AA`.
+    """
 
     def __init__(
         self: Self,
@@ -2002,6 +2776,7 @@ class Optical_Line_Luminosity_Calculator(Rest_Frame_Property_Calculator):
 
     @property
     def name(self: Self) -> str:
+        """`str`: Short identifier, ``"lum_{strong_line_names}[_{dust}_...]"``."""
         if self.pre_req_properties[0].dust_calculator is not None:
             dust_label = "_" + "_".join(self.pre_req_properties[0] \
                 .dust_calculator.name.split("_")[1:2]) + "_" + \
@@ -2009,9 +2784,10 @@ class Optical_Line_Luminosity_Calculator(Rest_Frame_Property_Calculator):
         else:
             dust_label = ""
         return f"lum_{'+'.join(self.pre_req_properties[0].pre_req_properties[1].global_kwargs['strong_line_names'])}{dust_label}"
-    
+
     @property
     def plot_name(self: Self) -> str:
+        """`str`: Human-readable plot label for the emission line luminosity."""
         return r"L_{{{}}} / \mathrm{erg\,s^{-1}}".format('+'.join(self.pre_req_properties[0].pre_req_properties[1].global_kwargs['strong_line_names']))
 
     def _kwarg_assertions(self: Self) -> NoReturn:
@@ -2059,6 +2835,48 @@ class Optical_Line_Luminosity_Calculator(Rest_Frame_Property_Calculator):
 
 
 class Ndot_Ion_Calculator(Rest_Frame_Property_Calculator):
+    """Calculates the ionizing photon production rate, Ndot_ion, from the H-alpha luminosity.
+
+    Requires an `Optical_Line_Luminosity_Calculator` for H-alpha (and,
+    if `fesc_conv` is a string, a `Fesc_From_Beta_Calculator`) as
+    prerequisites. Assuming Case B recombination, converts the H-alpha
+    luminosity to an ionizing photon production rate, correcting for
+    any Lyman-continuum escape fraction if supplied.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter of the photometry used to compute this property.
+    SED_fit_label : `str` or `Type[SED_code]`
+        Label (or `SED_code` instance) identifying the SED-fitting run
+        whose `Photometry_rest` this property is calculated from.
+    rest_optical_wavs : `astropy.units.Quantity`, optional
+        Two-element rest-frame wavelength range within which continuum
+        bands for the H-alpha line are searched for. Default is
+        `[4_200.0, 10_000.0] * u.AA`.
+    dust_law : `str`, `Type[Dust_Law]`, or `None`, optional
+        Dust attenuation law used to dust-correct the H-alpha flux, or
+        `None` to skip dust correction. Default is `Calzetti00`.
+    beta_dust_conv : `str`, `Type[AUV_from_beta]`, or `None`, optional
+        Beta-to-A(UV) conversion used to obtain the UV attenuation for
+        dust correction. Default is `M99`.
+    UV_wav_lims : `astropy.units.Quantity` or `None`, optional
+        Two-element rest-frame wavelength range defining the UV
+        continuum used to fit beta (and, if `fesc_conv` is a string, the
+        escape fraction). Default is `[1_250.0, 3_000.0] * u.AA`.
+    fesc_conv : `str`, `float`, or `None`, optional
+        Either the name of a beta-to-fesc conversion (triggering a
+        `Fesc_From_Beta_Calculator` prerequisite), a fixed escape
+        fraction value, or `None` for zero escape fraction. Default is
+        `None`.
+    logged : `bool`, optional
+        Whether to return `log10(Ndot_ion / Hz)`. Default is `True`.
+
+    Attributes
+    ----------
+    fesc_calculator : `Fesc_From_Beta_Calculator`, `float`, or `None`
+        Escape fraction calculator/value derived from `fesc_conv`.
+    """
 
     def __init__(
         self: Self,
@@ -2100,6 +2918,7 @@ class Ndot_Ion_Calculator(Rest_Frame_Property_Calculator):
 
     @property
     def name(self: Self) -> str:
+        """`str`: Short identifier, ``"[log_]ndot_ion_{line}[_{dust}dust]_{fesc}"``."""
         if self.pre_req_properties[0].pre_req_properties[0]. \
                 dust_calculator is not None:
             dust_label = "_" + "_".join(self.pre_req_properties[0]. \
@@ -2132,6 +2951,7 @@ class Ndot_Ion_Calculator(Rest_Frame_Property_Calculator):
 
     @property
     def plot_name(self: Self) -> str:
+        """`str`: Human-readable plot label for the ionizing photon production rate."""
         if self.global_kwargs["logged"]:
             return r"$\log(\dot{n}_{\mathrm{ion}}~/~\mathrm{s}^{-1})$"
         else:
@@ -2347,6 +3167,58 @@ class Ndot_Ion_Calculator(Rest_Frame_Property_Calculator):
 #         return {}
 
 class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
+    """Calculates the ionizing photon production efficiency, xi_ion, from H-alpha and UV luminosities.
+
+    Requires an `Optical_Line_Luminosity_Calculator` for H-alpha and an
+    `LUV_Calculator` (and, if `fesc_conv` is a string, a
+    `Fesc_From_Beta_Calculator`) as prerequisites. Assuming Case B
+    recombination, computes
+    ``xi_ion = L(Halpha) / (1.36e-12 erg * (1 - fesc) * LUV)``.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter of the photometry used to compute this property.
+    SED_fit_label : `str` or `Type[SED_code]`
+        Label (or `SED_code` instance) identifying the SED-fitting run
+        whose `Photometry_rest` this property is calculated from.
+    rest_optical_wavs : `astropy.units.Quantity`, optional
+        Two-element rest-frame wavelength range within which continuum
+        bands for the H-alpha line are searched for. Default is
+        `[4_200.0, 10_000.0] * u.AA`.
+    dust_law : `str`, `Type[Dust_Law]`, or `None`, optional
+        Dust attenuation law used to dust-correct the H-alpha flux and
+        UV luminosity, or `None` to skip dust correction. Default is
+        `Calzetti00`.
+    beta_dust_conv : `str`, `Type[AUV_from_beta]`, or `None`, optional
+        Beta-to-A(UV) conversion used to obtain the UV attenuation for
+        dust correction. Default is `M99`.
+    UV_ref_wav : `astropy.units.Quantity` or `None`, optional
+        Rest-frame reference wavelength at which LUV is computed.
+        Default is `1_500.0 * u.AA`.
+    UV_wav_lims : `astropy.units.Quantity` or `None`, optional
+        Two-element rest-frame wavelength range defining the UV
+        continuum used to fit beta (and, if `fesc_conv` is a string, the
+        escape fraction). Default is `[1_250.0, 3_000.0] * u.AA`.
+    top_hat_width : `astropy.units.Quantity`, optional
+        Width of the top-hat wavelength window used when computing mUV
+        (for LUV). Default is `100.0 * u.AA`.
+    resolution : `astropy.units.Quantity`, optional
+        Wavelength spacing of the top-hat window grid used when
+        computing mUV (for LUV). Default is `1.0 * u.AA`.
+    fesc_conv : `str`, `float`, or `None`, optional
+        Either the name of a beta-to-fesc conversion (triggering a
+        `Fesc_From_Beta_Calculator` prerequisite), a fixed escape
+        fraction value, or `None` for zero escape fraction. Default is
+        `None`.
+    logged : `bool`, optional
+        Whether to return `log10(xi_ion / (Hz / erg))`. Default is `True`.
+
+    Attributes
+    ----------
+    fesc_calculator : `Fesc_From_Beta_Calculator`, `float`, or `None`
+        Escape fraction calculator/value derived from `fesc_conv`.
+    """
 
     def __init__(
         self: Self,
@@ -2408,6 +3280,7 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
 
     @property
     def name(self: Self) -> str:
+        """`str`: Short identifier, ``"[log_]xi_ion_{line}[_{dust}dust]_{fesc}"``."""
         if self.pre_req_properties[0].pre_req_properties[0]. \
                 dust_calculator is not None:
             dust_label = "_" + "_".join(self.pre_req_properties[0]. \
@@ -2434,6 +3307,7 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
 
     @property
     def plot_name(self: Self) -> str:
+        """`str`: Human-readable plot label for the ionizing photon production efficiency."""
         if self.global_kwargs["logged"]:
             return r"$\log(\xi_{\mathrm{ion}}~/~\mathrm{Hz erg}^{-1})$"
         else:
@@ -2510,6 +3384,41 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
     
 
 class SFR_Halpha_Calculator(Rest_Frame_Property_Calculator):
+    """Calculates the H-alpha-derived star formation rate, SFR_Halpha.
+
+    Requires an `Optical_Line_Luminosity_Calculator` for H-alpha as a
+    prerequisite and converts the (optionally dust-corrected) H-alpha
+    luminosity to a star formation rate using the Kennicutt (1998)
+    calibration (Salpeter 1955 IMF, 0.1-100 Msun),
+    ``SFR = 7.9e-42 * L(Halpha) [erg/s]``.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter of the photometry used to compute this property.
+    SED_fit_label : `str` or `Type[SED_code]`
+        Label (or `SED_code` instance) identifying the SED-fitting run
+        whose `Photometry_rest` this property is calculated from.
+    rest_optical_wavs : `astropy.units.Quantity`, optional
+        Two-element rest-frame wavelength range within which continuum
+        bands for the H-alpha line are searched for. Default is
+        `[4_200.0, 10_000.0] * u.AA`.
+    dust_law : `str`, `Type[Dust_Law]`, or `None`, optional
+        Dust attenuation law used to dust-correct the H-alpha flux, or
+        `None` to skip dust correction. Default is `Calzetti00`.
+    beta_dust_conv : `str`, `Type[AUV_from_beta]`, or `None`, optional
+        Beta-to-A(UV) conversion used to obtain the UV attenuation for
+        dust correction. Default is `M99`.
+    UV_ref_wav : `astropy.units.Quantity` or `None`, optional
+        Rest-frame reference wavelength at which the UV attenuation is
+        computed. Default is `1_500.0 * u.AA`.
+    UV_wav_lims : `astropy.units.Quantity` or `None`, optional
+        Two-element rest-frame wavelength range defining the UV
+        continuum used to fit beta. Default is `[1_250.0, 3_000.0] * u.AA`.
+    logged : `bool`, optional
+        Whether to return `log10(SFR_Halpha / (Msun / yr))`. Default is
+        `True`.
+    """
 
     def __init__(
         self: Self,
@@ -2539,6 +3448,7 @@ class SFR_Halpha_Calculator(Rest_Frame_Property_Calculator):
 
     @property
     def name(self: Self) -> str:
+        """`str`: Short identifier, ``"[log_]SFR_Halpha[_{dust}dust]"``."""
         if self.pre_req_properties[0].pre_req_properties[0]. \
                 dust_calculator is not None:
             dust_label = "_" + "_".join(self.pre_req_properties[0]. \
@@ -2552,6 +3462,7 @@ class SFR_Halpha_Calculator(Rest_Frame_Property_Calculator):
 
     @property
     def plot_name(self: Self) -> str:
+        """`str`: Human-readable plot label for the H-alpha-derived star formation rate."""
         if self.global_kwargs["logged"]:
             return r"$\log(SFR_{\mathrm{H}\alpha})$"
         else:

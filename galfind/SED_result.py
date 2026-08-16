@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Mon Jul 17 16:50:27 2023
+"""SED fit results with best-fit parameters and posterior distributions.
 
-@author: austind
+Stores best-fit SED parameters, uncertainties, and posterior PDFs from SED fitting
+codes; includes rest-frame photometry and aperture diameter metadata.
 """
 
 from __future__ import annotations
@@ -16,9 +16,10 @@ import numpy as np
 from astropy.table import Table
 from tqdm import tqdm
 import logging
-from typing import Dict, Union, TYPE_CHECKING
+from typing import Optional, Type, Dict, Union, TYPE_CHECKING
 if TYPE_CHECKING:
     from .Photometry_obs import Photometry_obs
+    from . import PDF, SED, SED_code
 
 from . import galfind_logger
 from . import useful_funcs_austind as funcs
@@ -27,14 +28,44 @@ from .Photometry_rest import Photometry_rest
 
 
 class SED_result:
+    """Results of a single SED fit to a galaxy's photometry.
+
+    Stores best-fit parameters, uncertainties, and posterior probability
+    distributions from an SED fitting code (e.g., LePhare, EAZY, Bagpipes).
+
+    Parameters
+    ----------
+    SED_code : `str` or `SED_code` instance
+        The SED fitting code or code label used for this fit.
+    phot : `Photometry_obs`
+        Observed photometry data for the galaxy.
+    properties : `dict`
+        Best-fit property values (e.g., ``{"z": 1.5 * u.dimensionless_unscaled, ...}``).
+    property_errs : `dict`
+        Uncertainties on each property in ``properties``.
+    property_PDFs : `dict` of `PDF` instances or `None`
+        Posterior probability distributions for each property, keyed by
+        property name.
+    SED : `SED` instance or `None`
+        The fitted SED object, or `None` if not loaded.
+
+    Attributes
+    ----------
+    z : `astropy.units.Quantity`
+        Redshift (set to 0.0 if not in properties).
+    phot_rest : `Photometry_rest`
+        Rest-frame photometry derived from observed photometry and redshift.
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter used for photometry.
+    """
     def __init__(
-        self,
-        SED_code,
-        phot,
-        properties,
-        property_errs,
-        property_PDFs,
-        SED,
+        self: Self,
+        SED_code: Union[str, Type[SED_code]],
+        phot: Photometry_obs,
+        properties: Dict[str, Union[float, u.Quantity, u.Magnitude, u.Dex]],
+        property_errs: Dict[str, Union[float, u.Quantity, u.Magnitude, u.Dex]],
+        property_PDFs: Dict[str, Type[PDF]] = None,
+        SED: Optional[SED] = None,
     ):
         self.SED_code = SED_code
         self.properties = properties
@@ -63,8 +94,24 @@ class SED_result:
         cls,
         phot: Photometry_obs,
         z_value: float,
-        z_label: str = "z"
-    ):
+        z_label: str = "z",
+    ) -> Self:
+        """Create SED result from a fixed redshift value.
+
+        Parameters
+        ----------
+        phot : `Photometry_obs`
+            Photometry object for the galaxy.
+        z_value : `float`
+            Fixed redshift value.
+        z_label : `str`, optional
+            Label for the redshift property. Default is "z".
+
+        Returns
+        -------
+        `SED_result`
+            SED result with fixed redshift only.
+        """
         return cls(
             z_label,
             phot,
@@ -75,10 +122,9 @@ class SED_result:
         )
 
     def __repr__(self):
-        if isinstance(self.SED_code, str):
-            return f"SED_result({self.SED_code})"
-        else:
-            return f"SED_result({self.SED_code.label})"
+        """Return the official string representation of the SED_result object."""
+        code_label = self.SED_code if isinstance(self.SED_code, str) else self.SED_code.label
+        return f"SED_result({code_label}, z={self.z:.3f})"
 
     def __str__(self) -> str:
         output_str = funcs.line_sep
@@ -167,6 +213,18 @@ class SED_result:
         self: Self,
         property_dict: Dict[str, Dict[str, Union[float, u.Quantity, u.Magnitude, u.Dex]]],
     ) -> Self:
+        """Update properties for low-z maximum redshift calibration.
+
+        Parameters
+        ----------
+        property_dict : `dict`
+            Dictionary mapping property names to their values/errors.
+
+        Returns
+        -------
+        `Self`
+            This SED result object for chaining.
+        """
         # if not hasattr(self, "lowz_zmax_properties"):
         #     self.lowz_zmax_properties = {}
         self.lowz_zmax_properties = property_dict
@@ -207,6 +265,23 @@ class SED_result:
 
 
 class Galaxy_SED_results:
+    """Container for SED fitting results from multiple SED codes for a single galaxy.
+
+    Organizes multiple `SED_result` objects (one per SED fitting code/configuration)
+    for a single galaxy, keyed by code/template/redshift configuration labels.
+
+    Parameters
+    ----------
+    SED_fit_params_arr : `list` of `dict`
+        List of SED fitting parameter dictionaries, one per code.
+    SED_result_arr : `list` of `SED_result`
+        Corresponding `SED_result` objects.
+
+    Attributes
+    ----------
+    SED_results : `dict`
+        Dictionary mapping code labels to `SED_result` objects.
+    """
     def __init__(self, SED_fit_params_arr, SED_result_arr):
         self.SED_results = {
             SED_fit_params["code"].label_from_SED_fit_params(
@@ -244,6 +319,7 @@ class Galaxy_SED_results:
     #     )
 
     @classmethod
+    @classmethod
     def from_SED_result_inputs(
         cls,
         SED_fit_params_arr,
@@ -252,7 +328,29 @@ class Galaxy_SED_results:
         property_errs_arr,
         property_PDFs_arr,
         SED_arr,
-    ):
+    ) -> Self:
+        """Create galaxy SED results from component arrays.
+
+        Parameters
+        ----------
+        SED_fit_params_arr : `list` of `dict`
+            SED fitting parameters for each code.
+        phot : `Photometry_obs`
+            Photometry object for the galaxy.
+        property_arr : `list` of `dict`
+            Property values for each SED code.
+        property_errs_arr : `list` of `dict`
+            Property errors for each SED code.
+        property_PDFs_arr : `list` of `dict` or `None`
+            Property PDFs for each SED code.
+        SED_arr : `list` of `SED` or `None`
+            SED objects for each code.
+
+        Returns
+        -------
+        `Galaxy_SED_results`
+            Container of SED results for each code.
+        """
         SED_result_arr = [
             SED_result(
                 SED_fit_params,
@@ -274,6 +372,23 @@ class Galaxy_SED_results:
 
 
 class Catalogue_SED_results:
+    """Container for SED fitting results for all galaxies in a catalogue.
+
+    Aggregates `Galaxy_SED_results` objects for each galaxy in a catalogue,
+    with optional loading of posterior PDFs and fitted SED objects.
+
+    Parameters
+    ----------
+    SED_fit_params_arr : `list` of `dict`
+        List of SED fitting parameter dictionaries.
+    cat_SED_results : `list` of `list` of `SED_result`
+        Per-galaxy lists of `SED_result` objects (one list per galaxy).
+
+    Attributes
+    ----------
+    SED_results : `list` of `dict`
+        Per-galaxy dictionaries of `SED_result` objects, keyed by code label.
+    """
     def __init__(self, SED_fit_params_arr, cat_SED_results):
         self.SED_results = [
             Galaxy_SED_results(SED_fit_params_arr, SED_result_arr).SED_results
@@ -291,7 +406,30 @@ class Catalogue_SED_results:
         load_PDFs: bool = True,
         load_SEDs: bool = True,
         timed: bool = True,
-    ):
+    ) -> Self:
+        """Load SED results from a galaxy catalogue.
+
+        Loads fitted properties and optionally PDFs and SEDs from the
+        catalogue's FITS output tables for all SED fitting codes.
+
+        Parameters
+        ----------
+        cat : `Catalogue`
+            Catalogue of galaxies.
+        SED_fit_params_arr : `list` or `numpy.ndarray`
+            SED fitting parameters for each code.
+        load_PDFs : `bool`, optional
+            Whether to load posterior PDFs. Default is `True`.
+        load_SEDs : `bool`, optional
+            Whether to load fitted SED models. Default is `True`.
+        timed : `bool`, optional
+            Whether to show progress bars. Default is `True`.
+
+        Returns
+        -------
+        `Catalogue_SED_results`
+            SED results for all galaxies in the catalogue.
+        """
         if load_PDFs:
             if timed:
                 cat_PDF_paths = [
@@ -376,7 +514,35 @@ class Catalogue_SED_results:
         phot_cat: Union[Table, None] = None,
         cat_creator=None,
         timed: bool = True,
-    ):
+    ) -> Self:
+        """Create SED results from FITS catalogue tables.
+
+        Parameters
+        ----------
+        SED_fit_cats : `astropy.table.Table` or `list`
+            FITS table(s) containing SED fitting results.
+        SED_fit_params_arr : `list` or `numpy.ndarray`
+            SED fitting parameters for each code.
+        cat_PDF_paths : `list`, `numpy.ndarray`, or `None`, optional
+            Paths to posterior PDF files. Default is `None`.
+        cat_SED_paths : `list`, `numpy.ndarray`, or `None`, optional
+            Paths to fitted SED files. Default is `None`.
+        phot_arr : optional
+            Pre-computed photometry array. Default is `None`.
+        instrument : optional
+            Instrument information. Default is `None`.
+        phot_cat : `astropy.table.Table` or `None`, optional
+            Photometry catalogue table. Default is `None`.
+        cat_creator : optional
+            Catalogue creator object. Default is `None`.
+        timed : `bool`, optional
+            Whether to show progress bars. Default is `True`.
+
+        Returns
+        -------
+        `Catalogue_SED_results`
+            SED results for all galaxies.
+        """
         # input assertions
         assert all(
             True if "code" in SED_fit_params else False
@@ -641,6 +807,7 @@ class Catalogue_SED_results:
         return cls_obj
 
     @classmethod
+    @classmethod
     def from_SED_result_inputs(
         cls,
         SED_fit_params_arr: Union[list, np.array],
@@ -649,7 +816,29 @@ class Catalogue_SED_results:
         cat_property_errs: Union[list, np.array],
         cat_property_PDFs: Union[np.array, None],
         cat_SEDs: Union[np.array, None],
-    ):
+    ) -> Self:
+        """Create catalogue SED results from component arrays.
+
+        Parameters
+        ----------
+        SED_fit_params_arr : `list` or `numpy.ndarray`
+            SED fitting parameters for each code.
+        phot_arr : `list` or `numpy.ndarray`
+            Photometry objects for each galaxy.
+        cat_properties : `list` or `numpy.ndarray`
+            Galaxy property values (N_galaxies x N_codes).
+        cat_property_errs : `list` or `numpy.ndarray`
+            Property errors (N_galaxies x N_codes).
+        cat_property_PDFs : `numpy.ndarray` or `None`
+            Property PDFs (N_galaxies x N_codes) or None.
+        cat_SEDs : `numpy.ndarray` or `None`
+            SED objects (N_galaxies x N_codes) or None.
+
+        Returns
+        -------
+        `Catalogue_SED_results`
+            SED results for all galaxies and codes.
+        """
         # if not loaded, construct appropriately shaped None arrays
         if type(cat_property_PDFs) == type(None):
             out_shape = np.array(cat_properties).shape

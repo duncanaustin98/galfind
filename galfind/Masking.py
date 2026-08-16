@@ -1,8 +1,13 @@
+"""Mask creation and management for imaging data.
+
+Provides functions to extract masking parameters from FITS headers and supports
+both automatic and manual masking methods with configuration parameters.
+"""
+
 from __future__ import annotations
 
 import astropy.units as u
 import numpy as np
-from regions import Regions
 from astropy.io import fits
 from tqdm import tqdm
 from astropy.table import Column
@@ -44,6 +49,29 @@ def get_mask_args(
 ) -> Tuple[
     Union[None, str], Dict[str, Union[str, int, float, Dict[str, float]]]
 ]:
+    """Extract masking parameters from a FITS mask file header.
+
+    Reads the masking method and parameters from a FITS mask file's header.
+    If the file is valid and contains automatic masking parameters, returns
+    a dictionary with the mask method and all configuration parameters;
+    otherwise returns ``{"method": "manual"}``.
+
+    Parameters
+    ----------
+    fits_mask_path : `str`
+        Path to the FITS mask file. Must have a `.fits` extension and be a
+        readable file, otherwise returns `None`.
+
+    Returns
+    -------
+    `tuple` of (`dict` or `None`, `dict`)
+        A tuple containing:
+        - Mask parameters dictionary with keys including "method", "star_mask_params",
+          "edge_mask_distance", "scale_extra", "exclude_gaia_galaxies", "angle",
+          "edge_value", "element", and "gaia_row_lim", or `None` if the file
+          is not found or is not a valid `.fits` file.
+        - Additional configuration dictionary (if required by caller).
+    """
     # return None if fits_mask_path is not a file
     if not Path(fits_mask_path).is_file():
         galfind_logger.warning(f"{fits_mask_path=} not a file")
@@ -89,6 +117,19 @@ def get_mask_args(
         return mask_args
 
 def get_mask_method(fits_mask_path: str) -> str:
+    """Determine the masking method from a FITS mask file.
+
+    Parameters
+    ----------
+    fits_mask_path : `str`
+        Path to the FITS mask file.
+
+    Returns
+    -------
+    `str`
+        The masking method: either "auto" (if automatic masking parameters are
+        found in the FITS header) or "manual" (if not found or file is invalid).
+    """
     mask_args = get_mask_args(fits_mask_path)
     if mask_args is not None:
         return mask_args["method"]
@@ -99,6 +140,32 @@ def manually_mask(
     self: Type[Band_Data_Base],
     overwrite: bool = False,
 ) -> Union[None, NoReturn]:
+    """Create or retrieve a manual mask for a band image from DS9 region files.
+
+    Searches for manually-created DS9 region (`.reg`) mask files for the
+    band. If found, converts them to a FITS mask file; otherwise raises an
+    exception. Cleans up zero-size regions automatically.
+
+    Parameters
+    ----------
+    self : `Type[Band_Data_Base]`
+        Band data instance for which to retrieve the mask. Used to determine
+        the survey, version, and filter name.
+    overwrite : `bool`, optional
+        If `True`, regenerate the mask even if a FITS mask file already exists.
+        Default is `False`.
+
+    Returns
+    -------
+    `str` or `None`
+        Path to the created or existing manual FITS mask file.
+
+    Raises
+    ------
+    Exception
+        If neither a FITS mask nor a `.reg` region mask file is found for
+        this band.
+    """
     fits_mask_path = get_manual_fits_mask_path(self)
     if not Path(fits_mask_path).is_file() or overwrite:
         # if no fits mask found, search for region mask
@@ -141,6 +208,24 @@ def manually_mask(
 
 
 def clean_reg_mask(mask_path: str) -> str:
+    """Remove zero-size regions from a DS9 region mask file.
+
+    Reads a DS9 region file and filters out any regions with zero size
+    (e.g., circles with radius 0, ellipses/boxes with zero width or height).
+    Creates a new `_clean.reg` file and moves the original to an `unclean/`
+    subdirectory.
+
+    Parameters
+    ----------
+    mask_path : `str`
+        Path to the DS9 region (`.reg`) mask file to clean.
+
+    Returns
+    -------
+    `str`
+        Path to the cleaned region file (original path with `_clean` added
+        before the `.reg` extension).
+    """
     # open region file
     with open(mask_path, "r") as f:
         lines = f.readlines()
@@ -177,6 +262,35 @@ def convert_mask_to_fits(
     mask_path: str,
     out_path: Optional[str],
 ) -> Union[str, np.ndarray]:
+    """Convert a DS9 region mask file to a FITS image mask.
+
+    Reads a DS9 region file and converts its regions to a pixel-space boolean
+    mask aligned with the band's WCS. Optionally saves the mask as a FITS file.
+
+    Parameters
+    ----------
+    self : `Type[Band_Data_Base]`
+        Band data instance, used to load the image and WCS for coordinate
+        transformation.
+    mask_path : `str`
+        Path to the DS9 region (`.reg`) file to convert.
+    out_path : `str` or `None`
+        Path where the output FITS mask should be saved. If `None`, the mask
+        is returned as a numpy array instead of being written to disk.
+
+    Returns
+    -------
+    `str` or `numpy.ndarray`
+        If `out_path` is specified, returns the path to the output FITS file.
+        If `out_path` is `None` or the file already exists, returns the pixel
+        mask as a boolean `numpy.ndarray`.
+
+    Raises
+    ------
+    AssertionError
+        If no valid regions are found in the `.reg` file (likely because
+        regions are in 'physical' coordinates instead of 'image').
+    """
     if out_path is None:
         convert = True
     elif not Path(out_path).is_file():
@@ -187,6 +301,7 @@ def convert_mask_to_fits(
         # open image corresponding to band
         im_data = self.load_im()[0]
         # open .reg mask file
+        from regions import Regions
         mask_regions = Regions.read(mask_path)
         assert len(mask_regions) > 0, \
             galfind_logger.critical(
@@ -229,6 +344,21 @@ def convert_mask_to_fits(
 
 
 def get_manual_fits_mask_path(self: Type[Band_Data_Base]) -> str:
+    """Get or create the path where a band's manual FITS mask should be stored.
+
+    Constructs the standard directory path for manual FITS masks based on the
+    band's survey and version, and creates the directory if it does not exist.
+
+    Parameters
+    ----------
+    self : `Type[Band_Data_Base]`
+        Band data instance, used to determine survey and version.
+
+    Returns
+    -------
+    `str`
+        Path to the band's manual FITS mask file (may not exist yet).
+    """
     fits_mask_dir = f"{config['Masking']['MASK_DIR']}/{self.survey}/manual"
     fits_mask_path = (
         f"{fits_mask_dir}/{self.filt_name}_{self.version}_manual.fits"
@@ -250,6 +380,52 @@ def auto_mask(
     gaia_row_lim: int = 500,
     overwrite: bool = False,
 ):
+    """Create an automatic mask using Gaia source data and image edges.
+
+    Generates a comprehensive mask by:
+    - Masking image edges and NaN regions
+    - Querying the Gaia DR3 catalogue for point sources and excluding galaxies
+    - Creating stellar diffraction spike masks (NIRCam only)
+    - Including artefact masks from region files if available
+
+    Saves the result as a FITS file with separate HDUs for each mask component.
+
+    Parameters
+    ----------
+    self : `Type[Band_Data_Base]`
+        Band data instance to mask.
+    star_mask_params : `dict` or `None`, optional
+        Stellar mask parameters with "central" and "spikes" keys, each mapping
+        to dicts with "a" and "b" exponential scale parameters. Only used for
+        NIRCam data. Default is `None` (no stellar mask).
+    edge_mask_distance : `int` or `float`, optional
+        Distance in pixels to mask from image edges. Default is 50.
+    scale_extra : `float`, optional
+        Fractional expansion of the search region beyond the image footprint
+        (to catch stars whose diffraction spikes extend into the image).
+        Default is 0.2.
+    exclude_gaia_galaxies : `bool`, optional
+        Exclude Gaia objects classified as galaxies. Default is `True`.
+    angle : `float` or `None`, optional
+        Image rotation angle (degrees) for diffraction spike orientation.
+        If `None`, computed from WCS. Default is `None`.
+    edge_value : `float`, optional
+        Pixel value marking image edges. Default is 0.0.
+    edge_threshold : `float` or `None`, optional
+        Additionally mask pixels with absolute value ≤ this threshold.
+        Default is `None`.
+    element : `str`, optional
+        Kernel shape for edge dilation: "RECT" or "ELLIPSE". Default is "ELLIPSE".
+    gaia_row_lim : `int`, optional
+        Maximum number of Gaia sources to retrieve per query. Default is 500.
+    overwrite : `bool`, optional
+        Regenerate mask even if it already exists. Default is `False`.
+
+    Returns
+    -------
+    `tuple` of (`str`, `dict`)
+        Tuple containing (path_to_mask_fits, mask_parameters_dict).
+    """
     from astroquery.gaia import Gaia
     
     output_mask_path = f"{config['Masking']['MASK_DIR']}/{self.survey}" + \
@@ -412,6 +588,7 @@ def auto_mask(
                     spike_scale,
                     angle,
                 )
+                from regions import Regions
                 region_obj = Regions.parse(sky_region, format="ds9")
                 diffraction_regions.append(region_obj)
                 stellar_region_strings.append(
@@ -602,6 +779,38 @@ def make_edge_mask(
     edge_threshold: Optional[float] = None,
     element: str = "ELLIPSE",
 ) -> NDArray[np.uint8]:
+    """Create a mask for image edges and regions with invalid or near-zero values.
+
+    Identifies pixels at image boundaries, with NaN values, or close to a
+    threshold value, then dilates the mask outward from edges by a specified
+    distance.
+
+    Parameters
+    ----------
+    self : `Type[Band_Data_Base]`
+        Band data instance providing the image data to mask.
+    edge_value : `float`, optional
+        Pixel value that marks the image edge. Default is 0.0.
+    edge_mask_distance : `int` or `float`, optional
+        Distance in pixels from the image edges to mask. Default is 50.
+    edge_threshold : `float` or `None`, optional
+        If specified, also mask pixels with absolute value ≤ this threshold.
+        Default is `None` (no threshold masking).
+    element : `str`, optional
+        Kernel shape for dilation: either "RECT" (rectangular) or "ELLIPSE".
+        Default is "ELLIPSE".
+
+    Returns
+    -------
+    `numpy.ndarray` of `uint8`
+        Boolean mask array (1 where masked, 0 where valid) with the same
+        shape as the input image.
+
+    Raises
+    ------
+    ValueError
+        If `element` is not "RECT" or "ELLIPSE".
+    """
     import cv2
     galfind_logger.info(
         f"Making edge mask for {repr(self)}!"
@@ -652,6 +861,23 @@ def make_edge_mask(
 def check_star_mask_params(
     star_mask_params: Dict[u.Quantity, Dict[str, float]],
 ) -> None:
+    """Validate the structure and values of stellar masking parameters.
+
+    Ensures that `star_mask_params` is a properly-formatted dictionary with
+    the required "central" and "spikes" keys, each containing nested dicts
+    with "a" and "b" entries that are numeric.
+
+    Parameters
+    ----------
+    star_mask_params : `dict`
+        Dictionary with keys "central" and "spikes", each mapping to a dict
+        with keys "a" and "b" containing numeric values (int or float).
+
+    Raises
+    ------
+    AssertionError
+        If the structure or types do not match the expected format.
+    """
     assert isinstance(star_mask_params, dict), galfind_logger.warning(
         f"Mask overridden, but {type(star_mask_params)=} != dict"
     )
@@ -689,6 +915,26 @@ def sort_band_dependent_star_mask_params(
         ]
     ],
 ) -> Optional[Dict[str, Dict[str, float]]]:
+    """Select wavelength-specific stellar mask parameters for a given filter.
+
+    If mask parameters are specified by wavelength (as `u.Quantity` keys),
+    selects the entry closest to the filter's central wavelength. Otherwise,
+    returns the parameters unchanged.
+
+    Parameters
+    ----------
+    filt : `Filter`
+        Filter instance providing the central wavelength for selection.
+    star_mask_params : `dict` or `None`
+        Either a dict with string keys (returned as-is) or a dict with
+        `astropy.units.Quantity` wavelength keys, one entry per wavelength.
+
+    Returns
+    -------
+    `dict` or `None`
+        The selected (or unchanged) mask parameters dict, or `None` if input
+        is `None`.
+    """
     if not all(isinstance(key, str) for key in star_mask_params.keys()):
         # get closest wavelength to the filter in question
         closest_wavelength = min(
@@ -700,6 +946,21 @@ def sort_band_dependent_star_mask_params(
 
 
 def get_combined_path_name(self: Stacked_Band_Data) -> str:
+    """Generate the output path for a stacked (multi-band) combined mask.
+
+    Constructs a standard filename based on the survey, version, component
+    filter names, and mask methods.
+
+    Parameters
+    ----------
+    self : `Stacked_Band_Data`
+        Stacked band data instance containing multiple constituent bands.
+
+    Returns
+    -------
+    `str`
+        Path where the combined mask FITS file should be stored.
+    """
     out_dir = f"{config['Masking']['MASK_DIR']}/{self.survey}/combined"
     if all(band_data.mask_args["method"] == self.band_data_arr[0].mask_args["method"] for band_data in self.band_data_arr):
         filt_name_mask_method = '+'.join([band_data.filt_name for band_data in self.band_data_arr]) + \
@@ -724,6 +985,35 @@ def combine_masks(
     edge_threshold: Optional[float] = None,
     element: str = "ELLIPSE",
 ) -> str:
+    """Combine masks from multiple bands into a single stacked mask.
+
+    Merges masks from all constituent bands of a stacked data object,
+    ensuring consistent pixel scales and image dimensions, and saves the
+    combined mask to a FITS file.
+
+    Parameters
+    ----------
+    self : `Stacked_Band_Data`
+        Stacked band data instance containing the bands to combine.
+    edge_value : `float`, optional
+        Pixel value marking edges. Default is 0.0.
+    edge_mask_distance : `int` or `float`, optional
+        Distance to mask from edges, in pixels. Default is 50.
+    edge_threshold : `float` or `None`, optional
+        Optional threshold for additional masking. Default is `None`.
+    element : `str`, optional
+        Kernel shape ("RECT" or "ELLIPSE") for dilation. Default is "ELLIPSE".
+
+    Returns
+    -------
+    `str`
+        Path to the combined mask FITS file.
+
+    Raises
+    ------
+    AssertionError
+        If bands have different pixel scales or image dimensions.
+    """
     out_path = get_combined_path_name(self)
     if not Path(out_path).is_file():
         assert all(
@@ -812,6 +1102,27 @@ def get_area_mask_path(
     mask_save_name: str,
     reg_name: str
 ) -> str:
+    """Generate the standard path for a saved area mask FITS file.
+
+    Constructs the path where an area mask should be stored based on survey,
+    mask type, and region selection.
+
+    Parameters
+    ----------
+    self : `Type[Data]`
+        Data instance providing survey information.
+    mask_selector_name : `str`
+        Name of the mask selector (instrument, filter, or selector class).
+    mask_save_name : `str`
+        Name of the mask extension (e.g., "MASK", "EDGE").
+    reg_name : `str`
+        Name of the region selector, or "All" if no region restriction.
+
+    Returns
+    -------
+    `str`
+        Path where the area mask FITS file should be stored.
+    """
     mask_path = f"{config['Masking']['MASK_DIR']}/{self.survey}/area_masks/" + \
         f"{mask_selector_name}_{mask_save_name}_{reg_name}_{self.version}.fits"
     funcs.make_dirs(mask_path)
@@ -825,6 +1136,33 @@ def sort_area_mask_names(
     invert_region: bool = False,
     zbin: Optional[Tuple[float, float]] = None,
 ) -> Tuple[str, str, str]:
+    """Generate standardized names and path for area masks.
+
+    Creates consistent naming conventions for area mask files based on the
+    selector type, mask extensions, and optional region/redshift constraints.
+
+    Parameters
+    ----------
+    self : `Type[Data]`
+        Data instance providing survey information.
+    mask_selector : `str`, `list` of `str`, or `Mask_Selector` subclass
+        Specifies which data to mask (e.g., instrument or filter names, or
+        a Mask_Selector instance).
+    mask_type : `str` or `list` of `str`
+        Mask extension name(s) to include (e.g., "MASK" or ["MASK", "EDGE"]).
+    region_selector : `Region_Selector` subclass or `list` thereof, optional
+        Optional region selection to apply. Default is `None`.
+    invert_region : `bool`, optional
+        If `True`, use the region failure name instead. Default is `False`.
+    zbin : `tuple` of (`float`, `float`), optional
+        Redshift bin (z_min, z_max) for additional specificity. Default is `None`.
+
+    Returns
+    -------
+    `tuple` of (`str`, `str`, `str`, `str`)
+        Tuple containing (mask_selector_name, mask_save_name, region_name,
+        output_path).
+    """
 
     from . import Mask_Selector
 
@@ -869,6 +1207,37 @@ def make_area_mask_from_data(
     overwrite: bool = False,
     **kwargs: Dict[str, Any],
 ) -> Tuple[NDArray[float], str, str, str]:
+    """Create or load an area mask from a multi-band data object.
+
+    Combines masks from selected instruments/filters and optional region
+    selectors into a single boolean mask. Caches the result to disk as a
+    FITS file.
+
+    Parameters
+    ----------
+    self : `Type[Data]`
+        Multi-band data instance.
+    mask_selector : `str`, `list` of `str`, or `Mask_Selector` subclass
+        Which bands/instruments to mask.
+    mask_type : `str` or `list` of `str`, optional
+        Mask extensions to combine. Default is "MASK".
+    region_selector : `Region_Selector` subclass or `list` thereof, optional
+        Additional region constraints. Default is `None`.
+    invert_region : `bool`, optional
+        Invert the region selector logic. Default is `False`.
+    zbin : `tuple` of (`float`, `float`), optional
+        Redshift bin to include in the mask name. Default is `None`.
+    overwrite : `bool`, optional
+        Regenerate the mask even if cached. Default is `False`.
+    **kwargs : `dict`
+        Additional keyword arguments passed to mask loaders (e.g., ``z``).
+
+    Returns
+    -------
+    `tuple` of (`numpy.ndarray`, `str`, `str`, `str`)
+        Tuple containing (combined_mask, mask_selector_name, mask_save_name,
+        region_name).
+    """
     #try:
     from . import Mask_Selector
     mask_selector_name, mask_save_name, reg_name, mask_save_path = \
@@ -986,6 +1355,37 @@ def make_area_mask_from_band_data(
     overwrite: bool = False,
     **kwargs: Dict[str, Any],
 ) -> Tuple[NDArray[float], str, str, str]:
+    """Create or load an area mask from a single band data object.
+
+    Similar to `make_area_mask_from_data` but for a single band. Combines
+    masks from region selectors and optional mask selectors, then caches
+    to a FITS file.
+
+    Parameters
+    ----------
+    self : `Type[Band_Data]`
+        Single band data instance.
+    mask_selector : `str`, `list` of `str`, or `Mask_Selector` subclass
+        Which masks to apply.
+    mask_type : `str` or `list` of `str`, optional
+        Mask extensions to combine. Default is "MASK".
+    region_selector : `Region_Selector` subclass or `list` thereof, optional
+        Additional region constraints. Default is `None`.
+    invert_region : `bool`, optional
+        Invert the region selector logic. Default is `False`.
+    zbin : `tuple` of (`float`, `float`), optional
+        Redshift bin for mask naming. Default is `None`.
+    overwrite : `bool`, optional
+        Regenerate even if cached. Default is `False`.
+    **kwargs : `dict`
+        Additional keyword arguments for mask loaders.
+
+    Returns
+    -------
+    `tuple` of (`numpy.ndarray`, `str`, `str`, `str`)
+        Tuple containing (combined_mask, mask_selector_name, mask_save_name,
+        region_name).
+    """
     from . import Mask_Selector
     mask_selector_name, mask_save_name, reg_name, mask_save_path = \
         sort_area_mask_names(
@@ -1055,6 +1455,29 @@ def get_rebin_mask_path(
     reg_name: str,
     shape: Tuple[int, int],
 ) -> str:
+    """Generate the path for a rebinned area mask FITS file.
+
+    Constructs the standard path where a spatially-rebinned area mask should
+    be stored, appending the target shape to the filename.
+
+    Parameters
+    ----------
+    self : `Type[Band_Data_Base]`
+        Band data instance providing survey information.
+    mask_selector_name : `str`
+        Name of the mask selector.
+    mask_save_name : `str`
+        Name of the mask extension.
+    reg_name : `str`
+        Region selector name or "All".
+    shape : `tuple` of (`int`, `int`)
+        Target output shape (n_rows, n_cols).
+
+    Returns
+    -------
+    `str`
+        Path for the rebinned mask FITS file.
+    """
     from . import Depths
     re_binned_mask_path = get_area_mask_path(
         self,

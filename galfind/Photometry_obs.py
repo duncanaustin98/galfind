@@ -1,3 +1,9 @@
+"""Observed-frame photometry with aperture and PSF information.
+
+Extends Photometry with aperture diameter, PSF objects, and storage of SED fitting
+results in the observed frame.
+"""
+
 from __future__ import annotations
 
 import inspect
@@ -6,6 +12,7 @@ import astropy.units as u
 from astropy.utils.masked import Masked
 import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
+from matplotlib.transforms import Bbox
 import numpy as np
 from numpy.typing import NDArray
 from tqdm import tqdm
@@ -15,7 +22,7 @@ from photutils.aperture import (
     CircularAperture,
     aperture_photometry,
 )
-from typing import TYPE_CHECKING, Union, List, Dict, NoReturn, Optional
+from typing import TYPE_CHECKING, Union, List, Dict, Any, NoReturn, Optional
 if TYPE_CHECKING:
     from . import Multiple_Filter, Multiple_Band_Cutout, PSF_Base
 try:
@@ -29,6 +36,33 @@ from . import useful_funcs_austind as funcs
 from . import galfind_logger
 
 class Photometry_obs(Photometry):
+    """Observed photometry for a single source across multiple filters.
+
+    Stores flux measurements and uncertainties for one source, including
+    depth information, PSF objects, and optional SED fitting results.
+    Inherits from `Photometry` and adds observational-specific attributes.
+
+    Parameters
+    ----------
+    filterset : `Multiple_Filter`
+        Set of filters in which photometry is measured.
+    flux : `Masked[astropy.units.Quantity]`
+        Flux measurements in each filter (may be masked for non-detections).
+    flux_errs : `Masked[astropy.units.Quantity]`
+        Flux measurement uncertainties.
+    depths : `dict` of `str` to `float`, or `list` of `float`
+        Depth/sensitivity information for each filter.
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter used for photometry.
+    psfs : `list` or `array` of `PSF_Base`, optional
+        PSF models for each filter. Default is `None`.
+    SED_results : `dict` of `str` to `SED_result`, optional
+        SED fitting results keyed by code/configuration label. Default is `{}`.
+    simulated : `bool`, optional
+        Whether this is simulated data. Default is `False`.
+    timed : `bool`, optional
+        Log initialization time. Default is `False`.
+    """
     def __init__(
         self: Self,
         filterset: Multiple_Filter,
@@ -73,9 +107,12 @@ class Photometry_obs(Photometry):
         output_str += funcs.band_sep
         output_str += f"APERTURE DIAMETER: {self.aper_diam}\n"
         output_str += super().__str__(print_cls_name=False)
-        for result in self.SED_results.values():
-            output_str += str(result)
-        output_str += f"SNR: {[np.round(snr, 2) for snr in self.SNR]}\n"
+        if self.SED_results:
+            output_str += f"SED RESULTS: {list(self.SED_results.keys())}\n"
+        # Show SNR summary instead of all values for speed
+        snr_array = self.SNR if hasattr(self, 'SNR') else []
+        if len(snr_array) > 0:
+            output_str += f"SNR RANGE: {np.min(snr_array):.2f} - {np.max(snr_array):.2f}\n"
         output_str += funcs.line_sep
         return output_str
 
@@ -182,6 +219,16 @@ class Photometry_obs(Photometry):
 
     @property
     def SNR(self):
+        """Signal-to-noise ratios for each band.
+
+        Calculates SNR from flux and depth, accounting for aperture
+        corrections if applicable and simulated vs. real data.
+
+        Returns
+        -------
+        `list`
+            SNR values for each band.
+        """
         if isinstance(self.flux, u.Quantity):
             fluxes = self.flux
         else:
@@ -208,6 +255,16 @@ class Photometry_obs(Photometry):
 
     @property
     def aper_corrs(self):
+        """Aperture corrections for each band.
+
+        Retrieves the magnitude corrections needed to convert aperture
+        photometry to total photometry, or NaN if unavailable.
+
+        Returns
+        -------
+        `list`
+            Aperture corrections in magnitudes for each band.
+        """
         if self.simulated or self.psfs is None:
             return [
                 np.nan for filt in self.filterset
@@ -227,7 +284,7 @@ class Photometry_obs(Photometry):
                 ) for filt in self.filterset
             ]
 
-    @classmethod # not a gal object here, more like a catalogue row
+    @classmethod
     def from_fits_cat(
         cls,
         fits_cat_row,
@@ -238,7 +295,33 @@ class Photometry_obs(Photometry):
         codes,
         lowz_zmaxs,
         templates,
-    ):
+    ) -> Self:
+        """Create observed photometry from FITS catalogue row.
+
+        Parameters
+        ----------
+        fits_cat_row : `astropy.table.Row`
+            Row from photometry FITS catalogue.
+        instrument : `Instrument`
+            Instrument information.
+        cat_creator : `Catalogue_Creator`
+            Catalogue creator for loading photometry.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter.
+        min_flux_pc_err : `int` or `float`
+            Minimum flux percentage error threshold.
+        codes : `list`
+            SED code objects to load results.
+        lowz_zmaxs : `list`
+            Low-redshift maximum redshifts.
+        templates : `list`
+            Template information for SED fitting.
+
+        Returns
+        -------
+        `Photometry_obs`
+            Observed photometry with SED results.
+        """
         galfind_logger.warning(
             "SED_fit_params should be included in this function"
         )
@@ -263,7 +346,25 @@ class Photometry_obs(Photometry):
         aper_diam: u.Quantity,
         min_flux_pc_err: Union[int, float],
         SED_results: Dict[str, SED_result] = {},
-    ):
+    ) -> Self:
+        """Create observed photometry from base photometry object.
+
+        Parameters
+        ----------
+        phot : `Photometry`
+            Base photometry object with flux and errors.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter.
+        min_flux_pc_err : `int` or `float`
+            Minimum flux percentage error threshold.
+        SED_results : `dict`, optional
+            Dictionary of SED results by code label. Default is empty dict.
+
+        Returns
+        -------
+        `Photometry_obs`
+            Observed photometry object.
+        """
         return cls(
             phot.instrument,
             phot.flux,
@@ -273,13 +374,27 @@ class Photometry_obs(Photometry):
             phot.depths,
             SED_results,
         )
-    
+
     @classmethod
     def from_multiple_band_cutout(
         cls: Type[Self],
         multi_band_cutout: Multiple_Band_Cutout,
         aper_diam: u.Quantity,
     ) -> Self:
+        """Create observed photometry from multi-band cutout images.
+
+        Parameters
+        ----------
+        multi_band_cutout : `Multiple_Band_Cutout`
+            Collection of cutouts for multiple bands.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter for photometry.
+
+        Returns
+        -------
+        `Photometry_obs`
+            Observed photometry extracted from cutouts.
+        """
         # run photutils on every band_data in stacked_band_cutout
         xpos = multi_band_cutout[0].meta["SIZE_PIX"] / 2
         ypos = multi_band_cutout[0].meta["SIZE_PIX"] / 2
@@ -313,9 +428,16 @@ class Photometry_obs(Photometry):
             )
 
     def update_SED_result(
-        self: Self, 
-        gal_SED_result: SED_result
+        self: Self,
+        gal_SED_result: SED_result,
     ) -> None:
+        """Add or update an SED result in the photometry.
+
+        Parameters
+        ----------
+        gal_SED_result : `SED_result`
+            SED fitting result to store.
+        """
         if isinstance(gal_SED_result.SED_code, str):
             label = gal_SED_result.SED_code
         else:
@@ -331,9 +453,30 @@ class Photometry_obs(Photometry):
         SED_result_key: str,
         zmax_info: Dict[str, Dict[str, Union[float, u.Quantity, u.Magnitude, u.Dex]]],
     ) -> None:
+        """Update low-redshift maximum redshift information for an SED result.
+
+        Parameters
+        ----------
+        SED_result_key : `str`
+            Key/label of the SED result to update.
+        zmax_info : `dict`
+            Dictionary containing low-z redshift maximum information.
+        """
         return self.SED_results[SED_result_key].update_lowz_zmax_properties(zmax_info)
 
     def get_SED_fit_params_arr(self, code) -> list:
+        """Extract SED fitting parameters for all fitted codes.
+
+        Parameters
+        ----------
+        code : `SED_code`
+            SED code to extract parameters from.
+
+        Returns
+        -------
+        `list`
+            List of SED fitting parameter dictionaries.
+        """
         return [
             code.SED_fit_params_from_label(label)
             for label in self.SED_results.keys()
@@ -342,6 +485,15 @@ class Photometry_obs(Photometry):
     def load_property(
         self, gal_property: Union[dict, u.Quantity], save_name: str
     ) -> None:
+        """Load a derived property into the photometry object.
+
+        Parameters
+        ----------
+        gal_property : `dict` or `astropy.units.Quantity`
+            Property value or mapping to store.
+        save_name : `str`
+            Attribute name to save the property under.
+        """
         setattr(self, save_name, gal_property)
 
     def load_fixz_SED_result(
@@ -349,6 +501,18 @@ class Photometry_obs(Photometry):
         z_value: float,
         z_label: str = "z",
     ) -> NoReturn:
+        """Load a fixed redshift SED result for this photometry.
+
+        Creates and stores an SED result containing only a fixed redshift value,
+        useful for cases where the redshift is known precisely.
+
+        Parameters
+        ----------
+        z_value : `float`
+            Redshift value to fix.
+        z_label : `str`, optional
+            Label for the redshift result. Default is "z".
+        """
         if z_label in self.SED_results.keys():
             galfind_logger.warning(
                 f"{z_label} already in {self.SED_results.keys()}, overwriting!"
@@ -512,6 +676,7 @@ class Photometry_obs(Photometry):
         uplim_sigma: float = 2.0,
         auto_scale: bool = True,
         SNR_labelsize: Optional[float] = 7.5,
+        SNR_label_kwargs: Dict[str, Any] = {},
         errorbar_kwargs: dict = {
             "ls": "",
             "marker": "o",
@@ -523,7 +688,45 @@ class Photometry_obs(Photometry):
         colour: str = "black",
         label: str = "Photometry",
         log_scale: bool = False,
-    ):
+    ) -> plt.Axes:
+        """Plot observed-frame photometry with SNR annotations.
+
+        Parameters
+        ----------
+        ax : `matplotlib.axes.Axes`, optional
+            Axes to plot on. Created if None. Default is None.
+        wav_units : `astropy.units.Unit`, optional
+            Wavelength unit. Default is Angstrom.
+        mag_units : `astropy.units.Unit`, optional
+            Magnitude/flux unit. Default is Jy.
+        plot_errs : `dict`, optional
+            Whether to plot x/y errors. Default is {"x": False, "y": True}.
+        annotate : `bool`, optional
+            Whether to add axis labels and legend. Default is True.
+        uplim_sigma : `float`, optional
+            Sigma level for upper limits. Default is 2.0.
+        auto_scale : `bool`, optional
+            Whether to auto-scale axes. Default is True.
+        SNR_labelsize : `float`, optional
+            Font size for SNR labels. Default is 7.5.
+        SNR_label_kwargs : `dict`, optional
+            Additional kwargs for SNR label text. Default is empty dict.
+        errorbar_kwargs : `dict`, optional
+            Kwargs for errorbar plot. Default includes markers and styling.
+        filled : `bool`, optional
+            Whether to fill between errors. Default is True.
+        colour : `str`, optional
+            Color for the plot. Default is "black".
+        label : `str`, optional
+            Label for legend. Default is "Photometry".
+        log_scale : `bool`, optional
+            Whether to use log scale. Default is False.
+
+        Returns
+        -------
+        `matplotlib.axes.Axes`
+            The axes with the plot.
+        """
         plot, wavs_to_plot, mags_to_plot, yerr, uplims = super().plot(
             ax,
             wav_units,
@@ -541,7 +744,7 @@ class Photometry_obs(Photometry):
         )
 
         if SNR_labelsize is not None:
-            label_kwargs = {
+            default_SNR_label_kwargs = {
                 "ha": "center",
                 "fontsize": SNR_labelsize,
                 "path_effects": [
@@ -549,78 +752,85 @@ class Photometry_obs(Photometry):
                 ],
                 "zorder": 1_000.0,
             }
+            for key, value in default_SNR_label_kwargs.items():
+                SNR_label_kwargs.setdefault(key, value)
+            label_kwargs = SNR_label_kwargs
             label_func = (
                 lambda SNR: f"{SNR:.1f}" + r"$\sigma$"
                 if SNR < 100
                 else f"{SNR:.0f}" + r"$\sigma$"
             )
+            mag_l1 = np.asarray(yerr[0])
+            mag_u1 = np.asarray(yerr[1])
+            uplims_arr = np.asarray(uplims)
             if mag_units == u.ABmag:
-                offset = 0.15
-                [
-                    ax.annotate(
-                        label_func(SNR),
-                        (
-                            wav,
-                            mag - offset
-                            if is_uplim
-                            else mag + mag_u1 + offset,
-                        ),
-                        **label_kwargs,
-                    )
-                    for i, (
-                        SNR,
-                        wav,
-                        mag,
-                        mag_l1,
-                        mag_u1,
-                        is_uplim,
-                    ) in enumerate(
-                        zip(
-                            self.SNR,
-                            wavs_to_plot,
-                            mags_to_plot,
-                            yerr[0],
-                            yerr[1],
-                            uplims,
-                        )
-                    )
-                ]
+                offset = 0.3
+                # brighter (smaller mag) / fainter (larger mag) candidate positions
+                pos_above = mags_to_plot - mag_l1 - offset
+                pos_below = mags_to_plot + mag_u1 + offset
             else:
                 offset = {
-                    "power density/spectral flux density wav": 0.1,
-                    "ABmag/spectral flux density": 0.1,
-                    "spectral flux density": 0.1,
+                    "power density/spectral flux density wav": 0.2,
+                    "ABmag/spectral flux density": 0.2,
+                    "spectral flux density": 0.2,
                 }[str(u.get_physical_type(mag_units))]
-                [
-                    ax.annotate(
-                        label_func(SNR),
-                        (
-                            wav,
-                            mag + offset
-                            if is_uplim
-                            else mag - mag_l1 - offset,
-                        ),
-                        **label_kwargs,
+                # brighter (larger value) / fainter (smaller value) candidate positions
+                pos_above = mags_to_plot + mag_u1 + offset
+                pos_below = mags_to_plot - mag_l1 - offset
+            # place uplims on the side away from their arrow, detections below their errorbar
+            default_pos = np.where(uplims_arr, pos_above, pos_below)
+            alt_pos = np.where(uplims_arr, pos_below, pos_above)
+
+            annotations = [
+                ax.annotate(label_func(SNR), (wav, pos), **label_kwargs)
+                for SNR, wav, pos in zip(self.SNR, wavs_to_plot, default_pos)
+            ]
+
+            # if a label overlaps another label or another band's data point
+            # (marker + errorbar/arrow), flip it to the other side of its own
+            # data point, provided that side still lies within the axis limits
+            fig = ax.get_figure()
+            fig.canvas.draw()
+            renderer = fig.canvas.get_renderer()
+            marker_px = errorbar_kwargs.get("ms", 4.0) * fig.dpi / 72.0
+            data_point_bboxes = [
+                Bbox.from_extents(
+                    x_px - marker_px,
+                    min(y_lo_px, y_hi_px),
+                    x_px + marker_px,
+                    max(y_lo_px, y_hi_px),
+                )
+                for (x_px, y_lo_px), (_, y_hi_px) in (
+                    (
+                        ax.transData.transform((wav, mag - l1)),
+                        ax.transData.transform((wav, mag + u1)),
                     )
-                    for i, (
-                        SNR,
-                        wav,
-                        mag,
-                        mag_l1,
-                        mag_u1,
-                        is_uplim,
-                    ) in enumerate(
-                        zip(
-                            self.SNR,
-                            wavs_to_plot,
-                            mags_to_plot,
-                            yerr[0],
-                            yerr[1],
-                            uplims,
-                        )
+                    for wav, mag, l1, u1 in zip(
+                        wavs_to_plot, mags_to_plot, mag_l1, mag_u1
                     )
-                ]
-                
+                )
+            ]
+
+            def _overlaps_others(i, bbox, label_bboxes):
+                return any(
+                    j != i and bbox.overlaps(label_bboxes[j])
+                    for j in range(len(label_bboxes))
+                ) or any(bbox.overlaps(b) for b in data_point_bboxes)
+
+            bboxes = [ann.get_window_extent(renderer) for ann in annotations]
+            ylim = sorted(ax.get_ylim())
+            for i, ann in enumerate(annotations):
+                overlaps = _overlaps_others(i, bboxes[i], bboxes)
+                if overlaps and ylim[0] <= alt_pos[i] <= ylim[1]:
+                    ann.set_position((wavs_to_plot[i], alt_pos[i]))
+                    flipped_bbox = ann.get_window_extent(renderer)
+                    still_overlaps = _overlaps_others(i, flipped_bbox, bboxes)
+                    if still_overlaps:
+                        # flipping didn't help; revert to the default side
+                        ann.set_position((wavs_to_plot[i], default_pos[i]))
+                    else:
+                        bboxes[i] = flipped_bbox
+
         if annotate:
             # x/y labels etc here
             ax.set_xlabel(f"Wavelength ({wav_units})")
@@ -630,10 +840,24 @@ class Photometry_obs(Photometry):
         return plot
     
     def load_sextractor_ext_src_corrs(
-        self: Self, 
+        self: Self,
         filt_names: Optional[List[str]] = None,
         aper_corrs: Optional[Dict[str, float]] = None,
     ) -> NoReturn:
+        """Load extended source corrections from SExtractor photometry.
+
+        Computes corrections between aperture photometry and SExtractor FLUX_AUTO
+        measurements for all or selected filters.
+
+        Parameters
+        ----------
+        filt_names : `list` of `str`, optional
+            Filter names to compute corrections for. All filters used if None.
+            Default is None.
+        aper_corrs : `dict`, optional
+            Aperture corrections by filter name. Computed from PSF if None.
+            Default is None.
+        """
         if filt_names is None:
             filt_names = self.filterset.filt_names
 
@@ -700,6 +924,31 @@ class Photometry_obs(Photometry):
 
 
 class Multiple_Photometry_obs:
+    """Observed photometry from multiple instruments for a single source.
+
+    Aggregates `Photometry_obs` objects from different instruments/filters
+    into a unified photometry object, managing flux measurements, depths, and
+    SED results across all instrument combinations.
+
+    Parameters
+    ----------
+    instrument_arr : `list`
+        List of instrument/filterset objects.
+    flux_arr : `list`
+        List of flux arrays (one per instrument).
+    flux_errs_arr : `list`
+        List of flux error arrays (one per instrument).
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter used for photometry.
+    min_flux_pc_err : `float`
+        Minimum flux as a percentage of error.
+    loc_depths_arr : `list`
+        List of local depth measurements.
+    SED_results_arr : `list`, optional
+        SED fitting results for each instrument. Default is `[]`.
+    timed : `bool`, optional
+        Log initialization time. Default is `True`.
+    """
     def __init__(
         self,
         instrument_arr,
@@ -781,9 +1030,30 @@ class Multiple_Photometry_obs:
         return self.phot_obs_arr[index]
 
     @classmethod
+    @classmethod
     def from_fits_cat(
         cls, fits_cat, instrument, cat_creator, SED_fit_params_arr, timed=False
-    ):
+    ) -> Self:
+        """Create multiple photometry from FITS catalogue for multiple galaxies.
+
+        Parameters
+        ----------
+        fits_cat : `astropy.table.Table`
+            FITS table containing photometry for multiple galaxies.
+        instrument : `Instrument`
+            Instrument information.
+        cat_creator : `Catalogue_Creator`
+            Catalogue creator for loading photometry.
+        SED_fit_params_arr : `list`
+            List of SED fitting parameter dictionaries.
+        timed : `bool`, optional
+            Whether to show progress bars. Default is False.
+
+        Returns
+        -------
+        `Multiple_Photometry_obs`
+            Collection of photometry objects for all galaxies.
+        """
         flux_arr, flux_errs_arr, gal_band_mask = cat_creator.load_photometry(
             fits_cat, instrument.filt_names, timed=timed
         )

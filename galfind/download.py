@@ -1,3 +1,9 @@
+"""Data download CLI using Click framework.
+
+Provides command-line interface for downloading EPOCHS survey data from
+Dropbox and other remote sources.
+"""
+
 import click
 # from dropbox import Dropbox
 

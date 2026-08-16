@@ -1,3 +1,11 @@
+"""Galaxy sample selection criteria and selectors.
+
+This module defines the abstract and concrete selector classes used to
+apply well-defined selection criteria to galaxies in a catalogue. Selectors
+encapsulate individual selection criteria (e.g., redshift cuts, signal-to-noise
+cuts, masking criteria) that can be applied to individual galaxies or entire
+catalogues.
+"""
 
 from __future__ import annotations
 
@@ -40,6 +48,79 @@ from .Instrument import expected_instr_bands
 from .Morphology import fwhm_nircam
 
 class Selector(ABC):
+    """Abstract base class defining the galaxy-sample-selection interface.
+
+    A `Selector` encapsulates a single, well-defined selection criterion
+    (e.g. a redshift cut, a signal-to-noise cut, a masking criterion) that
+    can be applied either to an individual `Galaxy` or to an entire
+    `Catalogue`. Calling an instance (`__call__`) evaluates the criterion
+    for every galaxy in the target object, annotating each `Galaxy` with a
+    boolean selection flag (keyed by `name`) and any diagnostic selection
+    keyword values in `gal.selection_flags`/`gal.selection_kwargs`, and
+    (when applied to a `Catalogue`) appends the corresponding columns to
+    the output table.
+
+    Subclasses must implement the following abstract members to fully
+    specify the selection contract:
+
+    - `name` (property): unique, human-readable name identifying this
+      selection (used as the column/flag name).
+    - `_selection_name` (property): short internal name for the criterion.
+    - `_include_kwargs` (property): names of keyword arguments required
+      to be present in `kwargs` for this selector.
+    - `_assertions`: sanity checks run at the end of `__init__` to
+      validate the selector's configuration.
+    - `_selection_criteria`: evaluates the criterion for a single galaxy,
+      returning whether it passes and a `dict` of diagnostic keyword
+      values.
+    - `_check_phot_exists`, `_check_SED_fit_exists`,
+      `_check_morph_fit_exists`: verify that the photometry, SED-fitting,
+      and morphology-fitting data required to evaluate the criterion are
+      loaded for a given galaxy.
+
+    Subclasses may additionally override `_failure_criteria` (an early
+    "automatic fail" check, e.g. for objects with no possibility of
+    passing regardless of `_selection_criteria`) which defaults to
+    always returning `False`.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity` or `None`
+        Aperture diameter used to extract the photometry this selector
+        acts on, if applicable.
+    SED_fitter : `SED_code` or `None`
+        SED-fitting code/run whose results this selector acts on, if
+        applicable.
+    morph_fitter : `Type`[`Morphology_Fitter`] or `None`
+        Morphology-fitting code/run whose results this selector acts on,
+        if applicable.
+    fit_filterset : `Multiple_Filter`, optional
+        Filter set over which the relevant fit (SED or morphology) was
+        performed. Default is `None`.
+    **kwargs
+        Additional selector-specific keyword arguments; must include all
+        names listed in `_include_kwargs`.
+
+    Attributes
+    ----------
+    aper_diam : `astropy.units.Quantity` or `None`
+        Aperture diameter as given at construction.
+    SED_fitter : `SED_code` or `None`
+        SED-fitting code/run as given at construction.
+    morph_fitter : `Type`[`Morphology_Fitter`] or `None`
+        Morphology-fitting code/run as given at construction.
+    fit_filterset : `Multiple_Filter` or `None`
+        Filter set as given at construction.
+    kwargs : `dict`
+        Selector-specific keyword arguments as given at construction.
+
+    Raises
+    ------
+    AssertionError
+        If `kwargs` is missing any of the keys required by
+        `_include_kwargs`, if `fit_filterset` is not a `Multiple_Filter`
+        instance, or if `_assertions` fails.
+    """
 
     def __init__(
         self: Self,
@@ -81,6 +162,7 @@ class Selector(ABC):
     @property
     @abstractmethod
     def name(self: Self) -> str:
+        """`str`: Unique name of this selection, used as the flag/column name."""
         pass
 
     @property
@@ -95,6 +177,17 @@ class Selector(ABC):
 
     @property
     def select_kwarg_names_dtypes(self: Self) -> Tuple[List[str], List[Type]]:
+        """`tuple` of `list`: Names and dtypes of diagnostic selection kwargs.
+
+        Returns
+        -------
+        `tuple` of (`list` of `str`, `list` of `type`)
+            The names of the diagnostic keyword values stored in
+            `gal.selection_kwargs[self.name]` and their corresponding
+            output dtypes, used when appending catalogue columns. The
+            base implementation returns two empty lists (no diagnostic
+            kwargs).
+        """
         return [], []
 
     @abstractmethod
@@ -154,6 +247,36 @@ class Selector(ABC):
         *args,
         **kwargs,
     ) -> Optional[Union[Galaxy, Type[Catalogue_Base]]]:
+        """Apply this selection criterion to a galaxy or catalogue.
+
+        Dispatches to `_call_gal` for a single `Galaxy` or `_call_cat`
+        for a `Catalogue`, annotating the target object's selection
+        flags and diagnostic kwargs with the result of this criterion.
+
+        Parameters
+        ----------
+        object : `Galaxy` or `Catalogue_Base`
+            The galaxy or catalogue to select on.
+        return_copy : `bool`, optional
+            If `True`, operate on (and return) a deep copy of `object`
+            rather than modifying it in place. Default is `True`.
+        *args, **kwargs
+            Additional arguments forwarded to `_selection_criteria` and
+            `_failure_criteria`.
+
+        Returns
+        -------
+        `Galaxy`, `Catalogue_Base`, or `None`
+            The (possibly copied) annotated object, or the catalogue
+            cropped to the selection if `return_copy` is `True`. Returns
+            `None` if `return_copy` is `False`.
+
+        Raises
+        ------
+        ValueError
+            If `object` is neither a `Galaxy` nor a `Catalogue_Base`
+            subclass instance.
+        """
         if isinstance(object, Galaxy):
             obj = self._call_gal(object, return_copy, *args, **kwargs)
         elif isinstance(object, tuple(Catalogue_Base.__subclasses__())):
@@ -264,6 +387,29 @@ class Selector(ABC):
         kwarg_colname: str,
         max_len: int = 68,
     ) -> str:
+        """Shorten a selection kwarg column name to fit FITS limits.
+
+        Strips JWST/HST filter prefixes/suffixes (e.g. `F444W` -> `444`)
+        from the column name if it exceeds `max_len` characters, since
+        FITS binary table column names have a fixed length limit.
+
+        Parameters
+        ----------
+        kwarg_colname : `str`
+            The full, unshortened column name.
+        max_len : `int`, optional
+            Maximum permitted column name length. Default is `68`.
+
+        Returns
+        -------
+        `str`
+            The (possibly shortened) column name.
+
+        Raises
+        ------
+        AssertionError
+            If the shortened name still exceeds `max_len` characters.
+        """
         import re
         if len(kwarg_colname) > max_len:
             galfind_logger.debug(
@@ -283,6 +429,20 @@ class Selector(ABC):
         
 
 class Data_Selector(Selector, ABC):
+    """Abstract mixin for selectors acting on `Data`/catalogue-level metadata.
+
+    Used for criteria that do not require per-band photometry, SED
+    fitting, or morphology fitting to be loaded (e.g. ID cuts, region
+    masks, unmasked-band counts). `_check_phot_exists`,
+    `_check_SED_fit_exists`, and `_check_morph_fit_exists` all trivially
+    return `True`, so `_selection_criteria` is always evaluated.
+
+    Parameters
+    ----------
+    **kwargs
+        Selector-specific keyword arguments; must include all names
+        listed in `_include_kwargs`.
+    """
 
     def __init__(self: Self, **kwargs) -> Self:
         super().__init__(
@@ -294,12 +454,14 @@ class Data_Selector(Selector, ABC):
 
     @property
     def requires_phot(self: Self) -> bool:
+        """`bool`: Whether this selector requires photometry to be loaded (always `True`)."""
         return True
 
     @property
     def name(self: Self) -> str:
+        """`str`: Unique name of this selection, equal to `_selection_name`."""
         return self._selection_name
-    
+
     def _check_phot_exists(
         self: Self,
         *args,
@@ -328,10 +490,49 @@ class Data_Selector(Selector, ABC):
         *args,
         **kwargs
     ) -> Optional[Union[Galaxy, Catalogue]]:
+        """Apply this data-level selection criterion.
+
+        Parameters
+        ----------
+        object : `Galaxy` or `Catalogue`
+            The galaxy or catalogue to select on.
+        return_copy : `bool`, optional
+            If `True`, operate on and return a deep copy. Default is `True`.
+        *args, **kwargs
+            Forwarded to `Selector.__call__`.
+
+        Returns
+        -------
+        `Galaxy`, `Catalogue`, or `None`
+            The annotated (and possibly copied/cropped) object.
+        """
         return Selector.__call__(self, object, return_copy, *args, **kwargs)
 
 
 class Photometry_Selector(Selector, ABC):
+    """Abstract mixin for selectors acting on aperture photometry.
+
+    Used for criteria evaluated directly from the aperture photometry
+    of a galaxy (e.g. band magnitude/SNR cuts, colour cuts) at a given
+    aperture diameter. Requires photometry to exist at `aper_diam` but
+    not SED-fitting or morphology-fitting results.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter (an angular size, e.g. in arcsec) at which the
+        photometry used by this selector was extracted. Must be
+        positive.
+    **kwargs
+        Selector-specific keyword arguments; must include all names
+        listed in `_include_kwargs`.
+
+    Raises
+    ------
+    AssertionError
+        If `aper_diam` is not an angular `astropy.units.Quantity` or is
+        not positive.
+    """
 
     def __init__(self: Self, aper_diam: u.Quantity, **kwargs) -> Self:
         assert isinstance(aper_diam, u.Quantity)
@@ -341,6 +542,7 @@ class Photometry_Selector(Selector, ABC):
 
     @property
     def name(self: Self) -> str:
+        """`str`: Unique name of this selection, including the aperture diameter."""
         return self._selection_name + \
             f"_{self.aper_diam.to(u.arcsec).value:.2f}as"
 
@@ -377,15 +579,54 @@ class Photometry_Selector(Selector, ABC):
         *args,
         **kwargs
     ) -> Optional[Union[Galaxy, Catalogue]]:
+        """Apply this photometry-based selection criterion.
+
+        Parameters
+        ----------
+        object : `Galaxy` or `Catalogue`
+            The galaxy or catalogue to select on.
+        return_copy : `bool`, optional
+            If `True`, operate on and return a deep copy. Default is `True`.
+
+        Returns
+        -------
+        `Galaxy`, `Catalogue`, or `None`
+            The annotated (and possibly copied/cropped) object.
+        """
         return Selector.__call__(self, object, return_copy)
-    
+
 
 class SED_fit_Selector(Selector, ABC):
+    """Abstract mixin for selectors acting on SED-fitting results.
+
+    Used for criteria evaluated from the results of a given SED-fitting
+    code/run (e.g. redshift limits, chi-squared cuts, rest-frame
+    property cuts) at a given aperture diameter. Requires photometry and
+    SED-fitting results for `SED_fitter` to exist, but not morphology
+    fitting.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter at which the photometry underlying the SED
+        fit was extracted. Must be positive.
+    SED_fitter : `SED_code`
+        The SED-fitting code/run whose results this selector acts on.
+    **kwargs
+        Selector-specific keyword arguments; must include all names
+        listed in `_include_kwargs`.
+
+    Raises
+    ------
+    AssertionError
+        If `aper_diam` is not a positive angular `astropy.units.Quantity`,
+        or `SED_fitter` is not an `SED_code` instance.
+    """
 
     def __init__(
-        self: Self, 
-        aper_diam: u.Quantity, 
-        SED_fitter: SED_code, 
+        self: Self,
+        aper_diam: u.Quantity,
+        SED_fitter: SED_code,
         **kwargs
     ) -> Self:
         assert isinstance(aper_diam, u.Quantity)
@@ -399,10 +640,12 @@ class SED_fit_Selector(Selector, ABC):
 
     @property
     def requires_SED_fit(self: Self) -> bool:
+        """`bool`: Whether this selector requires SED-fitting results (`True`)."""
         return True
 
     @property
     def name(self: Self) -> str:
+        """`str`: Unique name of this selection, including SED fitter label and aperture diameter."""
         return f"{self._selection_name}_{self.SED_fitter.label.replace('_zfree', '')}" + \
             f"_{self.aper_diam.to(u.arcsec).value:.2f}as"
 
@@ -461,11 +704,52 @@ class SED_fit_Selector(Selector, ABC):
         *args,
         **kwargs,
     ) -> Optional[Union[Galaxy, Catalogue]]:
+        """Apply this SED-fit-based selection criterion.
+
+        Asserts that SED-fitting results for `self.SED_fitter` are
+        loaded (running the fit on the catalogue first if necessary)
+        before evaluating the criterion.
+
+        Parameters
+        ----------
+        object : `Galaxy` or `Catalogue`
+            The galaxy or catalogue to select on.
+        return_copy : `bool`, optional
+            If `True`, operate on and return a deep copy. Default is `True`.
+        *args, **kwargs
+            Forwarded to `Selector.__call__`.
+
+        Returns
+        -------
+        `Galaxy`, `Catalogue`, or `None`
+            The annotated (and possibly copied/cropped) object.
+        """
         self._assert_SED_fitter(object)
         return Selector.__call__(self, object, return_copy, *args, **kwargs)
-    
+
 
 class Morphology_Selector(Selector, ABC):
+    """Abstract mixin for selectors acting on morphology-fitting results.
+
+    Used for criteria evaluated from the results of a given
+    morphology-fitting code/run (e.g. effective radius cuts). Requires
+    morphology-fitting results for `morph_fitter` to exist for the
+    relevant cutout, but not photometry or SED fitting.
+
+    Parameters
+    ----------
+    morph_fitter : `str` or `Morphology_Fitter`
+        The morphology-fitting code/run whose results this selector
+        acts on.
+    **kwargs
+        Selector-specific keyword arguments; must include all names
+        listed in `_include_kwargs`.
+
+    Raises
+    ------
+    AssertionError
+        If `morph_fitter` is not a `Morphology_Fitter` subclass instance.
+    """
 
     def __init__(
         self: Self,
@@ -478,10 +762,12 @@ class Morphology_Selector(Selector, ABC):
 
     @property
     def requires_SED_fit(self: Self) -> bool:
+        """`bool`: Whether this selector requires SED-fitting results (always `False`)."""
         return False
 
     @property
     def name(self: Self) -> str:
+        """`str`: Unique name of this selection, including the morphology fitter name."""
         morph_name = f"{self._cutout_str}_{self.morph_fitter.name}"
         return f"{self._selection_name}_{self.morph_fitter.name}"
 
@@ -540,18 +826,54 @@ class Morphology_Selector(Selector, ABC):
         object: Union[Galaxy, Catalogue],
         return_copy: bool = True,
     ) -> Optional[Union[Galaxy, Catalogue]]:
+        """Apply this morphology-based selection criterion.
+
+        Asserts that morphology-fitting results for `self.morph_fitter`
+        are loaded before evaluating the criterion.
+
+        Parameters
+        ----------
+        object : `Galaxy` or `Catalogue`
+            The galaxy or catalogue to select on.
+        return_copy : `bool`, optional
+            If `True`, operate on and return a deep copy. Default is `True`.
+
+        Returns
+        -------
+        `Galaxy`, `Catalogue`, or `None`
+            The annotated (and possibly copied/cropped) object.
+
+        Raises
+        ------
+        AssertionError
+            If morphology-fitting results are not loaded for `object`
+            (or for any galaxy in it, if a catalogue).
+        """
         self._assert_morph_fitter(object)
         return Selector.__call__(self, object, return_copy)
 
 
 class Redshift_Selector(SED_fit_Selector, ABC):
+    """Abstract mixin for selectors acting on best-fit/rest-frame redshift quantities.
+
+    Specializes `SED_fit_Selector` for criteria that do not themselves
+    require additional SED-fit result loading beyond what
+    `SED_fit_Selector` already checks (e.g. redshift limits,
+    Lyman-break/Lyman-limit non-detection criteria).
+    """
 
     @property
     def requires_SED_fit(self: Self) -> bool:
+        """`bool`: Whether this selector requires SED-fitting results (always `False`)."""
         return False
 
 
 class Mask_Selector(Data_Selector, ABC):
+    """Abstract mixin for selectors that apply a spatial/data mask.
+
+    Subclasses must implement `load_mask`, which loads or constructs the
+    boolean sky mask for a given `Data` object.
+    """
 
     @abstractmethod
     def load_mask(
@@ -560,16 +882,73 @@ class Mask_Selector(Data_Selector, ABC):
         invert: bool = True,
         **kwargs: Dict[str, Any],
     ) -> u.Quantity:
+        """Load or construct the mask associated with this selector.
+
+        Parameters
+        ----------
+        data : `Data`
+            The dataset to load/construct the mask for.
+        invert : `bool`, optional
+            If `True`, invert the mask before returning it. Default is
+            `True`.
+        **kwargs
+            Additional implementation-specific keyword arguments.
+
+        Returns
+        -------
+        `astropy.units.Quantity` or array-like
+            The (optionally inverted) mask.
+        """
         pass
-    
+
     def extract_zbins(
         self: Self,
         data: Data,
     ) -> Optional[List[float]]:
+        """Extract redshift bin edges associated with this mask, if any.
+
+        Parameters
+        ----------
+        data : `Data`
+            The dataset to extract redshift bins for.
+
+        Returns
+        -------
+        `list` of `float` or `None`
+            The redshift bin edges, or `None` if this selector's mask is
+            not redshift-dependent. The base implementation always
+            returns `None`.
+        """
         return None
 
 
 class Multiple_Selector(ABC):
+    """Abstract mixin combining multiple `Selector` instances into one.
+
+    Applies each selector in `selectors` in turn and requires all of
+    them to pass (`_selection_criteria` is a logical AND over the
+    sub-selectors) for a galaxy to be selected; a galaxy fails early
+    (`_failure_criteria`) if any sub-selector's failure criteria is met.
+    Concrete `Multiple_*_Selector` subclasses combine this mixin with a
+    specific `Selector` mixin (`Data_Selector`, `Photometry_Selector`,
+    `SED_fit_Selector`, `Mask_Selector`) to also satisfy that mixin's
+    interface.
+
+    Parameters
+    ----------
+    selectors : `list` of `Selector`
+        The individual selectors to combine.
+    selection_name : `str`, optional
+        Name to use for the combined selection. If not given, defaults
+        to the `_selection_name` of each sub-selector joined by `'+'`.
+
+    Attributes
+    ----------
+    selectors : `numpy.ndarray`
+        Flattened array of the combined `Selector` instances.
+    selection_name : `str`
+        Name of the combined selection, if explicitly given.
+    """
 
     def __init__(
         self: Self,
@@ -579,7 +958,7 @@ class Multiple_Selector(ABC):
         self.selectors = np.array(selectors, dtype = "object").flatten()
         if selection_name is not None:
             self.selection_name = selection_name
-    
+
     def __len__(self):
         return len(self.selectors)
 
@@ -645,7 +1024,23 @@ class Multiple_Selector(ABC):
 
 
 class Multiple_Data_Selector(Multiple_Selector, Data_Selector, ABC):
-    
+    """Abstract combination of multiple `Data_Selector` criteria.
+
+    Applies each sub-selector's data-level cut in turn, then requires
+    all to pass. Each sub-selector's `kwargs["filt_name"]` (if present)
+    is checked against the target filterset via `crop_to_filterset`.
+
+    Parameters
+    ----------
+    selectors : `list` of `Selector`
+        The individual `Data_Selector` instances to combine.
+    selection_name : `str`, optional
+        Name to use for the combined selection. Default is `None`.
+    fit_filterset : `Multiple_Filter`, optional
+        If given, immediately crop `selectors` to only those whose
+        `filt_name` kwarg is in this filterset. Default is `None`.
+    """
+
     def __init__(
         self: Self,
         selectors: List[Type[Selector]],
@@ -664,6 +1059,22 @@ class Multiple_Data_Selector(Multiple_Selector, Data_Selector, ABC):
         *args,
         **kwargs
     ) -> Optional[Union[Galaxy, Type[Catalogue_Base]]]:
+        """Apply each sub-selector in turn, then the combined criterion.
+
+        Parameters
+        ----------
+        object : `Galaxy` or `Catalogue`
+            The galaxy or catalogue to select on.
+        return_copy : `bool`, optional
+            If `True`, operate on and return a deep copy. Default is `True`.
+        *args, **kwargs
+            Forwarded to each sub-selector and to `Data_Selector.__call__`.
+
+        Returns
+        -------
+        `Galaxy`, `Catalogue`, or `None`
+            The annotated (and possibly copied/cropped) object.
+        """
         # run selection individually on each selector
         if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
             self.crop_to_filterset(object.filterset)
@@ -671,14 +1082,52 @@ class Multiple_Data_Selector(Multiple_Selector, Data_Selector, ABC):
         return Data_Selector.__call__(self, object, return_copy = return_copy)
 
     def crop_to_filterset(self: Self, filterset: Multiple_Filter) -> None:
+        """Restrict the combined sub-selectors to those in a filterset.
+
+        Parameters
+        ----------
+        filterset : `Multiple_Filter`
+            The filterset to crop against. Sub-selectors whose
+            `kwargs["filt_name"]` is not among `filterset.filt_names`
+            are dropped.
+
+        Returns
+        -------
+        `None`
+            `self.selectors` is updated in place.
+        """
         # crop each selector to the filterset
         self.selectors = [
-            selector for selector in self.selectors 
+            selector for selector in self.selectors
             if selector.kwargs["filt_name"] in filterset.filt_names
         ]
-        
+
 
 class Multiple_Photometry_Selector(Multiple_Selector, Photometry_Selector, ABC):
+    """Abstract combination of multiple `Photometry_Selector` criteria.
+
+    Applies each sub-selector's photometry-based cut in turn (all at a
+    common aperture diameter), then requires all to pass.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Common aperture diameter shared by this selector and all
+        sub-selectors.
+    selectors : `list` of `Selector`
+        The individual `Photometry_Selector` instances to combine.
+    selection_name : `str`, optional
+        Name to use for the combined selection. Default is `None`.
+    **kwargs
+        Additional keyword arguments forwarded to `Multiple_Selector`
+        and `Photometry_Selector`.
+
+    Raises
+    ------
+    AssertionError
+        If any sub-selector has an `aper_diam` other than `None` or
+        matching `aper_diam`.
+    """
 
     def __init__(
         self: Self,
@@ -698,12 +1147,53 @@ class Multiple_Photometry_Selector(Multiple_Selector, Photometry_Selector, ABC):
         *args,
         **kwargs,
     ) -> Optional[Union[Galaxy, Catalogue]]:
+        """Apply each sub-selector in turn, then the combined criterion.
+
+        Parameters
+        ----------
+        object : `Galaxy` or `Catalogue`
+            The galaxy or catalogue to select on.
+        return_copy : `bool`, optional
+            If `True`, operate on and return a deep copy. Default is `True`.
+        *args, **kwargs
+            Forwarded to each sub-selector and to
+            `Photometry_Selector.__call__`.
+
+        Returns
+        -------
+        `Galaxy`, `Catalogue`, or `None`
+            The annotated (and possibly copied/cropped) object.
+        """
         # run selection individually on each selector
         [selector.__call__(object, return_copy = False, *args, **kwargs) for selector in self.selectors]
         return Photometry_Selector.__call__(self, object, return_copy = return_copy, *args, **kwargs)
 
 
 class Multiple_SED_fit_Selector(Multiple_Selector, SED_fit_Selector, ABC):
+    """Abstract combination of multiple `SED_fit_Selector` criteria.
+
+    Applies each sub-selector's SED-fit-based cut in turn (all sharing a
+    common aperture diameter and SED fitter), then requires all to pass.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Common aperture diameter shared by this selector and all
+        sub-selectors.
+    SED_fitter : `SED_code`
+        Common SED-fitting code/run shared by this selector and all
+        sub-selectors.
+    selectors : `list` of `Selector`
+        The individual `SED_fit_Selector` instances to combine.
+    selection_name : `str`, optional
+        Name to use for the combined selection. Default is `None`.
+
+    Raises
+    ------
+    AssertionError
+        If any sub-selector has an `aper_diam` or `SED_fitter` that is
+        not `None` and does not match `aper_diam`/`SED_fitter`.
+    """
 
     def __init__(
         self: Self,
@@ -724,6 +1214,23 @@ class Multiple_SED_fit_Selector(Multiple_Selector, SED_fit_Selector, ABC):
         *args,
         **kwargs
     ) -> Optional[Union[Galaxy, Catalogue]]:
+        """Apply each sub-selector in turn, then the combined criterion.
+
+        Parameters
+        ----------
+        object : `Galaxy` or `Catalogue`
+            The galaxy or catalogue to select on.
+        return_copy : `bool`, optional
+            If `True`, operate on and return a deep copy. Default is `True`.
+        *args, **kwargs
+            Forwarded to each sub-selector and to
+            `SED_fit_Selector.__call__`.
+
+        Returns
+        -------
+        `Galaxy`, `Catalogue`, or `None`
+            The annotated (and possibly copied/cropped) object.
+        """
         # run selection individually on each selector
         [
             selector(object, return_copy = False, *args, **kwargs)
@@ -739,6 +1246,27 @@ class Multiple_SED_fit_Selector(Multiple_Selector, SED_fit_Selector, ABC):
 
 
 class Multiple_Mask_Selector(Multiple_Selector, Mask_Selector, ABC):
+    """Abstract combination of multiple `Mask_Selector` criteria.
+
+    Applies each sub-selector's mask-based cut in turn, then requires
+    all to pass; the combined mask (`load_mask`) is the logical AND of
+    each sub-selector's mask.
+
+    Parameters
+    ----------
+    selectors : `list` of `Mask_Selector`
+        The individual `Mask_Selector` instances to combine.
+    selection_name : `str`, optional
+        Name to use for the combined selection. Default is `None`.
+    fit_filterset : `Multiple_Filter`, optional
+        If given, immediately crop `selectors` to only those relevant
+        to this filterset. Default is `None`.
+
+    Raises
+    ------
+    AssertionError
+        If any element of `selectors` is not a `Mask_Selector` instance.
+    """
 
     def __init__(
         self: Self,
@@ -760,6 +1288,22 @@ class Multiple_Mask_Selector(Multiple_Selector, Mask_Selector, ABC):
         *args,
         **kwargs
     ) -> Optional[Union[Galaxy, Type[Catalogue_Base]]]:
+        """Apply each sub-selector in turn, then the combined criterion.
+
+        Parameters
+        ----------
+        object : `Galaxy` or `Catalogue`
+            The galaxy or catalogue to select on.
+        return_copy : `bool`, optional
+            If `True`, operate on and return a deep copy. Default is `True`.
+        *args, **kwargs
+            Forwarded to each sub-selector and to `Mask_Selector.__call__`.
+
+        Returns
+        -------
+        `Galaxy`, `Catalogue`, or `None`
+            The annotated (and possibly copied/cropped) object.
+        """
         # NOT SURE IF THIS IS REQUIRED?
         # run selection individually on each selector
         if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
@@ -769,6 +1313,20 @@ class Multiple_Mask_Selector(Multiple_Selector, Mask_Selector, ABC):
 
     # NOT SURE IF THIS IS REQUIRED?
     def crop_to_filterset(self: Self, filterset: Multiple_Filter) -> None:
+        """Restrict the combined sub-selectors to those relevant to a filterset.
+
+        Parameters
+        ----------
+        filterset : `Multiple_Filter`
+            The filterset to crop against. Sub-selectors with a
+            `filt_name` kwarg not in `filterset.filt_names` are
+            dropped; sub-selectors without a `filt_name` kwarg are kept.
+
+        Returns
+        -------
+        `None`
+            `self.selectors` is updated in place.
+        """
         # crop each selector to the filterset
         selectors_arr = []
         for selector in self.selectors:
@@ -781,13 +1339,32 @@ class Multiple_Mask_Selector(Multiple_Selector, Mask_Selector, ABC):
             if append:
                 selectors_arr.append(selector)
         self.selectors = selectors_arr
-    
+
     def load_mask(
         self: Self,
         data: Data,
         invert: bool = True,
         **kwargs: Dict[str, Any],
     ) -> u.Quantity:
+        """Load the combined mask from all sub-selectors.
+
+        Parameters
+        ----------
+        data : `Data`
+            The dataset to load/construct the mask for.
+        invert : `bool`, optional
+            If `True`, invert the combined mask before returning it.
+            Default is `True`.
+        **kwargs
+            Additional keyword arguments forwarded to each
+            sub-selector's `load_mask`.
+
+        Returns
+        -------
+        `astropy.units.Quantity` or array-like
+            The logical AND of each sub-selector's (non-inverted) mask,
+            optionally inverted.
+        """
         # load mask from each selector
         masks = [selector.load_mask(data, False, **kwargs) for selector in self.selectors]
         # combine masks
@@ -798,17 +1375,49 @@ class Multiple_Mask_Selector(Multiple_Selector, Mask_Selector, ABC):
             f"Loaded {repr(self)} mask from {data.survey}!"
         )
         return combined_mask
-    
+
     def extract_zbins(
         self: Self,
         data: Data,
     ) -> Optional[List[float]]:
+        """Extract combined redshift bin edges from all sub-selectors.
+
+        Parameters
+        ----------
+        data : `Data`
+            The dataset to extract redshift bins for.
+
+        Returns
+        -------
+        `list` of `list` of `float`
+            Consecutive `[z_low, z_high]` pairs built from the sorted,
+            unique union of each sub-selector's redshift bin edges.
+        """
         zbins_arr = [selector.extract_zbins(data) for selector in self]
         zlims = np.unique(np.array([zbins for zbins in zbins_arr if zbins is not None]).flatten())
         return [[a, b] for a, b in zip(zlims, zlims[1:])]
 
 
 class ID_Selector(Data_Selector):
+    """Select individual galaxies by ID.
+
+    Selects only the galaxies whose `Galaxy.ID` is in the given `IDs`
+    list, optionally attaching arbitrary per-ID diagnostic keyword
+    values (e.g. literature classifications) to the output table.
+
+    Parameters
+    ----------
+    IDs : `int` or `list` of `int`
+        The galaxy ID(s) to select. A single `int` is wrapped in a
+        list.
+    name : `str`, optional
+        Name to use for this selection. If `None`, defaults to
+        ``f"ID_{IDs}"``. Default is `None`.
+    **select_kwargs : `dict`
+        Additional per-ID diagnostic keyword arguments; each value
+        must be a sequence the same length as `IDs`, giving the value
+        to store for the corresponding ID.
+    """
 
     def __init__(
         self: Self,
@@ -834,6 +1443,14 @@ class ID_Selector(Data_Selector):
 
     @property
     def select_kwarg_names_dtypes(self: Self) -> Tuple[List[str], List[Type]]:
+        """`tuple` of `list`: Names and `str` dtypes of the `select_kwargs`.
+
+        Returns
+        -------
+        `tuple` of (`list` of `str`, `list` of `type`)
+            The keys of `self.kwargs["select_kwargs"]` and a `str`
+            dtype for each.
+        """
         return [key for key in self.kwargs["select_kwargs"].keys()], [str] * len(self.kwargs["select_kwargs"])
 
     def _assertions(self: Self) -> bool:
@@ -878,6 +1495,23 @@ class ID_Selector(Data_Selector):
 
 
 class Region_Selector(Data_Selector, ABC):
+    """Abstract mixin for selectors defined by a spatial region mask.
+
+    Builds (via `make_mask`, implemented by subclasses), caches to
+    disk, and applies a boolean region mask as a selection criterion.
+    Selected galaxies are tagged with `name`; unselected galaxies are
+    tagged with `fail_name` in `Galaxy.region`/`Catalogue.regions`.
+
+    Parameters
+    ----------
+    fail_name : `str`, optional
+        Name to use for galaxies failing this region selection. If
+        `None`, defaults to ``f"not_{self._selection_name}"``. Default
+        is `None`.
+    **kwargs
+        Additional keyword arguments forwarded to
+        `Data_Selector.__init__`.
+    """
 
     def __init__(
         self: Self,
@@ -893,6 +1527,19 @@ class Region_Selector(Data_Selector, ABC):
         self: Self,
         cat: Catalogue,
     ) -> u.Quantity:
+        """Construct the boolean region mask for a catalogue's data.
+
+        Parameters
+        ----------
+        cat : `Catalogue`
+            The catalogue (and associated `Data`) to construct the
+            mask for.
+
+        Returns
+        -------
+        `astropy.units.Quantity` or array-like
+            Boolean mask array, `True` where selected.
+        """
         pass
 
     def load_mask(
@@ -901,6 +1548,25 @@ class Region_Selector(Data_Selector, ABC):
         invert: bool = True,
         **kwargs: Dict[str, Any],
     ) -> u.Quantity:
+        """Load this region's previously-saved mask from disk.
+
+        Parameters
+        ----------
+        data : `Data`
+            The dataset whose region mask FITS file (at
+            `get_mask_path`) should be loaded.
+        invert : `bool`, optional
+            If `True`, invert the mask before returning it. Default is
+            `True`.
+        **kwargs
+            Unused; present for interface compatibility with other
+            `Mask_Selector`-like `load_mask` implementations.
+
+        Returns
+        -------
+        `astropy.units.Quantity` or array-like
+            The (optionally inverted) boolean region mask.
+        """
         mask = fits.open(
             self.get_mask_path(data),
             mode = "readonly",
@@ -915,10 +1581,24 @@ class Region_Selector(Data_Selector, ABC):
 
     @property
     def name(self: Self) -> str:
+        """`str`: Unique name of this region selection."""
         return self._selection_name
 
     @property
     def fail_name(self: Self) -> str:
+        """`str`: Name used to tag galaxies failing this region selection.
+
+        Returns
+        -------
+        `str`
+            The `fail_name` given at construction, if set; otherwise
+            ``f"not_{self._selection_name}"``.
+
+        Raises
+        ------
+        AssertionError
+            If an explicitly set `fail_name` is equal to `name`.
+        """
         if hasattr(self, "_fail_name"):
             assert self._fail_name != self.name, \
                 galfind_logger.critical(
@@ -931,6 +1611,20 @@ class Region_Selector(Data_Selector, ABC):
         self: Self,
         data: Data,
     ) -> str:
+        """Determine the path this region's cached mask FITS file is stored at.
+
+        Parameters
+        ----------
+        data : `Data`
+            The dataset the mask is associated with, used to build the
+            survey/version-specific path.
+
+        Returns
+        -------
+        `str`
+            Path to the region mask FITS file under
+            ``config['Masking']['MASK_DIR']``.
+        """
         return f"{config['Masking']['MASK_DIR']}/{data.survey}/region_masks/{data.version}_{self.name}.fits"
 
     def _call_cat(
@@ -1001,6 +1695,25 @@ class Region_Selector(Data_Selector, ABC):
 
 
 class Ds9_Region_Selector(Region_Selector):
+    """Region selector defined by a DS9 ``.reg`` region file.
+
+    Notes
+    -----
+    This selector is not yet fully implemented: `make_mask` and
+    `_selection_criteria` both currently raise `Exception`.
+
+    Parameters
+    ----------
+    region_path : `str`
+        Path to the DS9 ``.reg`` region file.
+    region_name : `str`, optional
+        Name to use for this region. If `None`, derived from the
+        filename in `region_path` (stripped of its ``.reg`` extension
+        and leading path). Default is `None`.
+    fail_name : `str`, optional
+        Name to use for galaxies failing this region selection.
+        Default is `None`.
+    """
 
     def __init__(
         self: Self,
@@ -1022,6 +1735,14 @@ class Ds9_Region_Selector(Region_Selector):
         return ["region_path", "region_name"]
 
     def make_mask(self: Self):
+        """Not implemented.
+
+        Raises
+        ------
+        Exception
+            Always; mask construction from a DS9 region is not yet
+            implemented.
+        """
         raise Exception()
 
     def _assertions(self: Self) -> bool:
@@ -1065,6 +1786,29 @@ class Ds9_Region_Selector(Region_Selector):
 
 
 class Depth_Region_Selector(Region_Selector):
+    """Region selector splitting a catalogue by per-galaxy depth label.
+
+    Assigns each galaxy to the nearest-neighbour-filled depth region
+    (from `Depths.get_grid_depth_path`) computed for a given
+    band/aperture, then selects galaxies whose depth region label
+    matches `region_label`.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter the depths were computed at.
+    filt_name : `str` or `list` of `str`
+        Name(s) of the band(s) (joined by ``'+'`` if a list) the depth
+        regions are computed for.
+    region_label : `int` or `str`
+        Label of the depth region to select.
+    region_name : `str`, optional
+        Name to use for this region. If `None`, derived from
+        `filt_name` and `region_label`. Default is `None`.
+    fail_name : `str`, optional
+        Name to use for galaxies failing this region selection.
+        Default is `None`.
+    """
 
     def __init__(
         self: Self,
@@ -1101,6 +1845,13 @@ class Depth_Region_Selector(Region_Selector):
 
     @property
     def select_kwarg_names_dtypes(self: Self) -> Tuple[List[str], List[Type]]:
+        """`tuple` of `list`: Names/dtypes of the diagnostic `depth_label` kwarg.
+
+        Returns
+        -------
+        `tuple` of (`list` of `str`, `list` of `type`)
+            `["depth_label"]` and `[str]`.
+        """
         return ["depth_label"], [str]
 
     def make_mask(
@@ -1273,6 +2024,21 @@ class Depth_Region_Selector(Region_Selector):
 
 
 class Redshift_Limit_Selector(Redshift_Selector):
+    """Select galaxies above or below a best-fit redshift limit.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter the SED fitting was performed at.
+    SED_fitter : `SED_code`
+        SED-fitting code/run whose best-fit redshift this selector
+        acts on.
+    z_lim : `float` or `int`
+        Redshift limit to compare against.
+    gtr_or_less : `str`
+        Either ``"gtr"`` to select `z >= z_lim`, or ``"less"`` to
+        select `z <= z_lim`.
+    """
 
     def __init__(
         self: Self,
@@ -1321,6 +2087,30 @@ class Redshift_Limit_Selector(Redshift_Selector):
         
 
 class Rest_Frame_Property_Limit_Selector(Redshift_Selector):
+    """Select galaxies above or below a limit on a rest-frame property.
+
+    Computes `property_calculator` for the target object before
+    applying the selection (see `__call__`).
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter the SED fitting was performed at.
+    SED_fitter : `SED_code`
+        SED-fitting code/run the rest-frame property was derived from.
+    property_calculator : `Type`[`Property_Calculator`]
+        Calculator for the rest-frame property to select on.
+    property_lim : `astropy.units.Quantity`, `astropy.units.Magnitude`, or `astropy.units.Dex`
+        Property value limit to compare against.
+    gtr_or_less : `str`
+        Either ``"gtr"`` to select `property > property_lim`, or
+        ``"less"`` to select `property < property_lim`.
+
+    Attributes
+    ----------
+    property_calculator : `Type`[`Property_Calculator`]
+        The rest-frame property calculator, as given at construction.
+    """
 
     def __init__(
         self: Self,
@@ -1421,6 +2211,22 @@ class Rest_Frame_Property_Limit_Selector(Redshift_Selector):
 
 
 class Redshift_Bin_Selector(Multiple_SED_fit_Selector):
+    """Select galaxies with a best-fit redshift within a bin.
+
+    Combines two `Redshift_Limit_Selector` instances (`z >= z_bin[0]`
+    and `z <= z_bin[1]`) via `Multiple_SED_fit_Selector`.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter the SED fitting was performed at.
+    SED_fitter : `SED_code`
+        SED-fitting code/run whose best-fit redshift this selector
+        acts on.
+    z_bin : `list` of `int` or `float`
+        Two-element `[z_low, z_high]` redshift bin edges, with
+        `z_low < z_high`.
+    """
 
     def __init__(
         self: Self,
@@ -1440,6 +2246,24 @@ class Redshift_Bin_Selector(Multiple_SED_fit_Selector):
 
 
 class Rest_Frame_Property_Bin_Selector(Multiple_SED_fit_Selector):
+    """Select galaxies with a rest-frame property within a bin.
+
+    Combines two `Rest_Frame_Property_Limit_Selector` instances
+    (`property > property_bin[0]` and `property < property_bin[1]`)
+    via `Multiple_SED_fit_Selector`.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter the SED fitting was performed at.
+    SED_fitter : `SED_code`
+        SED-fitting code/run the rest-frame property was derived from.
+    property_calculator : `Rest_Frame_Property_Calculator`
+        Calculator for the rest-frame property to select on.
+    property_bin : `list` of `astropy.units.Quantity`, `astropy.units.Magnitude`, or `astropy.units.Dex`
+        Two-element `[low, high]` property bin edges, with
+        `low < high`.
+    """
 
     def __init__(
         self: Self,
@@ -1476,6 +2300,24 @@ class Rest_Frame_Property_Bin_Selector(Multiple_SED_fit_Selector):
 
 
 class Colour_Selector(Photometry_Selector):
+    """Select galaxies bluer or redder than a colour cut.
+
+    Computes the AB magnitude colour between two bands and compares it
+    to `colour_val`.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter the photometry was extracted at.
+    colour_bands : `str`, `list` of `str`, or `numpy.ndarray` of `str`
+        The two bands (blue, red) making up the colour, either as a
+        ``"band1-band2"`` string or a 2-element list/array.
+    bluer_or_redder : `str`
+        Either ``"bluer"`` to select `colour < colour_val`, or
+        ``"redder"`` to select `colour > colour_val`.
+    colour_val : `float`
+        Colour limit (in AB magnitudes) to compare against.
+    """
 
     def __init__(
         self: Self,
@@ -1505,6 +2347,13 @@ class Colour_Selector(Photometry_Selector):
 
     @property
     def select_kwarg_names_dtypes(self: Self) -> Tuple[List[str], List[Type]]:
+        """`tuple` of `list`: Names/dtypes of the diagnostic `colour` kwarg.
+
+        Returns
+        -------
+        `tuple` of (`list` of `str`, `list` of `type`)
+            `["colour"]` and `[float]`.
+        """
         return ["colour"], [float]
 
     def _assertions(self: Self) -> bool:
@@ -1573,6 +2422,29 @@ class Colour_Selector(Photometry_Selector):
 
 
 class Compactness_Selector(Data_Selector):
+    """Select galaxies by point-source compactness in a single band.
+
+    Compares the ratio of flux within two circular apertures
+    (`compare_radii`) centred on the source, optionally normalising by
+    the same flux ratio measured on the band's PSF, to
+    `compactness_lim`.
+
+    Parameters
+    ----------
+    filt_name : `str`
+        Name of the band the compactness is measured in.
+    compare_radii : `astropy.units.Quantity`
+        Two-element `[small, large]` aperture radii to compare the
+        enclosed flux ratio of.
+    compactness_lim : `int` or `float`
+        Compactness (`large`/`small` flux ratio) limit. A galaxy is
+        selected if its flux ratio is below this limit (or below the
+        limit times the PSF's flux ratio, if `psf_normed`).
+    psf_normed : `bool`, optional
+        If `True`, normalise the galaxy's flux ratio by the band's PSF
+        flux ratio before comparing to `compactness_lim`. Default is
+        `True`.
+    """
 
     def __init__(
         self: Self,
@@ -1605,6 +2477,15 @@ class Compactness_Selector(Data_Selector):
 
     @property
     def select_kwarg_names_dtypes(self: Self) -> Tuple[List[str], List[Type]]:
+        """`tuple` of `list`: Names/dtypes of the diagnostic compactness kwargs.
+
+        Returns
+        -------
+        `tuple` of (`list` of `str`, `list` of `type`)
+            Names `["flux_ratio", "centre", "xoff", "yoff", "2dg_dist"]`
+            (plus `"psf_flux_ratio"` if `psf_normed`) and their
+            corresponding output dtypes.
+        """
         names = ["flux_ratio", "centre", "xoff", "yoff", "2dg_dist"]
         dtypes = [float, str, float, float, float]
         if self.kwargs["psf_normed"]:
@@ -1786,6 +2667,14 @@ class Compactness_Selector(Data_Selector):
 
 
 class Min_Band_Selector(Data_Selector):
+    """Select galaxies detected in at least a minimum number of bands.
+
+    Parameters
+    ----------
+    min_bands : `int`
+        Minimum number of bands (with photometry present, regardless
+        of masking) required for selection.
+    """
 
     def __init__(
         self: Self,
@@ -1804,6 +2693,13 @@ class Min_Band_Selector(Data_Selector):
     
     @property
     def select_kwarg_names_dtypes(self: Self) -> Tuple[List[str], List[Type]]:
+        """`tuple` of `list`: Names/dtypes of the diagnostic `n_bands` kwarg.
+
+        Returns
+        -------
+        `tuple` of (`list` of `str`, `list` of `type`)
+            `["n_bands"]` and `[int]`.
+        """
         return ["n_bands"], [int]
 
     def _assertions(self: Self) -> bool:
@@ -1827,6 +2723,13 @@ class Min_Band_Selector(Data_Selector):
 
 
 class Unmasked_Band_Selector(Mask_Selector):
+    """Select galaxies unmasked in a single band.
+
+    Parameters
+    ----------
+    filt_name : `str`
+        Name of the band to check the mask of.
+    """
 
     def __init__(
         self: Self,
@@ -1896,6 +2799,33 @@ class Unmasked_Band_Selector(Mask_Selector):
         invert: bool = True,
         **kwargs: Dict[str, Any],
     ) -> u.Quantity:
+        """Load this band's mask from a `Data` object.
+
+        Parameters
+        ----------
+        data : `Data`
+            The dataset to load the band mask from. If the band is not
+            present in `data.filterset`, an all-`False` mask matching
+            the shape of the other bands is returned instead (with a
+            warning logged).
+        invert : `bool`, optional
+            If `True`, invert the mask before returning it. Default is
+            `True`.
+        **kwargs
+            Unused; present for interface compatibility.
+
+        Returns
+        -------
+        `astropy.units.Quantity` or array-like
+            The (optionally inverted) boolean band mask.
+
+        Raises
+        ------
+        AssertionError
+            If the data shapes of the bands in `data` do not all
+            match (only checked when `filt_name` is not in
+            `data.filterset`).
+        """
         # load mask from each selector
         if self.kwargs["filt_name"] not in data.filterset.filt_names:
             data_shapes = [band_data.data_shape for band_data in data]
@@ -1921,6 +2851,13 @@ class Unmasked_Band_Selector(Mask_Selector):
 
 
 class Min_Unmasked_Band_Selector(Mask_Selector):
+    """Select galaxies unmasked in at least a minimum number of bands.
+
+    Parameters
+    ----------
+    min_bands : `int`
+        Minimum number of unmasked bands required for selection.
+    """
 
     def __init__(
         self: Self,
@@ -1939,6 +2876,13 @@ class Min_Unmasked_Band_Selector(Mask_Selector):
 
     @property
     def select_kwarg_names_dtypes(self: Self) -> Tuple[List[str], List[Type]]:
+        """`tuple` of `list`: Names/dtypes of the diagnostic `n_unmasked_bands` kwarg.
+
+        Returns
+        -------
+        `tuple` of (`list` of `str`, `list` of `type`)
+            `["n_unmasked_bands"]` and `[int]`.
+        """
         return ["n_unmasked_bands"], [int]
 
     def _assertions(self: Self) -> bool:
@@ -1950,7 +2894,7 @@ class Min_Unmasked_Band_Selector(Mask_Selector):
         except:
             passed = False
         return passed
-        
+
     def _selection_criteria(
         self: Self,
         gal: Galaxy,
@@ -1970,6 +2914,32 @@ class Min_Unmasked_Band_Selector(Mask_Selector):
         invert: bool = True,
         **kwargs: Dict[str, Any],
     ) -> u.Quantity:
+        """Load the combined "at least `min_bands` unmasked" mask.
+
+        Parameters
+        ----------
+        data : `Data`
+            The dataset to construct the mask from; the number of
+            unmasked bands is summed pixel-by-pixel across all bands
+            in `data`.
+        invert : `bool`, optional
+            If `True`, invert the mask before returning it. Default is
+            `True`.
+        **kwargs
+            Unused; present for interface compatibility.
+
+        Returns
+        -------
+        `astropy.units.Quantity` or array-like
+            Boolean mask, `True` where at least `min_bands` bands are
+            unmasked (before any `invert`).
+
+        Raises
+        ------
+        AssertionError
+            If the data shapes of the bands in `data` do not all
+            match.
+        """
         # add masks
         data_shapes = [band_data.data_shape for band_data in data]
         assert all(data_shape == data_shapes[0] for data_shape in data_shapes), \
@@ -1991,6 +2961,18 @@ class Min_Unmasked_Band_Selector(Mask_Selector):
 
 
 class Min_Instrument_Unmasked_Band_Selector(Mask_Selector):
+    """Select galaxies unmasked in a minimum number of bands of one instrument.
+
+    Parameters
+    ----------
+    min_bands : `int`
+        Minimum number of unmasked bands (restricted to `instrument`)
+        required for selection.
+    instrument : `str` or `Type`[`Instrument`]
+        The instrument (e.g. ``"NIRCam"``) to count unmasked bands of.
+        If a `str`, it is converted to the corresponding `Instrument`
+        subclass instance.
+    """
 
     def __init__(
         self: Self,
@@ -2017,6 +2999,13 @@ class Min_Instrument_Unmasked_Band_Selector(Mask_Selector):
 
     @property
     def select_kwarg_names_dtypes(self: Self) -> Tuple[List[str], List[Type]]:
+        """`tuple` of `list`: Names/dtypes of the diagnostic `n_unmasked_bands` kwarg.
+
+        Returns
+        -------
+        `tuple` of (`list` of `str`, `list` of `type`)
+            `["n_unmasked_bands"]` and `[int]`.
+        """
         return ["n_unmasked_bands"], [int]
 
     def _assertions(self: Self) -> bool:
@@ -2060,6 +3049,32 @@ class Min_Instrument_Unmasked_Band_Selector(Mask_Selector):
         invert: bool = True,
         **kwargs: Dict[str, Any],
     ) -> u.Quantity:
+        """Load the combined "at least `min_bands` unmasked" mask for one instrument.
+
+        Parameters
+        ----------
+        data : `Data`
+            The dataset to construct the mask from; the number of
+            unmasked bands is summed pixel-by-pixel across bands in
+            `data` belonging to `instrument`.
+        invert : `bool`, optional
+            If `True`, invert the mask before returning it. Default is
+            `True`.
+        **kwargs
+            Unused; present for interface compatibility.
+
+        Returns
+        -------
+        `astropy.units.Quantity` or array-like
+            Boolean mask, `True` where at least `min_bands` bands of
+            `instrument` are unmasked (before any `invert`).
+
+        Raises
+        ------
+        AssertionError
+            If the data shapes of the bands in `data` do not all
+            match.
+        """
         # add masks
         data_shapes = [band_data.data_shape for band_data in data]
         assert all(data_shape == data_shapes[0] for data_shape in data_shapes), \
@@ -2082,6 +3097,26 @@ class Min_Instrument_Unmasked_Band_Selector(Mask_Selector):
 
 
 class Bluewards_LyLim_Non_Detect_Selector(Redshift_Selector):
+    """Select galaxies non-detected in all bands bluewards of the Lyman limit.
+
+    Requires the first band entirely bluewards of the (redshifted)
+    Lyman limit, and all bands further bluewards, to have
+    `SNR < SNR_lim` or be masked. Galaxies with no bands bluewards of
+    the Lyman limit are not selected.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter the photometry/SED fitting was performed at.
+    SED_fitter : `SED_code`
+        SED-fitting code/run providing the best-fit redshift used to
+        place the Lyman limit.
+    SNR_lim : `float`
+        Signal-to-noise ratio non-detection threshold.
+    fit_filterset : `Multiple_Filter`, optional
+        If given, restrict the bands considered to those in this
+        filterset. Default is `None`.
+    """
 
     def __init__(
         self: Self,
@@ -2107,6 +3142,15 @@ class Bluewards_LyLim_Non_Detect_Selector(Redshift_Selector):
 
     @property
     def select_kwarg_names_dtypes(self: Self) -> Tuple[List[str], List[Type]]:
+        """`tuple` of `list`: Names/dtypes of the diagnostic non-detection kwargs.
+
+        Returns
+        -------
+        `tuple` of (`list` of `str`, `list` of `type`)
+            Names `["1st_filt", "SNR", "mask"]` (the first Lyman-limit
+            non-detect band, comma-separated SNRs, and comma-separated
+            mask flags of the bands checked) and their `str` dtypes.
+        """
         return ["1st_filt", "SNR", "mask"], [str, str, str]
 
     def _assertions(self: Self) -> bool:
@@ -2121,7 +3165,7 @@ class Bluewards_LyLim_Non_Detect_Selector(Redshift_Selector):
         except:
             passed = False
         return passed
-        
+
     def _selection_criteria(
         self: Self,
         gal: Galaxy,
@@ -2200,6 +3244,26 @@ class Bluewards_LyLim_Non_Detect_Selector(Redshift_Selector):
 
 
 class Bluewards_Lya_Non_Detect_Selector(Redshift_Selector):
+    """Select galaxies non-detected in all bands bluewards of Lyman-alpha.
+
+    Requires the first band entirely bluewards of the (redshifted)
+    Lyman-alpha line, and all bands further bluewards, to have
+    `SNR < SNR_lim` or be masked. Galaxies with no bands bluewards of
+    Lyman-alpha are not selected.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter the photometry/SED fitting was performed at.
+    SED_fitter : `SED_code`
+        SED-fitting code/run providing the best-fit redshift used to
+        place the Lyman-alpha line.
+    SNR_lim : `float`
+        Signal-to-noise ratio non-detection threshold.
+    fit_filterset : `Multiple_Filter`, optional
+        If given, restrict the bands considered to those in this
+        filterset. Default is `None`.
+    """
 
     def __init__(
         self: Self,
@@ -2230,6 +3294,15 @@ class Bluewards_Lya_Non_Detect_Selector(Redshift_Selector):
 
     @property
     def select_kwarg_names_dtypes(self: Self) -> Tuple[List[str], List[Type]]:
+        """`tuple` of `list`: Names/dtypes of the diagnostic non-detection kwargs.
+
+        Returns
+        -------
+        `tuple` of (`list` of `str`, `list` of `type`)
+            Names `["1st_filt", "SNR", "mask"]` (the first Lyman-alpha
+            non-detect band, comma-separated SNRs, and comma-separated
+            mask flags of the bands checked) and their `str` dtypes.
+        """
         return ["1st_filt", "SNR", "mask"], [str, str, str]
 
     def _assertions(self: Self) -> bool:
@@ -2244,7 +3317,7 @@ class Bluewards_Lya_Non_Detect_Selector(Redshift_Selector):
         except:
             passed = False
         return passed
-        
+
     def _selection_criteria(
         self: Self,
         gal: Galaxy,
@@ -2322,6 +3395,33 @@ class Bluewards_Lya_Non_Detect_Selector(Redshift_Selector):
 
 
 class Redwards_Lya_Detect_Selector(Redshift_Selector):
+    """Select galaxies detected in bands redwards of Lyman-alpha.
+
+    Requires the first band redwards of the (redshifted) Lyman-alpha
+    line, and all bands further redwards (optionally restricted to
+    wide bands), to have `SNR > SNR_lims` (a single limit applied to
+    all bands, or the n^th such band compared to `SNR_lims[n]`) or be
+    masked. Galaxies with no bands redwards of Lyman-alpha are not
+    selected.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter the photometry/SED fitting was performed at.
+    SED_fitter : `SED_code`
+        SED-fitting code/run providing the best-fit redshift used to
+        place the Lyman-alpha line.
+    SNR_lims : `float`
+        Signal-to-noise ratio detection threshold(s): either a single
+        value applied to every redwards band, or a list/array giving
+        the threshold for the n^th redwards band.
+    widebands_only : `bool`
+        If `True`, only consider wide (``"W"``/``"LP"``) bands
+        redwards of Lyman-alpha.
+    fit_filterset : `Multiple_Filter`, optional
+        If given, restrict the bands considered to those in this
+        filterset. Default is `None`.
+    """
 
     def __init__(
         self: Self,
@@ -2366,6 +3466,16 @@ class Redwards_Lya_Detect_Selector(Redshift_Selector):
 
     @property
     def select_kwarg_names_dtypes(self: Self) -> Tuple[List[str], List[Type]]:
+        """`tuple` of `list`: Names/dtypes of the diagnostic detection kwargs.
+
+        Returns
+        -------
+        `tuple` of (`list` of `str`, `list` of `type`)
+            Names `["1st_filt", "bands", "SNR", "mask"]` (the first
+            redwards-of-Lya band, the comma-separated bands checked,
+            their comma-separated SNRs, and comma-separated mask
+            flags) and their `str` dtypes.
+        """
         return ["1st_filt", "bands", "SNR", "mask"], [str, str, str, str]
 
     def _assertions(self: Self) -> bool:
@@ -2481,6 +3591,29 @@ class Redwards_Lya_Detect_Selector(Redshift_Selector):
 
 
 class Lya_Band_Selector(Redshift_Selector):
+    """Select galaxies by SNR in the band(s) straddling Lyman-alpha.
+
+    Considers the bands between the first band redwards and the first
+    band bluewards of the (redshifted) Lyman-alpha line, and requires
+    either all of them to be detected or all of them to be
+    non-detected at `SNR_lim`, depending on `detect_or_non_detect`.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter the photometry/SED fitting was performed at.
+    SED_fitter : `SED_code`
+        SED-fitting code/run providing the best-fit redshift used to
+        place the Lyman-alpha line.
+    SNR_lim : `int` or `float`
+        Signal-to-noise ratio threshold.
+    detect_or_non_detect : `str`
+        Either ``"detect"`` to require `SNR > SNR_lim` in every band
+        straddling Lyman-alpha, or ``"non_detect"`` to require
+        `SNR < SNR_lim`.
+    widebands_only : `bool`
+        If `True`, only consider wide (``"W"``/``"LP"``) bands.
+    """
 
     def __init__(
         self: Self,
@@ -2513,6 +3646,14 @@ class Lya_Band_Selector(Redshift_Selector):
 
     @property
     def select_kwarg_names_dtypes(self: Self) -> Tuple[List[str], List[Type]]:
+        """`tuple` of `list`: Names/dtypes of the diagnostic detection kwargs.
+
+        Returns
+        -------
+        `tuple` of (`list` of `str`, `list` of `type`)
+            Names `["1st_Lya_detect", "1st_Lya_nondetect",
+            "detect_bands", "SNR"]` and their `str` dtypes.
+        """
         kwarg_names = [
             "1st_Lya_detect",
             "1st_Lya_nondetect",
@@ -2614,6 +3755,28 @@ class Lya_Band_Selector(Redshift_Selector):
 
 
 class Unmasked_Bluewards_Lya_Selector(Redshift_Selector, Mask_Selector):
+    """Select galaxies unmasked in the bands closest to Lyman-alpha (bluewards).
+
+    Requires the last `n_bands` bands bluewards of the (redshifted)
+    Lyman-alpha line (i.e. those closest to the break) to be unmasked.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter the photometry/SED fitting was performed at.
+    SED_fitter : `SED_code`
+        SED-fitting code/run providing the best-fit redshift used to
+        place the Lyman-alpha line.
+    n_bands : `int`, optional
+        Number of bands closest to Lyman-alpha (bluewards side)
+        required to be unmasked. Default is `None`.
+    widebands_only : `bool`, optional
+        If `True`, only consider wide (``"W"``/``"LP"``) bands
+        bluewards of Lyman-alpha. Default is `False`.
+    fit_filterset : `Multiple_Filter`, optional
+        If given, restrict the bands considered to those in this
+        filterset. Default is `None`.
+    """
 
     def __init__(
         self: Self,
@@ -2660,6 +3823,13 @@ class Unmasked_Bluewards_Lya_Selector(Redshift_Selector, Mask_Selector):
     
     @property
     def select_kwarg_names_dtypes(self: Self) -> Tuple[List[str], List[Type]]:
+        """`tuple` of `list`: Names/dtypes of the diagnostic unmasking kwargs.
+
+        Returns
+        -------
+        `tuple` of (`list` of `str`, `list` of `type`)
+            `["1st_filt", "n_unmask"]` and `[str, int]`.
+        """
         return ["1st_filt", "n_unmask"], [str, int]
 
     def _assertions(self: Self) -> bool:
@@ -2675,7 +3845,7 @@ class Unmasked_Bluewards_Lya_Selector(Redshift_Selector, Mask_Selector):
         except:
             passed = False
         return passed
-        
+
     def _failure_criteria(
         self: Self,
         gal: Galaxy,
@@ -2683,7 +3853,7 @@ class Unmasked_Bluewards_Lya_Selector(Redshift_Selector, Mask_Selector):
         **kwargs,
     ) -> bool:
         return False
-        
+
     def _selection_criteria(
         self: Self,
         gal: Galaxy,
@@ -2724,6 +3894,24 @@ class Unmasked_Bluewards_Lya_Selector(Redshift_Selector, Mask_Selector):
         return selected, kwargs_out
     
     def get_non_detect_filt_names(self: Self, filterset: Multiple_Filter, z: float) -> Optional[List[str]]:
+        """Determine the band names bluewards of Lyman-alpha at a given redshift.
+
+        Parameters
+        ----------
+        filterset : `Multiple_Filter`
+            The filterset to search for bands bluewards of the
+            (redshifted) Lyman-alpha line.
+        z : `float`
+            Redshift used to place the Lyman-alpha line.
+
+        Returns
+        -------
+        `tuple` of (`numpy.ndarray` of `str` or `None`, `str` or `None`)
+            The band names bluewards of (and including) the first band
+            bluewards of Lyman-alpha (restricted to widebands if
+            `widebands_only`), and the name of that first band. Both
+            are `None` if there are no bands bluewards of Lyman-alpha.
+        """
         from .Emission_lines import line_diagnostics
         if self.fit_filterset is None:
             ignore_bands = []
@@ -2774,6 +3962,34 @@ class Unmasked_Bluewards_Lya_Selector(Redshift_Selector, Mask_Selector):
         invert: bool = True,
         **kwargs: Dict[str, Any],
     ) -> u.Quantity:
+        """Load the combined mask over bands bluewards of Lyman-alpha.
+
+        Parameters
+        ----------
+        data : `Data`
+            The dataset to construct the mask from.
+        invert : `bool`, optional
+            If `True`, invert the combined mask before returning it.
+            Default is `True`.
+        **kwargs
+            Must include `"z"` (`float`), the redshift used to select
+            the appropriate redshift bin (via `extract_zbins`) and
+            determine the relevant bluewards bands.
+
+        Returns
+        -------
+        `astropy.units.Quantity` or array-like
+            The (optionally inverted) logical AND of the last
+            `n_bands` bluewards-of-Lya band masks.
+
+        Raises
+        ------
+        AssertionError
+            If `"z"` is missing from `kwargs`, is not a `float`, does
+            not fall within exactly one redshift bin from
+            `extract_zbins`, or if the individual band masks do not
+            all have the same shape.
+        """
         #try:
         assert "z" in kwargs.keys(), \
             galfind_logger.critical(
@@ -2829,6 +4045,22 @@ class Unmasked_Bluewards_Lya_Selector(Redshift_Selector, Mask_Selector):
         self: Self,
         data: Data,
     ) -> List[float]:
+        """Determine redshift bins over which the bluewards band set is fixed.
+
+        Parameters
+        ----------
+        data : `Data`
+            The dataset whose filterset determines the redshift bin
+            edges, computed from each band's 50%-transmission upper
+            wavelength relative to Lyman-alpha.
+
+        Returns
+        -------
+        `list` of `list` of `float`
+            Consecutive `[z_low, z_high]` pairs, one fewer than the
+            number of bands, over which the set of bands bluewards of
+            Lyman-alpha does not change.
+        """
         # determine redshift limits at which bands become bluewards of Lya
         from .Emission_lines import line_diagnostics
         if self.fit_filterset is None:
@@ -2844,9 +4076,33 @@ class Unmasked_Bluewards_Lya_Selector(Redshift_Selector, Mask_Selector):
         ]
         zbins = [[a, b] for a, b in zip(zlims, zlims[1:])]
         return zbins
-    
+
 
 class Unmasked_Redwards_Lya_Selector(Redshift_Selector, Mask_Selector):
+    """Select galaxies unmasked in the bands closest to Lyman-alpha (redwards).
+
+    Requires the first `n_bands` bands redwards of the (redshifted)
+    Lyman-alpha line (i.e. those closest to the break), or all/any of
+    them, to be unmasked.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter the photometry/SED fitting was performed at.
+    SED_fitter : `SED_code`
+        SED-fitting code/run providing the best-fit redshift used to
+        place the Lyman-alpha line.
+    n_bands : `int` or `str`
+        Number of bands closest to Lyman-alpha (redwards side)
+        required to be unmasked, or ``"all"``/``"any"`` to require all
+        or any redwards bands to be unmasked.
+    widebands_only : `bool`, optional
+        If `True`, only consider wide (``"W"``/``"LP"``) bands
+        redwards of Lyman-alpha. Default is `False`.
+    fit_filterset : `Multiple_Filter`, optional
+        If given, restrict the bands considered to those in this
+        filterset. Default is `None`.
+    """
 
     def __init__(
         self: Self,
@@ -2881,6 +4137,13 @@ class Unmasked_Redwards_Lya_Selector(Redshift_Selector, Mask_Selector):
 
     @property
     def select_kwarg_names_dtypes(self: Self) -> Tuple[List[str], List[Type]]:
+        """`tuple` of `list`: Names/dtypes of the diagnostic unmasking kwargs.
+
+        Returns
+        -------
+        `tuple` of (`list` of `str`, `list` of `type`)
+            `["1st_filt", "n_unmask"]` and `[str, int]`.
+        """
         return ["1st_filt", "n_unmask"], [str, int]
 
     def _assertions(self: Self) -> bool:
@@ -2959,6 +4222,24 @@ class Unmasked_Redwards_Lya_Selector(Redshift_Selector, Mask_Selector):
         filterset: Multiple_Filter,
         z: float,
     ) -> Optional[List[str]]:
+        """Determine the band names redwards of Lyman-alpha at a given redshift.
+
+        Parameters
+        ----------
+        filterset : `Multiple_Filter`
+            The filterset to search for bands redwards of the
+            (redshifted) Lyman-alpha line.
+        z : `float`
+            Redshift used to place the Lyman-alpha line.
+
+        Returns
+        -------
+        `tuple` of (`numpy.ndarray` of `str` or `None`, `str` or `None`)
+            The band names from the first band redwards of Lyman-alpha
+            onwards (restricted to widebands if `widebands_only`), and
+            the name of that first band. Both are `None` if there are
+            no bands redwards of Lyman-alpha.
+        """
         from .Emission_lines import line_diagnostics
         if self.fit_filterset is None:
             ignore_bands = []
@@ -3004,6 +4285,35 @@ class Unmasked_Redwards_Lya_Selector(Redshift_Selector, Mask_Selector):
         invert: bool = True,
         **kwargs: Dict[str, Any],
     ) -> u.Quantity:
+        """Load the combined mask over bands redwards of Lyman-alpha.
+
+        Parameters
+        ----------
+        data : `Data`
+            The dataset to construct the mask from.
+        invert : `bool`, optional
+            If `True`, invert the combined mask before returning it.
+            Default is `True`.
+        **kwargs
+            Must include `"z"` (`float`), the redshift used to select
+            the appropriate redshift bin (via `extract_zbins`) and
+            determine the relevant redwards bands.
+
+        Returns
+        -------
+        `astropy.units.Quantity` or `None`
+            The (optionally inverted) combined mask over the first
+            `n_bands` redwards-of-Lya bands, or `None` if an error
+            occurs while loading it (also re-raised as an exception).
+
+        Raises
+        ------
+        AssertionError
+            If `"z"` is missing from `kwargs`, is not a `float`, does
+            not fall within exactly one redshift bin from
+            `extract_zbins`, or if the individual band masks do not
+            all have the same shape.
+        """
         try:
             assert "z" in kwargs.keys(), \
                 galfind_logger.critical(
@@ -3059,6 +4369,22 @@ class Unmasked_Redwards_Lya_Selector(Redshift_Selector, Mask_Selector):
         self: Self,
         data: Data,
     ) -> List[float]:
+        """Determine redshift bins over which the redwards band set is fixed.
+
+        Parameters
+        ----------
+        data : `Data`
+            The dataset whose filterset determines the redshift bin
+            edges, computed from each band's 50%-transmission lower
+            wavelength relative to Lyman-alpha.
+
+        Returns
+        -------
+        `list` of `list` of `float`
+            Consecutive `[z_low, z_high]` pairs, one fewer than the
+            number of bands, over which the set of bands redwards of
+            Lyman-alpha does not change.
+        """
         # determine redshift limits at which bands become bluewards of Lya
         from .Emission_lines import line_diagnostics
         if self.fit_filterset is None:
@@ -3077,6 +4403,23 @@ class Unmasked_Redwards_Lya_Selector(Redshift_Selector, Mask_Selector):
 
 
 class Band_Mag_Selector(Photometry_Selector):
+    """Select galaxies by AB magnitude detection/non-detection in one band.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter the photometry was extracted at.
+    band : `str` or `int`
+        The band to select on, either by name or by index into the
+        galaxy's filterset (e.g. `0` for the bluest band, `-1` for the
+        reddest).
+    detect_or_non_detect : `str`
+        Either ``"detect"`` to select `mag < mag_lim`, or
+        ``"non_detect"`` to select `mag > mag_lim`. A masked band never
+        selects, regardless of this setting.
+    mag_lim : `int` or `float`
+        AB magnitude limit to compare against.
+    """
 
     def __init__(
         self: Self,
@@ -3127,6 +4470,13 @@ class Band_Mag_Selector(Photometry_Selector):
 
     @property
     def select_kwarg_names_dtypes(self: Self) -> Tuple[List[str], List[Type]]:
+        """`tuple` of `list`: Names/dtypes of the diagnostic `mag`/`masked` kwargs.
+
+        Returns
+        -------
+        `tuple` of (`list` of `str`, `list` of `type`)
+            `["mag", "masked"]` and `[float, bool]`.
+        """
         return ["mag", "masked"], [float, bool]
 
     def _assertions(self: Self) -> bool:
@@ -3207,6 +4557,23 @@ class Band_Mag_Selector(Photometry_Selector):
 
 
 class Band_SNR_Selector(Photometry_Selector):
+    """Select galaxies by signal-to-noise detection/non-detection in one band.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter the photometry was extracted at.
+    band : `str` or `int`
+        The band to select on, either by name or by index into the
+        galaxy's filterset (e.g. `0` for the bluest band, `-1` for the
+        reddest).
+    detect_or_non_detect : `str`
+        Either ``"detect"`` to select `SNR > SNR_lim`, or
+        ``"non_detect"`` to select `SNR < SNR_lim`. A masked band never
+        selects, regardless of this setting.
+    SNR_lim : `int` or `float`
+        Signal-to-noise ratio limit to compare against.
+    """
 
     def __init__(
         self: Self,
@@ -3331,6 +4698,30 @@ class Band_SNR_Selector(Photometry_Selector):
 
 
 class Stacked_Blue_Lya_Non_Detect_Selector(SED_fit_Selector):
+    """Select galaxies non-detected in the stacked bands bluewards of Lyman-alpha.
+
+    Stacks (or uses singly, if only one band qualifies) all bands
+    bluewards of the (redshifted, capped at `zmax`) Lyman-alpha line
+    and requires the resulting SNR to be below `SNR_lim`.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter the photometry/SED fitting was performed at.
+    SED_fitter : `SED_code`
+        SED-fitting code/run providing the best-fit redshift used to
+        place the Lyman-alpha line.
+    SNR_lim : `int` or `float`
+        Signal-to-noise ratio non-detection threshold for the stacked
+        band(s).
+    dz : `float`, optional
+        Redshift buffer subtracted from the (capped) best-fit redshift
+        when determining which bands are bluewards of Lyman-alpha.
+        Default is `0.0`.
+    zmax : `float`, optional
+        Maximum redshift used in place of the best-fit redshift when
+        it exceeds this value. Default is `15.0`.
+    """
 
     def __init__(
         self: Self,
@@ -3384,6 +4775,13 @@ class Stacked_Blue_Lya_Non_Detect_Selector(SED_fit_Selector):
 
     @property
     def select_kwarg_names_dtypes(self: Self) -> Tuple[List[str], List[Type]]:
+        """`tuple` of `list`: Names/dtypes of the diagnostic stacked-band kwargs.
+
+        Returns
+        -------
+        `tuple` of (`list` of `str`, `list` of `type`)
+            `["bands", "SNR"]` and `[str, float]`.
+        """
         return ["bands", "SNR"], [str, float]
 
     def _assertions(self: Self) -> bool:
@@ -3571,7 +4969,22 @@ class Stacked_Blue_Lya_Non_Detect_Selector(SED_fit_Selector):
 
 
 class Chi_Sq_Lim_Selector(SED_fit_Selector):
- 
+    """Select galaxies with a (reduced) chi-squared below a limit.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter the SED fitting was performed at.
+    SED_fitter : `SED_code`
+        SED-fitting code/run whose chi-squared this selector acts on.
+    chi_sq_lim : `int` or `float`
+        Chi-squared limit to compare against.
+    reduced : `bool`
+        If `True`, compare the reduced chi-squared (chi-squared
+        divided by the number of unmasked bands minus one) to
+        `chi_sq_lim`; otherwise compare the absolute chi-squared.
+    """
+
     def __init__(
         self: Self,
         aper_diam: u.Quantity,
@@ -3598,6 +5011,14 @@ class Chi_Sq_Lim_Selector(SED_fit_Selector):
     
     @property
     def select_kwarg_names_dtypes(self: Self) -> Tuple[List[str], List[Type]]:
+        """`tuple` of `list`: Names/dtypes of the diagnostic chi-squared kwargs.
+
+        Returns
+        -------
+        `tuple` of (`list` of `str`, `list` of `type`)
+            `["chi_sq"]` and `[float]`, plus `["n_bands"]`/`[int]` if
+            `reduced` is `True`.
+        """
         kwarg_names = ["chi_sq"]
         kwarg_dtypes = [float]
         if self.kwargs["reduced"]:
@@ -3642,6 +5063,32 @@ class Chi_Sq_Lim_Selector(SED_fit_Selector):
 
 
 class Chi_Sq_Diff_Selector(SED_fit_Selector):
+    """Select galaxies whose low-redshift solution is a poor fit.
+
+    Compares the chi-squared of the free-redshift SED fit to the
+    chi-squared of the best applicable low-redshift-capped ("lowz")
+    fit (from `lowz_zmax_arr`, restricted to those with
+    `zmax < zfree - dz`) and selects galaxies where the low-z fit is
+    sufficiently worse, has no valid solution, or has no low-z run to
+    compare against.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter the SED fitting was performed at.
+    SED_fitter : `SED_code`
+        SED-fitting code/run whose free-redshift and low-z fits this
+        selector compares.
+    chi_sq_diff : `int` or `float`
+        Minimum chi-squared difference (low-z minus free-z) required
+        for selection.
+    dz : `int` or `float`
+        Minimum redshift offset between the free-redshift solution and
+        an applicable low-z run's `zmax`.
+    lowz_zmax_arr : `list` of `float`
+        Sorted (ascending), candidate `zmax` values of the low-z SED
+        fitting runs to compare against.
+    """
 
     def __init__(
         self: Self,
@@ -3671,6 +5118,14 @@ class Chi_Sq_Diff_Selector(SED_fit_Selector):
     
     @property
     def select_kwarg_names_dtypes(self: Self) -> Tuple[List[str], List[Type]]:
+        """`tuple` of `list`: Names/dtypes of the diagnostic low-z comparison kwargs.
+
+        Returns
+        -------
+        `tuple` of (`list` of `str`, `list` of `type`)
+            `["lowz_label", "z_lowz", "chisq_lowz"]` and
+            `[str, float, float]`.
+        """
         return ["lowz_label", "z_lowz", "chisq_lowz"], [str, float, float]
 
     def _assertions(self: Self) -> bool:
@@ -3801,6 +5256,30 @@ class Chi_Sq_Diff_Selector(SED_fit_Selector):
 
 
 class Chi_Sq_Template_Diff_Selector(SED_fit_Selector):
+    """Select galaxies fit significantly better by one SED run than another.
+
+    Compares the (optionally reduced) chi-squared of `SED_fitter` to
+    that of `secondary_SED_fit_label` (e.g. a stellar/QSO template fit)
+    and selects galaxies where the secondary run's chi-squared exceeds
+    the primary's by more than `chi_sq_diff`, or is invalid.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter the SED fitting was performed at.
+    SED_fitter : `SED_code`
+        Primary SED-fitting code/run.
+    chi_sq_diff : `int` or `float`
+        Minimum chi-squared difference (secondary minus primary)
+        required for selection.
+    secondary_SED_fit_label : `str` or `SED_code`
+        Label (or `SED_code` instance, whose `label` is used) of the
+        secondary SED fitting run to compare against.
+    reduced : `bool`, optional
+        If `True`, compare reduced chi-squared values (accounting for
+        differing numbers of degrees of freedom) rather than absolute
+        chi-squared. Default is `False`.
+    """
 
     def __init__(
         self: Self,
@@ -3832,6 +5311,15 @@ class Chi_Sq_Template_Diff_Selector(SED_fit_Selector):
     
     @property
     def select_kwarg_names_dtypes(self: Self) -> Tuple[List[str], List[Type]]:
+        """`tuple` of `list`: Names/dtypes of the diagnostic comparison kwargs.
+
+        Returns
+        -------
+        `tuple` of (`list` of `str`, `list` of `type`)
+            `["chi_sq_1", "chi_sq_2"]` and `[float, float]`, plus
+            `["n_bands_1", "n_bands_2"]`/`[int, int]` if `reduced` is
+            `True`.
+        """
         kwarg_names = ["chi_sq_1", "chi_sq_2"]
         kwarg_dtypes = [float, float]
         if self.kwargs["reduced"]:
@@ -4019,6 +5507,30 @@ class zPDF_High_Tail_Selector(SED_fit_Selector):
 
 
 class Robust_zPDF_Selector(SED_fit_Selector):
+    """Select galaxies with a sufficiently unimodal/concentrated redshift PDF.
+
+    Requires the fraction of the redshift PDF integrated within
+    `dz_over_z` (or `min_dz`, if larger) of the best-fit redshift to
+    exceed `integral_lim`.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter the SED fitting was performed at.
+    SED_fitter : `SED_code`
+        SED-fitting code/run whose redshift PDF this selector acts on.
+    integral_lim : `float`
+        Minimum fraction of the redshift PDF required within the
+        window around the best-fit redshift.
+    dz_over_z : `int` or `float`
+        Fractional redshift window half-width, `dz / z`, used to
+        integrate the PDF around the best-fit redshift.
+    min_dz : `int` or `float`, optional
+        Minimum absolute redshift window half-width; if
+        `zbest * dz_over_z` is smaller than this, `dz_over_z` is
+        scaled up so the window is at least `min_dz` wide. Default is
+        `0.0`.
+    """
 
     def __init__(
         self: Self,
@@ -4049,6 +5561,13 @@ class Robust_zPDF_Selector(SED_fit_Selector):
 
     @property
     def select_kwarg_names_dtypes(self: Self) -> Tuple[List[str], List[Type]]:
+        """`tuple` of `list`: Names/dtypes of the diagnostic redshift-PDF kwargs.
+
+        Returns
+        -------
+        `tuple` of (`list` of `str`, `list` of `type`)
+            `["dz_z", "integral"]` and `[float, float]`.
+        """
         return ["dz_z", "integral"], [float, float]
 
     def _assertions(self: Self) -> bool:
@@ -4102,6 +5621,18 @@ class Robust_zPDF_Selector(SED_fit_Selector):
 
 
 class Sextractor_Band_Radius_Selector(Data_Selector):
+    """Select galaxies by SExtractor-measured effective radius in one band.
+
+    Parameters
+    ----------
+    filt_name : `str`
+        Name of the band the SExtractor radius is measured in.
+    gtr_or_less : `str`
+        Either ``"gtr"`` to select `Re > lim`, or ``"less"`` to select
+        `Re < lim`.
+    lim : `astropy.units.Quantity`
+        Effective radius limit to compare against.
+    """
 
     def __init__(
         self: Self,
@@ -4175,6 +5706,19 @@ class Sextractor_Band_Radius_Selector(Data_Selector):
 
 
 class Re_Selector(Morphology_Selector):
+    """Select galaxies by morphology-fit effective radius.
+
+    Parameters
+    ----------
+    morph_fitter : `Type`[`Morphology_Fitter`]
+        Morphology-fitting code/run whose effective radius this
+        selector acts on.
+    gtr_or_less : `str`
+        Either ``"gtr"`` to select `Re > lim`, or ``"less"`` to select
+        `Re < lim`.
+    lim : `astropy.units.Quantity`
+        Effective radius limit to compare against.
+    """
 
     def __init__(
         self: Self,
@@ -4226,9 +5770,19 @@ class Re_Selector(Morphology_Selector):
             return re_as < self.kwargs["lim"], {}
     
 class Kokorev24_LRD_red1_Selector(Multiple_Photometry_Selector):
+    """Little Red Dot colour selection, criterion 1, from Kokorev et al. (2024).
+
+    Combines F115W-F150W < 0.8, F200W-F277W > 0.7, and
+    F200W-F356W > 1.0 colour cuts.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter the photometry was extracted at.
+    """
 
     def __init__(
-        self: Self, 
+        self: Self,
         aper_diam: u.Quantity
     ):
         super().__init__(aper_diam, 
@@ -4255,9 +5809,19 @@ class Kokorev24_LRD_red1_Selector(Multiple_Photometry_Selector):
         selection_name = "Kokorev+24_LRD_red1")
 
 class Kokorev24_LRD_red2_Selector(Multiple_Photometry_Selector):
+    """Little Red Dot colour selection, criterion 2, from Kokorev et al. (2024).
+
+    Combines F150W-F200W < 0.8, F277W-F356W > 0.6, and
+    F277W-F444W > 0.7 colour cuts.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter the photometry was extracted at.
+    """
 
     def __init__(
-        self: Self, 
+        self: Self,
         aper_diam: u.Quantity
     ):
         super().__init__(aper_diam,
@@ -4284,6 +5848,16 @@ class Kokorev24_LRD_red2_Selector(Multiple_Photometry_Selector):
         selection_name = "Kokorev+24_LRD_red2")
 
 class Kokorev24_LRD_Selector(Multiple_Photometry_Selector):
+    """Combined Little Red Dot colour selection from Kokorev et al. (2024).
+
+    Requires both `Kokorev24_LRD_red1_Selector` and
+    `Kokorev24_LRD_red2_Selector` to pass.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter the photometry was extracted at.
+    """
 
     def __init__(
         self: Self,
@@ -4298,6 +5872,7 @@ class Kokorev24_LRD_Selector(Multiple_Photometry_Selector):
 
 
 class Unmasked_Bands_Selector(Multiple_Mask_Selector):
+    """Select unmasked pixels across all bands."""
 
     def __init__(
         self: Self, 
@@ -4318,6 +5893,7 @@ class Unmasked_Bands_Selector(Multiple_Mask_Selector):
 
 
 class Unmasked_Instrument_Selector(Multiple_Mask_Selector):
+    """Select unmasked pixels within an instrument."""
 
     def __init__(
         self: Self, 
@@ -4355,6 +5931,7 @@ class Unmasked_Instrument_Selector(Multiple_Mask_Selector):
 
 
 class Sextractor_Bands_Radius_Selector(Multiple_Data_Selector):
+    """Select sources by SExtractor radius across bands."""
 
     def __init__(
         self: Self,
@@ -4376,6 +5953,7 @@ class Sextractor_Bands_Radius_Selector(Multiple_Data_Selector):
 
 
 class Sextractor_Instrument_Radius_Selector(Multiple_Data_Selector):
+    """Select sources by SExtractor radius within an instrument."""
 
     def __init__(
         self: Self,
@@ -4415,6 +5993,7 @@ class Sextractor_Instrument_Radius_Selector(Multiple_Data_Selector):
 
 
 class Sextractor_Instrument_Radius_PSF_FWHM_Selector(Multiple_Data_Selector):
+    """Select sources by SExtractor radius and PSF FWHM."""
 
     def __init__(
         self: Self,
@@ -4463,6 +6042,7 @@ class Sextractor_Instrument_Radius_PSF_FWHM_Selector(Multiple_Data_Selector):
 
     
 class Brown_Dwarf_Selector(Multiple_SED_fit_Selector):
+    """Select brown dwarf candidates from SED fits."""
 
     def __init__(
         self: Self,
@@ -4533,7 +6113,8 @@ class Brown_Dwarf_Selector(Multiple_SED_fit_Selector):
 
 
 class Hainline24_TY_Brown_Dwarf_Selector_1(Multiple_Photometry_Selector):
-    
+    """Select T/Y brown dwarfs using Hainline+24 criteria (method 1)."""
+
     def __init__(
         self: Self,
         aper_diam: u.Quantity,
@@ -4564,7 +6145,8 @@ class Hainline24_TY_Brown_Dwarf_Selector_1(Multiple_Photometry_Selector):
 
 
 class Hainline24_TY_Brown_Dwarf_Selector_2(Multiple_Photometry_Selector):
-    
+    """Select T/Y brown dwarfs using Hainline+24 criteria (method 2)."""
+
     def __init__(
         self: Self,
         aper_diam: u.Quantity,
@@ -4595,6 +6177,7 @@ class Hainline24_TY_Brown_Dwarf_Selector_2(Multiple_Photometry_Selector):
 
 
 class EPOCHS_unmasked_criteria(Multiple_Mask_Selector):
+    """Select unmasked pixels meeting EPOCHS survey criteria."""
 
     def __init__(
         self: Self,
@@ -4617,6 +6200,7 @@ class EPOCHS_unmasked_criteria(Multiple_Mask_Selector):
 
 
 class EPOCHS_Selector(Multiple_SED_fit_Selector):
+    """Select sources based on EPOCHS survey-specific SED criteria."""
 
     def __init__(
         self: Self,
@@ -4729,6 +6313,24 @@ class COSMOS_Web_Selector(Multiple_SED_fit_Selector):
 #     return self.select_min_bands(len(self.instrument))
 
 class Rest_Frame_Property_Kwarg_Selector(SED_fit_Selector):
+    """Select galaxies based on rest-frame property calculator keyword arguments.
+
+    Selects galaxies by comparing specific keyword argument values used in
+    rest-frame property calculations to a target value.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter for photometry selection.
+    SED_fitter : `SED_code`
+        SED code providing the SED results.
+    property_calculator : `Type[Rest_Frame_Property_Calculator]`
+        Property calculator class to extract keywords from.
+    kwarg_name : `str`
+        Name of the keyword argument to match.
+    kwarg_val : `int` or `float`
+        Target value for the keyword argument.
+    """
 
     def __init__(
         self: Self,
@@ -4738,7 +6340,7 @@ class Rest_Frame_Property_Kwarg_Selector(SED_fit_Selector):
         kwarg_name: str,
         kwarg_val: Union[int, float],
     ):
-        # TODO: Add more assertions here to ensure the 
+        # TODO: Add more assertions here to ensure the
         # kwarg name is in the photometry_rest object
         kwargs = {
             "property_calculator": property_calculator,

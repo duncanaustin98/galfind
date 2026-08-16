@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Tue Jun  6 14:55:57 2023
+"""Wrapper around Bagpipes SED-fitting code.
 
-@author: austind
+Handles galaxy template fitting, SED model construction, and posterior
+distribution parsing from Bagpipes SED fitter.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from tqdm import tqdm
 import logging
 from typing import Union, Dict, Any, List, Tuple, Optional, NoReturn, TYPE_CHECKING
 if TYPE_CHECKING:
-    from . import Catalogue, Spectral_Catalogue, PDF, Multiple_Filter
+    from . import Galaxy, Catalogue, Spectral_Catalogue, PDF, Multiple_Filter
     from bagpipes.filters import filter_set
 try:
     from typing import Self, Type  # python 3.11+
@@ -76,6 +76,22 @@ pipes_unit_dict = {
 }
 
 def get_pipes_unit(label: str) -> u.Unit:
+    """Get the astropy unit for a Bagpipes output parameter label.
+
+    Maps Bagpipes parameter names to their corresponding `astropy.units.Unit`
+    based on an internal dictionary. If no exact match, looks for partial matches;
+    if no match, returns dimensionless units.
+
+    Parameters
+    ----------
+    label : `str`
+        Bagpipes parameter label (e.g., "mass", "sfr", "metallicity").
+
+    Returns
+    -------
+    `astropy.units.Unit`
+        The unit associated with the parameter, or dimensionless if not found.
+    """
     if label in pipes_unit_dict.keys():
         return pipes_unit_dict[label]
     elif any(key in label for key in pipes_unit_dict.keys()):
@@ -94,6 +110,17 @@ def get_pipes_unit(label: str) -> u.Unit:
 
 
 class Bagpipes(SED_code):
+    """SED fitting using the Bagpipes code (Carnall et al. 2018).
+
+    Interface to the Bagpipes SED fitting code, inheriting from `SED_code`
+    and implementing methods to run fits, load results, and extract parameters
+    with proper unit handling.
+
+    Attributes
+    ----------
+    ID_label : `str`
+        Column name for object IDs in Bagpipes output ("# ID").
+    """
 
     ID_label = "#ID"
 
@@ -102,6 +129,7 @@ class Bagpipes(SED_code):
         SED_fit_params: Dict[str, Any],
         custom_label: Optional[str] = None,
         sampler: str = "multinest",
+        **kwargs,
     ) -> Self:
         if custom_label is not None:
             self.custom_label = custom_label
@@ -109,10 +137,23 @@ class Bagpipes(SED_code):
         # start off empty
         self.gal_property_labels = {}
         self.gal_property_err_labels = {}
-        super().__init__(SED_fit_params)
+        super().__init__(SED_fit_params, **kwargs)
 
     @classmethod
     def from_label(cls, label: str) -> Type[SED_code]:
+        """Construct a Bagpipes SED-fitter from a label string.
+
+        Parameters
+        ----------
+        label : `str`
+            Label string encoding the SED-fitting parameters (format:
+            ``"Bagpipes_sfh_<sfh>_<dust>_<dust_prior>_Z_<metallicity_prior>_<sps_model>_<z_config>"``).
+
+        Returns
+        -------
+        `Bagpipes`
+            A Bagpipes SED-fitter instance with parsed parameters.
+        """
         # TODO: For continuity SFH, add z used to calculate bins 
         # into the SED fit params from_label extractor
         breakpoint()
@@ -169,6 +210,13 @@ class Bagpipes(SED_code):
 
     @property
     def label(self) -> str:
+        """SED-fitter label string encoding the configuration.
+
+        Returns
+        -------
+        `str`
+            Label string of the form ``"Bagpipes_sfh_<sfh>_<dust>_<dust_prior>_Z_<metallicity_prior>_<sps_model>_<z_config>"``
+        """
         # should be generalized more here including e.g. SED_fit_params assertions
         if hasattr(self, "custom_label"):
             return self.custom_label
@@ -260,12 +308,26 @@ class Bagpipes(SED_code):
 
     @property
     def hdu_name(self) -> str:
+        """HDU name for storing results in FITS files.
+
+        Returns
+        -------
+        `str`
+            HDU name (same as the label).
+        """
         # TODO: Copied from EAZY
         #return f"{self.__class__.__name__}_{self.SED_fit_params['templates']}"
         return self.label
 
     @property
     def tab_suffix(self) -> str:
+        """Suffix for catalogue table files.
+
+        Returns
+        -------
+        `str`
+            Table suffix (label without the "Bagpipes_" prefix).
+        """
         # TODO: Copied from EAZY
         # return f"{self.SED_fit_params['templates']}_" + \
         #     f"{funcs.lowz_label(self.SED_fit_params['lowz_zmax'])}"
@@ -273,20 +335,37 @@ class Bagpipes(SED_code):
 
     @property
     def required_SED_fit_params(self) -> List[str]:
+        """Required SED fitting parameters for Bagpipes.
+
+        Returns
+        -------
+        `list` of `str`
+            List of required parameter names.
+        """
         return ["sps_model", "IMF", "fix_z"]
 
     @property
     def are_errs_percentiles(self) -> bool:
+        """Whether Bagpipes errors are in percentile form.
+
+        Returns
+        -------
+        `bool`
+            Always `True` for Bagpipes.
+        """
         return True
 
-    @property
-    def display_label(self) -> str:
-        sps = self.SED_fit_params["sps_model"]
-        sfh = self.SED_fit_params["sfh"].split("_")[0] #replace("_", " ")#.capitalize()
-        if "continuity" in sfh and "fixed_bin_ages" in self.SED_fit_params.keys():
-            fixed_bin_ages = self.SED_fit_params["fixed_bin_ages"].to(u.Myr).value
-            sfh += f" ({', '.join([f'{age:.1f}' for age in fixed_bin_ages])} Myr)"
-        return f"{sps} {sfh}"
+    # @property
+    # def display_label(self) -> str:
+    #     if hasattr(self, "_display_label"):
+    #         return self._display_label
+    #     else:
+    #         sps = self.SED_fit_params["sps_model"]
+    #         sfh = self.SED_fit_params["sfh"].split("_")[0] #replace("_", " ")#.capitalize()
+    #         if "continuity" in sfh and "fixed_bin_ages" in self.SED_fit_params.keys():
+    #             fixed_bin_ages = self.SED_fit_params["fixed_bin_ages"].to(u.Myr).value
+    #             sfh += f" ({', '.join([f'{age:.1f}' for age in fixed_bin_ages])} Myr)"
+    #         return f"{self.__class__.__name__} ({sps} {sfh})"
     
     def _assert_SED_fit_params(self) -> NoReturn:
         # add defaults required whether fit_instructions are included or not
@@ -316,6 +395,17 @@ class Bagpipes(SED_code):
         super()._assert_SED_fit_params()
 
     def reload(self: Self) -> types.ModuleType:
+        """Reload the Bagpipes module, configuring it for the SPS model.
+
+        Sets the ``use_bpass`` environment variable based on the
+        configured SPS model, then reloads the bagpipes module to
+        apply the configuration.
+
+        Returns
+        -------
+        `types.ModuleType`
+            The reloaded bagpipes module.
+        """
         # re-load to take into account sps model
         if self.SED_fit_params["sps_model"] == "BPASS":
             # set environment variable to use BPASS
@@ -329,7 +419,7 @@ class Bagpipes(SED_code):
 
     def __call__(
         self: Self,
-        cat: Catalogue,
+        target: Union[Galaxy, Catalogue, Spectral_Catalogue],
         aper_diam: Optional[u.Quantity] = None,
         save_PDFs: bool = True,
         save_SEDs: bool = True,
@@ -338,6 +428,7 @@ class Bagpipes(SED_code):
         timed: bool = True,
         overwrite: bool = False,
         update: bool = False,
+        save_name: Optional[str] = None,
         **fit_kwargs
     ):
         try:
@@ -349,20 +440,14 @@ class Bagpipes(SED_code):
             self.rank = 0
             self.size = 1
 
-        self._load_fit_instructions()
-        if "sfh" in self.SED_fit_params.keys() and "continuity" in self.SED_fit_params["sfh"]:
-            self._update_continuity_sfh_fit_instructions(cat)
-        if isinstance(self.SED_fit_params["fix_z"], bool) and not \
-                self.SED_fit_params["fix_z"] and "z_sigma" in self.SED_fit_params.keys():
-            self._update_redshift_fit_instructions(cat)
-        from galfind import Catalogue
-        if isinstance(cat, Catalogue):
+        from . import Galaxy, Catalogue
+        if isinstance(target, (Galaxy, Catalogue)):
             assert aper_diam is not None, \
                 galfind_logger.critical(
                     "Bagpipes fitting requires aper_diam to be specified!"
                 )
             return super().__call__(
-                cat,
+                target,
                 aper_diam,
                 save_PDFs,
                 save_SEDs,
@@ -371,18 +456,20 @@ class Bagpipes(SED_code):
                 timed,
                 overwrite,
                 update,
+                save_name = save_name,
                 **fit_kwargs
             )
         else:
-            from galfind import Spectral_Catalogue
-            assert isinstance(cat, Spectral_Catalogue)
+            from . import Spectral_Catalogue
+            assert isinstance(target, Spectral_Catalogue)
             return self.fit_spec_cat(
-                cat,
+                target,
                 save_PDFs = save_PDFs,
                 save_SEDs = save_SEDs,
                 load_PDFs = load_PDFs,
                 load_SEDs = load_SEDs,
                 overwrite = overwrite,
+                save_name = save_name,
                 **fit_kwargs,
             )
 
@@ -403,6 +490,24 @@ class Bagpipes(SED_code):
         n_draws: int = 10_000,
         h5_suffix: Optional[str] = None
     ) -> str:
+        """Extract and save Bagpipes prior distributions for a given redshift.
+
+        Parameters
+        ----------
+        filterset : `Multiple_Filter`
+            Filter set for the fitting.
+        redshift : `float`
+            Redshift at which to evaluate the priors.
+        n_draws : `int`, optional
+            Number of prior samples to draw. Default is 10000.
+        h5_suffix : `str`, optional
+            Suffix to append to the output HDF5 filename. Default is `None`.
+
+        Returns
+        -------
+        `str`
+            Path to the saved HDF5 file containing prior samples.
+        """
         save_path = f"{config['Bagpipes']['PIPES_OUT_DIR']}/priors/{self.label}_z{redshift:.1f}.h5"
         if h5_suffix is not None:
             save_path = save_path.replace(".h5", f"_{h5_suffix}.h5")
@@ -464,34 +569,86 @@ class Bagpipes(SED_code):
                         )
         return save_path
 
+    def pre_fitting(
+        self: Self,
+        cat: Union[Catalogue, Spectral_Catalogue],
+        aper_diam: u.Quantity,
+        overwrite: bool = False,
+        save_name: Optional[str] = None,
+    ) -> None:
+        """Perform pre-fitting setup including fit instruction generation.
+
+        Parameters
+        ----------
+        cat : `Catalogue` or `Spectral_Catalogue`
+            Catalogue to prepare for fitting.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter for photometry.
+        overwrite : `bool`, optional
+            Whether to overwrite existing output files. Default is `False`.
+        save_name : `str`, optional
+            Custom name for output files. Default is `None`.
+        """
+        self._load_fit_instructions()
+        if "sfh" in self.SED_fit_params.keys() and "continuity" in self.SED_fit_params["sfh"]:
+            self._update_continuity_sfh_fit_instructions(cat)
+        if isinstance(self.SED_fit_params["fix_z"], bool) and not \
+                self.SED_fit_params["fix_z"] and "z_sigma" in self.SED_fit_params.keys():
+            self._update_redshift_fit_instructions(cat)
+        out_path = self._get_out_paths(cat, aper_diam, save_name = save_name)[1]
+        if Path(out_path).is_file() and not overwrite:
+            self._update_gal_properties(Table.read(out_path).colnames)
+
     def make_in(
         self: Self,
-        cat: Catalogue,
+        cat: Union[Catalogue, Spectral_Catalogue],
         aper_diam: u.Quantity,
-        overwrite: bool = False
+        overwrite: bool = False,
+        save_name: Optional[str] = None,
     ) -> str:
-        # no need for bagpipes input catalogue
+        """Generate Bagpipes input (.in) file for the catalogue.
+
+        Parameters
+        ----------
+        cat : `Catalogue` or `Spectral_Catalogue`
+            Catalogue to generate input files for.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter for photometry.
+        overwrite : `bool`, optional
+            Whether to overwrite existing files. Default is `False`.
+        save_name : `str`, optional
+            Custom name for output files. Default is `None`.
+
+        Returns
+        -------
+        `str`
+            Path to the generated input file.
+        """
         pass
+
 
     def _temp_out_subdir(
         self: Self,
         cat: Union[Catalogue, Spectral_Catalogue],
         aper_diam: u.Quantity,
         temp_label: Optional[str] = "temp", #None,
+        save_name: Optional[str] = None,
     ) -> str:
         from galfind import Catalogue
         if isinstance(cat, Catalogue):
             # temp_subdir = f"{cat.version}/{cat.survey}/{cat.filterset.instrument_name}/" + \
             #     f"{aper_diam.to(u.arcsec).value:.2f}as/temp"
-            temp_subdir = f"{cat.survey}/temp"
+            temp_subdir = f"temp/{cat.survey}"
+            if save_name is not None:
+                temp_subdir += f"/{save_name}"
             if temp_label is None:
                 while len(glob.glob(f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/posterior/{temp_subdir}/*")) > 0:
                     temp_subdir += "_"
             else:
-                temp_subdir = temp_subdir.replace("/temp", f"/{temp_label}")
+                temp_subdir = temp_subdir.replace("temp/", f"{temp_label}/")
             galfind_logger.info(
-                f"Using {temp_subdir=} for {cat.survey} with {cat.version} {cat.filterset.instrument_name} " + \
-                f"{aper_diam.to(u.arcsec).value:.2f}as"
+                f"Using {temp_subdir=} for {repr(cat)} " + \
+                f"with {aper_diam.to(u.arcsec).value:.2f}as"
             )
         else:
             from galfind import Spectral_Catalogue
@@ -513,18 +670,23 @@ class Bagpipes(SED_code):
         self: Self,
         cat: Catalogue,
         aper_diam: u.Quantity,
+        save_name: Optional[str] = None,
     ) -> str:
         from galfind import Catalogue
+        if save_name is None:
+            save_name = self.label
+        else:
+            save_name = f"{self.label}_{save_name}"
         if isinstance(cat, Catalogue):
             return f"{cat.version}/{cat.survey}/{cat.filterset.instrument_name}/" + \
-                f"{aper_diam.to(u.arcsec).value:.2f}as/{self.label}"
+                f"{aper_diam.to(u.arcsec).value:.2f}as/{save_name}"
         else:
             from galfind import Spectral_Catalogue
             assert isinstance(cat, Spectral_Catalogue), \
                 galfind_logger.critical(
                     f"{type(cat)=} not in [Catalogue, Spectral_Catalogue]!"
                 )
-            return f"spec_{cat[0].instrument.grating.name}/{self.label}"
+            return f"spec_{cat[0].instrument.grating.name}/{save_name}"
 
     def _move_files(
         self,
@@ -532,14 +694,24 @@ class Bagpipes(SED_code):
         aper_diam: u.Quantity,
         direction = "from_temp",
         temp_label: Optional[str] = None,
+        save_name: Optional[str] = None,
     ) -> NoReturn:
         assert direction in ["from_temp", "to_temp"]
-        temp_out_subdir = self._temp_out_subdir(cat, aper_diam, temp_label = temp_label)
+        temp_out_subdir = self._temp_out_subdir(
+            cat,
+            aper_diam,
+            temp_label = temp_label,
+            save_name = save_name,
+        )
         temp_post_dir = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/posterior/{temp_out_subdir}"
         temp_plots_dir = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/plots/{temp_out_subdir}"
         temp_sed_dir = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/seds/{temp_out_subdir}"
         temp_sfr_dir = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/sfr/{temp_out_subdir}"
-        new_subdir = self._new_subdir(cat, aper_diam)
+        new_subdir = self._new_subdir(
+            cat,
+            aper_diam,
+            save_name = None,
+        )
         new_post_dir = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/posterior/{new_subdir}"
         new_plots_dir = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/plots/{new_subdir}"
         new_sed_dir = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/seds/{new_subdir}"
@@ -572,8 +744,9 @@ class Bagpipes(SED_code):
             [from_post_dir, from_plots_dir, from_sed_dir, from_sfr_dir],
             [to_post_dir, to_plots_dir, to_sed_dir, to_sfr_dir]
         ):
-            #breakpoint()
             for path in glob.glob(f"{from_dir}/*"):
+                if not Path(path).is_file():
+                    continue
                 if not Path(f"{to_dir}/{path.split('/')[-1]}").is_file():
                     os.rename(path, f"{to_dir}/{path.split('/')[-1]}")
                     galfind_logger.info(
@@ -583,7 +756,13 @@ class Bagpipes(SED_code):
                     galfind_logger.info(
                         f"{path.split('/')[-1]} already exists in {to_dir}, skipping!"
                     )
-        self._move_fits_cat(cat, aper_diam, direction = direction, temp_label = temp_label)
+        self._move_fits_cat(
+            cat,
+            aper_diam,
+            direction = direction,
+            temp_label = temp_label,
+            save_name = save_name,
+        )
 
     def _move_fits_cat(
         self: Self,
@@ -591,12 +770,22 @@ class Bagpipes(SED_code):
         aper_diam: u.Quantity,
         direction: str = "from_temp",
         temp_label: Optional[str] = None,
+        save_name: Optional[str] = None,
     ) -> None:
         assert direction in ["from_temp", "to_temp"]
         fits_dir = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/cats"
         funcs.make_dirs(f"{fits_dir}/")
-        temp_out_subdir = self._temp_out_subdir(cat, aper_diam, temp_label = temp_label)
-        new_subdir = self._new_subdir(cat, aper_diam)
+        temp_out_subdir = self._temp_out_subdir(
+            cat,
+            aper_diam,
+            temp_label = temp_label,
+            save_name = save_name,
+        )
+        new_subdir = self._new_subdir(
+            cat,
+            aper_diam,
+            save_name = save_name,
+        )
         if direction == "from_temp":
             # move files from temp directory to main directory
             from_fits_path = f"{fits_dir}/{temp_out_subdir}.fits"
@@ -605,13 +794,16 @@ class Bagpipes(SED_code):
             # move files from main directory to temp directory
             from_fits_path = f"{fits_dir}/{new_subdir}.fits"
             to_fits_path = f"{fits_dir}/{temp_out_subdir}.fits"
+        else:
+            err_msg = f"Invalid {direction=}! Must be in ['from_temp', 'to_temp']"
+            galfind_logger.critical(err_msg)
+            raise Exception(err_msg)
         # Move fits catalogue
         if Path(from_fits_path).is_file() and not Path(to_fits_path).is_file():
             os.rename(from_fits_path, to_fits_path)
             galfind_logger.info(
                 f"Moved {from_fits_path} to {to_fits_path}"
             )
-        
 
     @run_in_dir(path=config["Bagpipes"]["PIPES_OUT_DIR"])
     def fit(
@@ -621,8 +813,38 @@ class Bagpipes(SED_code):
         save_SEDs: bool = True,
         save_PDFs: bool = False,
         overwrite: bool = False,
+        save_name: Optional[str] = None,
         **kwargs: Dict[str, Any],
     ) -> NoReturn:
+        """Fit SED models to a catalogue of galaxies or spectra.
+
+        Performs Bagpipes SED fitting on photometric or spectroscopic data,
+        handling filter validation, redshift configuration, and file management.
+
+        Parameters
+        ----------
+        cat : `Catalogue` or `Spectral_Catalogue`
+            Catalogue of galaxies or spectra to fit.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter for photometry (ignored for spectroscopy).
+        save_SEDs : `bool`, optional
+            Whether to save SEDs. Default is `True`.
+        save_PDFs : `bool`, optional
+            Whether to save posterior PDFs. Default is `False`.
+        overwrite : `bool`, optional
+            Whether to overwrite existing results. Default is `False`.
+        save_name : `str`, optional
+            Custom name for output files. Default is `None`.
+        **kwargs : dict
+            Additional keyword arguments including:
+            - `plot` : `bool` - whether to make plots (default `True`)
+            - `plot_csfh` : `bool` - whether to plot cumulative SFH (default `False`)
+            - `temp_label` : `str` - temporary directory label
+            - `rerun` : `bool` - whether to rerun failed fits
+            - `spec_calibration_order` : `int` - spectral calibration polynomial order (default 2)
+            - `spec_fit_instructions` : `dict` - additional spectral fit parameters
+            - `R_boost_factor` : `float` - resolution boost factor (default 1.0)
+        """
         from galfind import Catalogue
         if isinstance(cat, Catalogue):
             is_spec = False
@@ -666,16 +888,23 @@ class Bagpipes(SED_code):
             temp_label = kwargs["temp_label"]
         else:
             temp_label = "temp" #None
-        # # dump priors if not already done
-        # self.dump_priors(new_path_post)
         # determine temp directories
-        out_subdir = self._temp_out_subdir(cat, aper_diam, temp_label = temp_label)
+        out_subdir = self._temp_out_subdir(
+            cat,
+            aper_diam,
+            temp_label = temp_label,
+            save_name = save_name,
+        )
         path_post = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/posterior/{out_subdir}"
         path_plots = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/plots/{out_subdir}"
         path_sed = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/seds/{out_subdir}"
         path_sfr = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/sfr/{out_subdir}"
         path_fits = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/cats/{out_subdir}"
-        new_subdir = self._new_subdir(cat, aper_diam)
+        new_subdir = self._new_subdir(
+            cat,
+            aper_diam,
+            save_name = None,
+        )
         new_path_post = path_post.replace(out_subdir, new_subdir)
         funcs.make_dirs(new_path_post)
         new_path_plots = path_plots.replace(out_subdir, new_subdir)
@@ -684,7 +913,12 @@ class Bagpipes(SED_code):
         funcs.make_dirs(new_path_sed)
         new_path_sfr = path_sfr.replace(out_subdir, new_subdir)
         funcs.make_dirs(new_path_sfr)
-        new_path_fits = path_fits.replace(out_subdir, f"{new_subdir}.fits")
+        new_fits_subdir = self._new_subdir(
+            cat,
+            aper_diam,
+            save_name = save_name,
+        )
+        new_path_fits = path_fits.replace(out_subdir, f"{new_fits_subdir}.fits")
         funcs.make_dirs(new_path_fits)
 
         if self.rank == 0:
@@ -706,12 +940,17 @@ class Bagpipes(SED_code):
             rerun = False
 
         # only run for galaxies that haven't been run yet
-        #breakpoint()
         #rerun = True
         if rerun:
             to_run_arr = np.ones(len(cat), dtype=bool)
             # move stuff back to temp directory
-            self._move_files(cat, aper_diam, direction = "to_temp", temp_label = temp_label)
+            self._move_files(
+                cat,
+                aper_diam,
+                direction = "to_temp",
+                temp_label = temp_label,
+                save_name = save_name,
+            )
         else:
             to_run_arr = np.ones(len(cat), dtype=bool)
             #for i, gal in enumerate(cat):
@@ -722,8 +961,13 @@ class Bagpipes(SED_code):
                 galfind_logger.info("All objects run and not rerun/overwrite.")
                 breakpoint()
                 return
-        self._move_fits_cat(cat, aper_diam, direction = "to_temp", temp_label = temp_label)
-
+        self._move_fits_cat(
+            cat,
+            aper_diam,
+            direction = "to_temp",
+            temp_label = temp_label,
+            save_name = save_name,
+        )
         if not is_spec:
             run_cat = deepcopy(cat)
             run_cat.gals = run_cat[to_run_arr]
@@ -736,12 +980,19 @@ class Bagpipes(SED_code):
                 excl_bands_arr = np.full(len(run_cat.gals), self.SED_fit_params["excl_bands"])
             assert len(excl_bands_arr) == len(run_cat.gals), \
                 galfind_logger.critical(
-                    f"Bagpipes {excl_bands_arr=} must be a (ragged) list of lists with length {len(run_cat.gals)}!"
+                    f"Bagpipes {excl_bands_arr=} must be a (ragged) " + \
+                    f"list of lists with length {len(run_cat.gals)}!"
                 )
             gals_arr = []
-            for gal, excl_bands in tqdm(zip(run_cat.gals, excl_bands_arr), "Removing filters without depth measurements", disable = galfind_logger.getEffectiveLevel() > logging.INFO):
+            for gal, excl_bands in tqdm(
+                zip(run_cat.gals, excl_bands_arr),
+                "Removing filters without depth measurements",
+                disable = galfind_logger.getEffectiveLevel() > logging.INFO
+            ):
                 remove_filt = []
-                for i, (depth, filt) in enumerate(zip(gal.aper_phot[aper_diam].depths, gal.aper_phot[aper_diam].filterset)):
+                for i, (depth, filt) in enumerate(
+                    zip(gal.aper_phot[aper_diam].depths, gal.aper_phot[aper_diam].filterset)
+                ):
                     if np.isnan(depth) or filt.filt_name in excl_bands:
                         remove_filt.extend([filt])
                 for filt in remove_filt:
@@ -757,9 +1008,9 @@ class Bagpipes(SED_code):
         else:
             IDs = [f"{spec._PID}_{spec._src_ID}" for spec in cat]
             filters = None
-
         # if fix_z is not False
-        if isinstance(self.SED_fit_params["fix_z"], (list, np.ndarray)) or not (not self.SED_fit_params["fix_z"]):
+        if isinstance(self.SED_fit_params["fix_z"], (list, np.ndarray)) or \
+                not (not self.SED_fit_params["fix_z"]):
             if not is_spec:
                 if isinstance(self.SED_fit_params["fix_z"], str):
                     redshifts = np.array([getattr(gal, self.SED_fit_params["fix_z"]) for gal in gals_arr]).astype(float)
@@ -799,7 +1050,6 @@ class Bagpipes(SED_code):
             load_func = self._load_pipes_spec
             run_cat = cat # temporary
             load_data_kwargs = {"cat": run_cat}
-
         bagpipes = self.reload()
         fit_cat = bagpipes.fit_catalogue(
             IDs,
@@ -840,7 +1090,13 @@ class Bagpipes(SED_code):
             galfind_logger.info(
                 f"Renaming and moving {aper_diam.to(u.arcsec).value:.2f}as {self.label} output files on rank 0."
             )
-            self._move_files(cat, aper_diam, direction = "from_temp", temp_label = temp_label)
+            self._move_files(
+                cat,
+                aper_diam,
+                direction = "from_temp",
+                temp_label = temp_label,
+                save_name = save_name,
+            )
 
     @run_in_dir(path=config["Bagpipes"]["PIPES_OUT_DIR"])
     def fit_spec_cat(
@@ -850,7 +1106,25 @@ class Bagpipes(SED_code):
         save_PDFs: bool = True,
         overwrite: bool = False,
         **kwargs: Dict[str, Any],
-    ):
+    ) -> None:
+        """Fit SED models to a spectroscopic catalogue with multiple gratings.
+
+        Groups spectra by grating and fits each group independently to ensure
+        proper handling of resolution curves and calibration.
+
+        Parameters
+        ----------
+        cat : `Spectral_Catalogue`
+            Catalogue of spectra to fit, may contain multiple gratings.
+        save_SEDs : `bool`, optional
+            Whether to save SEDs. Default is `True`.
+        save_PDFs : `bool`, optional
+            Whether to save posterior PDFs. Default is `True`.
+        overwrite : `bool`, optional
+            Whether to overwrite existing results. Default is `False`.
+        **kwargs : dict
+            Additional keyword arguments passed to `fit` method.
+        """
         # fit all spectra in a Spectral_Catalogue with the same grating
         unique_gratings = np.unique(
             [spec.instrument.grating.name for spec_arr in cat for spec in spec_arr]
@@ -921,10 +1195,25 @@ class Bagpipes(SED_code):
         return fit_instructions
 
     def make_fits_from_out(
-        self: Self, 
+        self: Self,
         out_path: str,
-        overwrite: bool = True
+        overwrite: bool = True,
+        save_name: Optional[str] = None,
     ) -> NoReturn:
+        """Extract and update galaxy properties from Bagpipes output table.
+
+        Reads Bagpipes output FITS table and updates the internal property
+        mapping based on available columns.
+
+        Parameters
+        ----------
+        out_path : `str`
+            Path to the Bagpipes output FITS file.
+        overwrite : `bool`, optional
+            Whether to overwrite existing FITS files. Default is `True`.
+        save_name : `str`, optional
+            Custom save name for the output. Default is `None`.
+        """
         # update properties from bagpipes output table column names
         tab = Table.read(out_path)
         self._update_gal_properties(tab.colnames)
@@ -1021,63 +1310,51 @@ class Bagpipes(SED_code):
         self: Self, 
         cat: Catalogue, 
         aper_diam: u.Quantity,
+        save_name: Optional[str] = None,
     ) -> Tuple[str, str, str, Dict[str, List[str]], List[str]]:
-    # @staticmethod
-    # def get_out_paths(
-    #     cat,
-    #     SED_fit_params,
-    #     IDs,
-    #     load_properties=[
-    #         "stellar_mass",
-    #         "formed_mass",
-    #         "dust:Av",
-    #         "beta_C94",
-    #         "m_UV",
-    #         "M_UV",
-    #         "sfr",
-    #         "sfr_10myr",
-    #     ],
-    # ):  # , "Halpha_EWrest", "xi_ion_caseB"
-        #pipes_name = Bagpipes.label_from_SED_fit_params(self.SED_fit_params)
         in_path = None
+        if save_name is None:
+            save_name_ = self.label
+        else:
+            save_name_ = f"{self.label}_{save_name}"
         out_path = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/cats/{cat.version}/" + \
             f"{cat.survey}/{cat.filterset.instrument_name}/" + \
-            f"{aper_diam.to(u.arcsec).value:.2f}as/{self.label}.fits"
+            f"{aper_diam.to(u.arcsec).value:.2f}as/{save_name_}.fits"
         fits_out_path = Bagpipes.get_galfind_fits_path(out_path)
-        h5_dir = out_path.replace(".fits", "").replace("cats", "posterior")
+        h5_dir = out_path.replace(".fits", "").replace("cats", "posterior").replace(f"_{save_name}", "")
         h5_paths = [f"{h5_dir}/{ID}.h5" for ID in cat.ID]
-        # PDF_dir = out_path.replace(".fits", "").replace("cats", "posterior")
-        # SED_dir = out_path.replace(".fits", "").replace("cats", "posterior")
-        # open h5
-        # load_properties = []
-        # PDF_paths = {
-        #     gal_property if "redshift" not in gal_property else "z": [
-        #         f"{h5_dir}/{gal_property}/{str(int(ID))}_{cat.survey}.txt"
-        #         if Path(
-        #             f"{h5_dir}/{gal_property}/{str(int(ID))}_{cat.survey}.txt"
-        #         ).is_file()
-        #         else None
-        #         for ID in cat.ID
-        #     ]
-        #     for gal_property in load_properties
-        # }
-        # determine SED paths
-        #SED_paths = []
-        # SED_paths = [
-        #     f"{h5_dir}/{str(int(ID))}_{cat.survey}.dat"
-        #     if Path(f"{h5_dir}/{str(int(ID))}_{cat.survey}.dat").is_file()
-        #     else None
-        #     for ID in cat.ID
-        # ]
-        return in_path, out_path, fits_out_path, h5_paths, h5_paths #PDF_paths, SED_paths
+        return in_path, out_path, fits_out_path, h5_paths, h5_paths
 
     def extract_SEDs(
         self: Self,
-        IDs: List[int], 
+        IDs: List[int],
         SED_paths: Union[str, List[str]],
         *args,
         **kwargs,
     ) -> List[SED_obs]:
+        """Extract SED posteriors from Bagpipes output files.
+
+        Loads model SEDs from Bagpipes HDF5 output files and converts them
+        to observed-frame fluxes at the appropriate redshifts.
+
+        Parameters
+        ----------
+        IDs : `list` of `int`
+            Galaxy IDs corresponding to the SED paths.
+        SED_paths : `str` or `list` of `str`
+            Path(s) to Bagpipes output HDF5 files containing SEDs.
+        **kwargs : dict
+            Additional keyword arguments including:
+            - `cat` : `Catalogue` - catalogue of galaxies (required)
+            - `aper_diam` : `astropy.units.Quantity` - aperture diameter (required)
+            - `zPDFs` : `list` of `PDF` - redshift PDFs if not fixing redshift
+            - `spectrum_type` : `str` - spectrum type to extract (default "spectrum_full")
+
+        Returns
+        -------
+        `list` of `SED_2D`
+            List of 2D SED objects containing model posteriors.
+        """
         # ensure this works if only extracting 1 galaxy
         if isinstance(IDs, (str, int, float)):
             IDs = np.array([int(IDs)])
@@ -1245,11 +1522,30 @@ class Bagpipes(SED_code):
         return spectrum_full #spectrum_med
 
     def extract_PDFs(
-        self: Self, 
-        gal_property: str, 
-        IDs: List[int], 
-        PDF_paths: str, 
+        self: Self,
+        gal_property: str,
+        IDs: List[int],
+        PDF_paths: str,
     ) -> List[Type[PDF]]:
+        """Extract posterior PDFs for a specific galaxy property.
+
+        Loads probability distribution functions for a given galaxy property
+        from Bagpipes output files.
+
+        Parameters
+        ----------
+        gal_property : `str`
+            Name of the galaxy property (e.g., "mass", "z", "sfr").
+        IDs : `list` of `int`
+            Galaxy IDs corresponding to the PDF paths.
+        PDF_paths : `str`
+            Path to Bagpipes output containing the PDFs.
+
+        Returns
+        -------
+        `list` of `PDF`
+            List of PDF objects for the requested property.
+        """
         pass
         # breakpoint()
         # pdfs = PDF.from_1D_arr(
@@ -1321,16 +1617,34 @@ class Bagpipes(SED_code):
         # return pdfs
     
     def load_cat_property_PDFs(
-        self: Self, 
+        self: Self,
         PDF_paths: List[str],
-        IDs: List[int]
+        IDs: List[int],
     ) -> List[Dict[str, Optional[Type[PDF]]]]:
+        """Load all property PDFs for a catalogue from Bagpipes output.
+
+        Extracts all available posterior PDFs (except ignored properties)
+        from Bagpipes HDF5 output files for each galaxy in the catalogue.
+
+        Parameters
+        ----------
+        PDF_paths : `list` of `str`
+            Paths to Bagpipes output HDF5 files (one per galaxy).
+        IDs : `list` of `int`
+            Galaxy IDs corresponding to PDF paths.
+
+        Returns
+        -------
+        `list` of `dict`
+            Each element is a dictionary mapping property names to PDF objects,
+            with values of `None` if PDFs are unavailable or ignored.
+        """
         from . import PDF
         assert len(IDs) == len(PDF_paths), \
             galfind_logger.critical(
                 f"{len(IDs)=} != {len(PDF_paths)=}"
             )
-        ignore_labels = ["dust_curve", "photometry", "spectrum_full", "uvj", "sfh", "mass_weighted_zmet", "chisq_phot"]#, "ndot_ion_caseB_rest", "ndot_ion_caseB_obs"]
+        ignore_labels = ["dust_curve", "photometry", "spectrum_full", "uvj", "sfh", "mass_weighted_zmet", "chisq_phot"] #, "ndot_ion_caseB_rest", "ndot_ion_caseB_obs"]
         cat_property_PDFs = []
         for h5_path, ID in tqdm(zip(PDF_paths, IDs), desc=f"Loading {self.label} PDFs", total=len(IDs), disable=galfind_logger.getEffectiveLevel() > logging.INFO):
             gal_property_PDFs = {}
@@ -1357,20 +1671,62 @@ class Bagpipes(SED_code):
         self: Self,
         cat: Catalogue,
         aper_diam: u.Quantity,
-    ):
-        PDF_paths = self._get_out_paths(cat, aper_diam)[3]
+        save_name: Optional[str] = None,
+    ) -> List[SFH]:
+        """Load star formation history models from Bagpipes output.
+
+        Reads posterior SFH samples from Bagpipes output HDF5 files
+        for all galaxies in the catalogue.
+
+        Parameters
+        ----------
+        cat : `Catalogue`
+            Catalogue of galaxies.
+        aper_diam : `astropy.units.Quantity`
+            Aperture diameter used in fitting.
+        save_name : `str`, optional
+            Custom save name for identifying output files. Default is `None`.
+
+        Returns
+        -------
+        `list` of `SFH`
+            Star formation history objects for each galaxy.
+        """
+        PDF_paths = self._get_out_paths(cat, aper_diam, save_name = save_name)[3]
         sfh_arr = [SFH.from_pipes_post(path) for path in PDF_paths]
         return sfh_arr
 
 
     @staticmethod
-    def get_galfind_fits_path(path):
+    def get_galfind_fits_path(path: str) -> str:
+        """Convert a Bagpipes output path to galfind FITS path.
+
+        Parameters
+        ----------
+        path : `str`
+            Original Bagpipes output file path.
+
+        Returns
+        -------
+        `str`
+            Path to galfind-formatted FITS file.
+        """
         return path #.replace(".fits", "_galfind.fits")
 
-    def load_pipes_fit_obj(self):
+    def load_pipes_fit_obj(self) -> None:
+        """Load a Bagpipes fit object from stored output.
+
+        Reconstructs a Bagpipes fit object from previously saved output files,
+        allowing for post-processing and analysis of results.
+        """
         pass
 
-    def make_templates(self):
+    def make_templates(self) -> None:
+        """Generate templates for Bagpipes SED fitting.
+
+        Creates necessary template files and configurations required by
+        Bagpipes for the fitting procedure.
+        """
         pass
 
     @staticmethod
@@ -1825,6 +2181,34 @@ class Bagpipes(SED_code):
 
 
 def calculate_bins(redshift, redshift_sfr_start=20, log_time=True, output_unit = 'yr', return_flat = False, num_bins=6, fixed_bin_ages = [10.0] * u.Myr): #, cosmo = funcs.astropy_cosmo):
+    """Calculate age bins for SFH modeling in Bagpipes.
+
+    Computes time/age bins for star formation history based on redshift,
+    with fixed ages for recent star formation and logarithmic spacing for older ages.
+
+    Parameters
+    ----------
+    redshift : `float`
+        Redshift of the galaxy.
+    redshift_sfr_start : `float`, optional
+        Redshift at which to start the SFR lookback time. Default is 20.
+    log_time : `bool`, optional
+        Use logarithmic spacing (not fully implemented). Default is `True`.
+    output_unit : `str`, optional
+        Output time unit ("yr", "Gyr", etc.). Default is "yr".
+    return_flat : `bool`, optional
+        Flatten the output array. Default is `False`.
+    num_bins : `int`, optional
+        Number of logarithmic bins. Default is 6.
+    fixed_bin_ages : `list` of `astropy.units.Quantity`, optional
+        Fixed ages for the first bins (e.g., [10 Myr, 100 Myr]).
+        Default is [10 Myr].
+
+    Returns
+    -------
+    `numpy.ndarray`
+        Age bin edges (or flattened if ``return_flat=True``).
+    """
     time_observed = cosmo.lookback_time(redshift)
     time_sfr_start = cosmo.lookback_time(redshift_sfr_start)
     time_dif = abs(time_observed - time_sfr_start)
@@ -1844,7 +2228,11 @@ def calculate_bins(redshift, redshift_sfr_start=20, log_time=True, output_unit =
     # first_bin = fixed_bin_ages[0] #* u.Myr
     # second_bin = fixed_bin_ages[1] if len(fixed_bin_ages) > 1 else None
 
-    diff = np.linspace(np.log10(fixed_bin_ages[-1].to(output_unit).value), np.log10(time_dif.to(output_unit).value), num_bins - (len(fixed_bin_ages) - 1))
+    diff = np.linspace(
+        np.log10(fixed_bin_ages[-1].to(output_unit).value),
+        np.log10(time_dif.to(output_unit).value),
+        num_bins - (len(fixed_bin_ages) - 1)
+    )
     #breakpoint()
     # if second_bin is None:
     #     diff = np.linspace(np.log10(first_bin.to(output_unit).value), np.log10(time_dif.to(output_unit).value), num_bins)

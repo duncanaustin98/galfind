@@ -1,3 +1,8 @@
+"""Morphological fitting results and fitter classes.
+
+Provides Morphology_Result for storing best-fit morphological properties
+(Sérsic index, effective radius, etc.) from morphology fitters like Galfit.
+"""
 
 from __future__ import annotations
 
@@ -64,6 +69,50 @@ name_to_label = {
 }
 
 class Morphology_Result(ABC):
+    """Abstract base class holding the results of a morphological fit to a single source.
+
+    Parameters
+    ----------
+    fitter : `Type[Morphology_Fitter]`
+        The `Morphology_Fitter` instance that produced this result.
+    chi2 : `float`
+        Chi-squared value of the fit.
+    Ndof : `int`
+        Number of degrees of freedom of the fit.
+    properties : `dict` of `str` to (`astropy.units.Quantity`, `astropy.units.Magnitude` or `astropy.units.Dex`)
+        Best-fit morphological property values, keyed by property name.
+        Each is also set as an instance attribute of the same name.
+    property_errs : `dict` of `str` to `list`
+        Lower/upper uncertainties on each entry of `properties`, keyed by
+        property name. Each is also set as an instance attribute named
+        ``f"{key}_err"``.
+    property_pdfs : `dict` of `str` to `Type[PDF_Base]`
+        Posterior probability distributions for each fitted property,
+        keyed by property name.
+    rff : `float`, optional
+        Residual Flux Fraction of the fit. Default is `None`.
+    cutout : `Type[Band_Cutout_Base]`, optional
+        Cutout of the source that was fitted. Default is `None`.
+
+    Attributes
+    ----------
+    fitter : `Type[Morphology_Fitter]`
+        The `Morphology_Fitter` instance that produced this result.
+    chi2 : `float`
+        Chi-squared value of the fit.
+    Ndof : `int`
+        Number of degrees of freedom of the fit.
+    properties : `dict` of `str` to (`astropy.units.Quantity`, `astropy.units.Magnitude` or `astropy.units.Dex`)
+        Best-fit morphological property values, keyed by property name.
+    property_errs : `dict` of `str` to `list`
+        Lower/upper uncertainties on each entry of `properties`.
+    property_pdfs : `dict` of `str` to `Type[PDF_Base]`
+        Posterior probability distributions for each fitted property.
+    rff : `float` or `None`
+        Residual Flux Fraction of the fit.
+    cutout : `Type[Band_Cutout_Base]` or `None`
+        Cutout of the source that was fitted.
+    """
 
     def __init__(
         self: Self,
@@ -89,17 +138,54 @@ class Morphology_Result(ABC):
 
     @property
     def red_chi2(self: Self) -> float:
+        """`float`: Reduced chi-squared of the fit, ``chi2 / Ndof``."""
         return self.chi2 / self.Ndof
-    
+
     def __repr__(self: Self) -> str:
         return f"{self.__class__.__name__}({self.fitter.name})"
-    
+
     @abstractmethod
     def plot(self: Self) -> None:
+        """Plot the morphological fit result. Must be implemented by subclasses."""
         pass
 
 
 class Galfit_Result(Morphology_Result):
+    """Results of a GALFIT morphological fit to a single source.
+
+    Parameters
+    ----------
+    fitter : `Type[Galfit_Fitter]`
+        The `Galfit_Fitter` instance that produced this result.
+    chi2 : `float`
+        Chi-squared value of the fit.
+    Ndof : `int`
+        Number of degrees of freedom of the fit.
+    properties : `dict` of `str` to (`astropy.units.Quantity`, `astropy.units.Magnitude` or `astropy.units.Dex`)
+        Best-fit morphological property values, keyed by property name.
+    property_errs : `dict` of `str` to `list`
+        Lower/upper uncertainties on each entry of `properties`, keyed by
+        property name.
+    property_pdfs : `dict` of `str` to `Type[PDF_Base]`
+        Posterior probability distributions for each fitted property,
+        keyed by property name.
+    im_path : `str`
+        Path to the GALFIT output ``imgblock`` FITS file (containing the
+        original, model and residual images).
+    mask_path : `str`, optional
+        Path to the FITS bad-pixel mask used in the fit. Default is `None`.
+    rff : `float`, optional
+        Residual Flux Fraction of the fit. Default is `None`.
+    cutout : `Type[Band_Cutout_Base]`, optional
+        Cutout of the source that was fitted. Default is `None`.
+
+    Attributes
+    ----------
+    im_path : `str`
+        Path to the GALFIT output ``imgblock`` FITS file.
+    mask_path : `str` or `None`
+        Path to the FITS bad-pixel mask used in the fit.
+    """
 
     def __init__(
         self: Self,
@@ -119,27 +205,70 @@ class Galfit_Result(Morphology_Result):
         super().__init__(fitter, chi2, Ndof, properties, property_errs, property_pdfs, rff, cutout = cutout)
 
     @property
+    @property
     def id(self: Self) -> str:
+        """Galaxy identifier extracted from file path.
+
+        Returns
+        -------
+        `str`
+            Galaxy ID.
+        """
         return self.im_path.split("/")[-1].split("_")[0]
 
     @property
     def version(self: Self) -> str:
+        """Data reduction version extracted from file path.
+
+        Returns
+        -------
+        `str`
+            Version identifier.
+        """
         return self.im_path.replace(config['GALFIT']['OUTPUT_DIR'], "").split("/")[1]
 
     @property
     def instr_name(self: Self) -> str:
+        """Instrument name extracted from file path.
+
+        Returns
+        -------
+        `str`
+            Instrument identifier.
+        """
         return self.im_path.replace(config['GALFIT']['OUTPUT_DIR'], "").split("/")[2]
 
     @property
     def survey(self: Self) -> str:
+        """Survey name extracted from file path.
+
+        Returns
+        -------
+        `str`
+            Survey identifier.
+        """
         return self.im_path.replace(config['GALFIT']['OUTPUT_DIR'], "").split("/")[3]
-    
+
     @property
     def filt_name(self: Self) -> str:
+        """Filter name extracted from file path.
+
+        Returns
+        -------
+        `str`
+            Filter identifier.
+        """
         return self.im_path.replace(config['GALFIT']['OUTPUT_DIR'], "").split("/")[4]
-    
+
     @property
     def plot_path(self: Self) -> str:
+        """Path for saving the Galfit output plot.
+
+        Returns
+        -------
+        `str`
+            Full path to the plot file.
+        """
         return f"{'/'.join(self.im_path.replace(config['GALFIT']['OUTPUT_DIR'], config['GALFIT']['GALFIT_PLOT_DIR']).split('/')[:-1]).replace(self.id + '/', '')}/{self.id}.png"
 
     def plot(
@@ -153,6 +282,27 @@ class Galfit_Result(Morphology_Result):
         save: bool = True,
         show: bool = False,
     ) -> None:
+        """Plot Galfit results showing original, model, and residual images.
+
+        Parameters
+        ----------
+        fig : `matplotlib.figure.Figure`, optional
+            Figure to plot on. Created if `None`. Default is `None`.
+        title : `str`, optional
+            Plot title. Auto-generated if `None`. Default is `None`.
+        cmap : `str`, optional
+            Colormap for original and residual. Default is `"gray_r"`.
+        model_cmap : `str`, optional
+            Colormap for model image. Default is `"gray_r"`.
+        annotate_properties : `list` of `str`, optional
+            Properties to annotate on the model. Default is `["n", "r_e"]`.
+        neighbours : `dict`, optional
+            Neighboring objects to overlay. Default is `None`.
+        save : `bool`, optional
+            Whether to save the figure. Default is `True`.
+        show : `bool`, optional
+            Whether to display the figure. Default is `False`.
+        """
         if fig is None:
             fig, axs = plt.subplots(1, 3, figsize=(10, 4))
 
@@ -318,6 +468,27 @@ class Galfit_Result(Morphology_Result):
     
 
 class Morphology_Fitter(ABC):
+    """Abstract base class for morphological fitting of galaxy images.
+
+    Provides interface for fitting parametric models (e.g., Sérsic) to galaxy
+    surface brightness profiles, using PSF convolution. Subclasses implement
+    specific fitting codes (Galfit, etc.).
+
+    Parameters
+    ----------
+    psf : `Type[PSF_Base]`
+        PSF model for convolution.
+    model : `str`
+        Model name or combination (e.g., "sersic", "sersic+sersic").
+        Must be in ``_available_models``.
+
+    Attributes
+    ----------
+    psf : `Type[PSF_Base]`
+        The PSF model.
+    model : `str`
+        The fitting model(s), lowercased.
+    """
 
     def __init__(
         self: Self,
@@ -335,6 +506,13 @@ class Morphology_Fitter(ABC):
     
     @property
     def name(self: Self) -> str:
+        """Morphology fitter name combining model and filter.
+
+        Returns
+        -------
+        `str`
+            Name of the form "{CodeName}_{filter}_{model}".
+        """
         return self.__class__.__name__.split("_")[0] + \
             f"_{self.psf.cutout.filt_name}_{self.model}"
 
@@ -402,6 +580,35 @@ class Morphology_Fitter(ABC):
 
 
 class Galfit_Fitter(Morphology_Fitter):
+    """Morphological fitting using the Galfit code.
+
+    Fits Sérsic or other parametric profiles to galaxy images using Galfit,
+    with support for PSF convolution and neighboring source fitting.
+
+    Parameters
+    ----------
+    psf : `Type[PSF_Base]`
+        PSF model for convolution in Galfit.
+    model : `str`
+        Galfit model type (e.g., "sersic", "sersic+psf").
+    primary_constraints : `dict` or `None`, optional
+        Parameter constraints for the primary galaxy component.
+        Default includes reasonable bounds for Sérsic parameters.
+    neighbour_constraints : `dict` or `None`, optional
+        Parameter constraints for neighboring objects. Default is similar
+        to primary constraints.
+    neighbours_model : `str` or `None`, optional
+        Model to use for neighboring sources. Default is "sersic".
+    fid_params : `dict`, optional
+        Fiducial parameters for components (e.g., Sérsic index n=1 for disk).
+
+    Attributes
+    ----------
+    model_to_code_dict : `dict`
+        Maps model names to Galfit function codes (ss, ds, ss_psf, psf).
+    property_units : `dict`
+        Maps property names to their astropy units.
+    """
 
     model_to_code_dict = {
         "sersic": "ss",

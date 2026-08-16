@@ -1,3 +1,19 @@
+"""GALFIND: A comprehensive galaxy photometry and SED fitting framework.
+
+GALFIND provides tools for galaxy photometry, SED fitting, morphological analysis,
+and statistical characterization, with deep integrations for JWST/HST data processing
+and multiple external SED fitting codes (EAZY, LePhare, Bagpipes).
+
+Key components:
+    - Galaxy: Represents individual sources with photometry and SED fits
+    - Catalogue: Collection of Galaxy objects with FITS I/O
+    - Data, Filter, Instrument: Imaging data and instrumental setup
+    - Photometry, SED, SED_result: Photometry and SED fit storage
+    - Selector: Galaxy sample selection with customizable criteria
+    - Property_calculator: Derived property computation with uncertainties
+    - Morphology, Spectrum: Morphological and spectroscopic data
+"""
+
 # __init__.py
 
 import time
@@ -35,6 +51,11 @@ config = configparser.ConfigParser()
 config.read(config_path)
 config.set("DEFAULT", "GALFIND_DIR", galfind_dir)
 config.set("DEFAULT", "CONFIG_DIR",  f"{galfind_dir}/../configs")
+
+# on ReadTheDocs, override machine-specific paths with writable defaults
+if os.environ.get("READTHEDOCS") == "True":
+    config.set("DEFAULT", "GALFIND_WORK", "/tmp/galfind_docs_build")
+    config.set("DEFAULT", "GALFIND_DATA", "/tmp/galfind_docs_build")
 
 # Make IS_CLUSTER variable from the config parameters
 if config["DEFAULT"]["SURVEY"] in json.loads(config.get("Other", "CLUSTER_FIELDS")):
@@ -174,8 +195,6 @@ from .SED import (
     Mock_SED_rest,
     Mock_SED_obs,
     SED_2D,
-)
-from .SED import (
     Mock_SED_template_set,
     Mock_SED_rest_template_set,
     Mock_SED_obs_template_set,
@@ -238,7 +257,7 @@ from .Emission_lines import Emission_line, wav_lyman_alpha, line_diagnostics
 from . import IGM_attenuation
 from . import lyman_alpha_damping_wing
 from .DLA import DLA
-from .Dust_Attenuation import Dust_Law, Calzetti00, SMC, Reddy15, Salim18, Modified_Calzetti00, Power_Law_Dust, M99, Reddy15, Reddy18, AUV_from_beta
+from .Dust_Attenuation import Dust_Law, Calzetti00, SMC, Reddy15, Salim18, Modified_Calzetti00, Power_Law_Dust, M99, Reddy18, AUV_from_beta
 from .Spectrum import (
     Spectral_Catalogue,
     Spectrum,

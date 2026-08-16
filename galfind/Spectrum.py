@@ -1,4 +1,8 @@
-# Spectrum.py
+"""Spectral data and spectroscopic instrument configuration.
+
+Provides classes for handling spectral data and NIRSpec grating configuration,
+including dispersion, resolution, and transmission curves for named gratings.
+"""
 
 from __future__ import annotations
 
@@ -35,19 +39,60 @@ from . import astropy_cosmo as cosmo
 
 
 class Spectral_Grating:  # disperser
+    """NIRSpec spectral grating (disperser) configuration.
+
+    On construction, loads the dispersion, resolution and transmission
+    curves associated with the named grating.
+
+    Parameters
+    ----------
+    name : `str`
+        Name of the grating (e.g. ``"PRISM"``, ``"G140M"``, ``"G395H"``).
+
+    Attributes
+    ----------
+    name : `str`
+        Name of the grating.
+    nominal_resolution : `float`
+        Nominal spectral resolution, set by `load_resolution_curve`.
+    resolution_curve_path : `str`
+        Path to the FITS file containing the resolution curve, set by
+        `load_resolution_curve`.
+    """
+
     def __init__(self, name: str) -> NoReturn:
         self.name = name
         self.load_dispersion_curve()
         self.load_resolution_curve()
         self.load_transmission_curve()
 
+    def __repr__(self) -> str:
+        """Return a string representation of the `Spectral_Grating` instance."""
+        return f"Spectral_Grating({self.name})"
+
     def load_dispersion_curve(self):
+        """Load the dispersion curve for this grating. Not yet implemented."""
         pass
 
     def get_dispersion(self, wavs):
+        """Return the dispersion at the given wavelength(s). Not yet implemented.
+
+        Parameters
+        ----------
+        wavs : array-like
+            Wavelength(s) at which to evaluate the dispersion.
+        """
         pass
 
     def load_resolution_curve(self):
+        """Set the nominal spectral resolution and resolution curve path for this grating.
+
+        The nominal resolution is set to 100 for the ``"PRISM"`` grating,
+        1000 for medium-resolution gratings (name ending in ``"M"``), and
+        2700 otherwise (high-resolution gratings). Also sets
+        `resolution_curve_path` to the corresponding resolution curve FITS
+        file under ``config['Spectra']['R_CURVE_DIR']``.
+        """
         self.nominal_resolution = (
             100.0
             if self.name == "PRISM"
@@ -58,42 +103,104 @@ class Spectral_Grating:  # disperser
         self.resolution_curve_path = f"{config['Spectra']['R_CURVE_DIR']}/NIRSpec/jwst_nirspec_prism_disp.fits"
 
     def get_resolution(self, wavs):
+        """Return the spectral resolution at the given wavelength(s). Not yet implemented.
+
+        Parameters
+        ----------
+        wavs : array-like
+            Wavelength(s) at which to evaluate the resolution.
+        """
         pass
 
     def load_transmission_curve(self):
+        """Load the transmission curve for this grating. Not yet implemented."""
         pass
 
     def get_transmission(self, wavs):
+        """Return the transmission at the given wavelength(s). Not yet implemented.
+
+        Parameters
+        ----------
+        wavs : array-like
+            Wavelength(s) at which to evaluate the transmission.
+        """
         pass
 
 
 class Spectral_Filter:
+    """NIRSpec blocking filter configuration used alongside a grating.
+
+    Parameters
+    ----------
+    name : `str`
+        Name of the filter (e.g. ``"CLEAR"``, ``"F070LP"``).
+
+    Attributes
+    ----------
+    name : `str`
+        Name of the filter.
+    """
+
     def __init__(self, name: str) -> NoReturn:
         self.name = name
         self.load_transmission_curve()
 
+    def __repr__(self) -> str:
+        """Return a string representation of the `Spectral_Filter` instance."""
+        return f"Spectral_Filter({self.name})"
+
     def load_transmission_curve(self):
+        """Load the transmission curve for this filter. Not yet implemented."""
         pass
 
     def get_transmission(self, wavs):
+        """Return the transmission at the given wavelength(s). Not yet implemented.
+
+        Parameters
+        ----------
+        wavs : array-like
+            Wavelength(s) at which to evaluate the transmission.
+        """
         pass
 
 
 class Spectral_Instrument(ABC):
+    """Abstract base class for a spectrograph configuration.
+
+    Combines a `Spectral_Grating` and a `Spectral_Filter` into a single
+    instrument configuration.
+
+    Parameters
+    ----------
+    grating : `Spectral_Grating`
+        The grating (disperser) used by this instrument configuration.
+    filter : `Spectral_Filter`
+        The blocking filter used by this instrument configuration.
+
+    Attributes
+    ----------
+    grating : `Spectral_Grating`
+        The grating associated with this instrument configuration.
+    filter : `Spectral_Filter`
+        The filter associated with this instrument configuration.
+    """
+
     def __init__(
         self,
         grating: Spectral_Grating,
         filter: Spectral_Filter,
-    ) -> NoReturn:
+    ) -> None:
         self.grating = grating
         self.filter = filter
 
     @abstractmethod
     def load_sensitivity(self):
+        """Load the sensitivity curve for this instrument configuration. Must be implemented by subclasses."""
         pass
 
     @abstractmethod
     def get_sensitivity(self):
+        """Return the sensitivity of this instrument configuration. Must be implemented by subclasses."""
         pass
 
 
@@ -103,6 +210,27 @@ class Spectral_Instrument(ABC):
 
 
 class NIRSpec(Spectral_Instrument):
+    """JWST NIRSpec instrument configuration (grating + filter pair).
+
+    Parameters
+    ----------
+    grating_name : `str`
+        Name of the NIRSpec grating (e.g. ``"PRISM"``, ``"G395H"``).
+    filter_name : `str`
+        Name of the NIRSpec blocking filter (e.g. ``"CLEAR"``, ``"F290LP"``).
+        Combined with ``grating_name`` as ``"{grating_name}/{filter_name}"``,
+        this must be one of `available_grating_filters`.
+
+    Attributes
+    ----------
+    grating_filter_name : `str`
+        Combined ``"{grating_name}/{filter_name}"`` configuration name.
+    grating : `Spectral_Grating`
+        The grating associated with this instrument configuration.
+    filter : `Spectral_Filter`
+        The filter associated with this instrument configuration.
+    """
+
     available_grating_filters = [
         "G140M/F070LP",
         "G140M/F100LP",
@@ -129,10 +257,12 @@ class NIRSpec(Spectral_Instrument):
         )
 
     def load_sensitivity(self):
+        """Load the sensitivity curve for this NIRSpec configuration (e.g. from pandeia). Not yet implemented."""
         # load from pandeia
         pass
 
     def get_sensitivity(self):
+        """Return the sensitivity of this NIRSpec configuration. Not yet implemented."""
         # determine from self.sensitivity
         pass
 
@@ -141,6 +271,70 @@ instrument_conv_dict = {"NIRSPEC": NIRSpec}
 
 
 class Spectrum:
+    """A single reduced 1D spectrum of a source, with associated metadata.
+
+    Parameters
+    ----------
+    wavs : `astropy.units.Quantity`
+        Observed-frame wavelengths of the spectrum.
+    fluxes : `astropy.units.Quantity` or `astropy.units.Magnitude`
+        Flux (or magnitude) values corresponding to `wavs`.
+    flux_errs : `astropy.units.Quantity` or `astropy.units.Magnitude`
+        Uncertainties on `fluxes`.
+    sky_coord : `astropy.coordinates.SkyCoord`
+        Sky position of the source.
+    z : `float`
+        Redshift of the source.
+    z_method : `str`
+        Method/origin used to determine `z` (e.g. ``"cat"``).
+    instrument : `Spectral_Instrument`
+        Instrument configuration used to take this spectrum.
+    reduction_name : `str`
+        Name/version of the data reduction pipeline used to produce this
+        spectrum.
+    MSA_metafile_name : `str`
+        Path to the associated MSA metafile, if any.
+    author_years : `dict`, optional
+        Mapping of ``author_year`` strings to redshift values from the
+        literature. Default is `{}`.
+    meta : `dict`, optional
+        Additional metadata associated with the spectrum, typically the
+        FITS header of the originating exposure. Default is `{}`.
+    **kwargs
+        Additional keyword arguments set as attributes on the instance.
+
+    Attributes
+    ----------
+    wavs : `astropy.units.Quantity`
+        Observed-frame wavelengths of the spectrum.
+    fluxes : `astropy.units.Quantity` or `astropy.units.Magnitude`
+        Flux (or magnitude) values corresponding to `wavs`.
+    flux_errs : `astropy.units.Quantity` or `astropy.units.Magnitude`
+        Uncertainties on `fluxes`.
+    sky_coord : `astropy.coordinates.SkyCoord`
+        Sky position of the source.
+    RA : `float`
+        Right ascension of `sky_coord`, in degrees.
+    DEC : `float`
+        Declination of `sky_coord`, in degrees.
+    z : `float`
+        Redshift of the source.
+    z_method : `str`
+        Method/origin used to determine `z`.
+    instrument : `Spectral_Instrument`
+        Instrument configuration used to take this spectrum.
+    reduction_name : `str`
+        Name/version of the data reduction pipeline used to produce this
+        spectrum.
+    MSA_metafile_name : `str`
+        Path to the associated MSA metafile, if any.
+    author_years : `dict`
+        Mapping of ``author_year`` strings to redshift values from the
+        literature.
+    meta : `dict`
+        Additional metadata associated with the spectrum.
+    """
+
     def __init__(
         self,
         wavs: u.Quantity,
@@ -172,8 +366,13 @@ class Spectrum:
         for key, value in kwargs.items():
             setattr(self, key, value)
 
+    def __repr__(self) -> str:
+        """Return a string representation of the `Spectrum` instance."""
+        return f"Spectrum({self.src_name}, z={self.z}, {self.instrument.grating_filter_name})"
+
     @property
     def PID(self) -> Union[int, None]:
+        """`int` or `None`: JWST program ID, taken from `meta["PROGRAM"]` or the leading component of `meta["SRCNAM1"]` (cached after first access)."""
         try:
             return self._PID
         except AttributeError:
@@ -185,8 +384,21 @@ class Spectrum:
                 raise (Exception())
             return self._PID
 
+    # @property
+    # def root(self) -> Union[str, None]:
+    #     """`str` or `None`: Root name of the source, taken from `meta["SRCNAM1"]` (cached after first access)."""
+    #     try:
+    #         return self._root
+    #     except AttributeError:
+    #         if "SRCNAM1" in self.meta.keys():
+    #             self._root = str(self.meta["SRCNAM1"].split("_")[0])
+    #         else:
+    #             raise (Exception())
+    #         return self._root
+
     @property
     def src_ID(self) -> Union[int, None]:
+        """`int` or `None`: Source ID, taken from `meta["SOURCEID"]` or the second component of `meta["SRCNAM1"]` (cached after first access)."""
         try:
             return self._src_ID
         except AttributeError:
@@ -200,10 +412,15 @@ class Spectrum:
 
     @property
     def src_name(self):
-        return f"{self.PID}_{self.src_ID}"
+        """`str`: Unique source name, combining `PID` and `src_ID` as ``"{PID}_{src_ID}"``."""
+        _src_name = f"{self.PID}_{self.src_ID}"
+        if hasattr(self, "root"):
+            _src_name = f"{self.root}_{_src_name}"
+        return _src_name
 
     @property
     def MSA_ID(self):
+        """`int`: MSA metadata ID, taken from `meta["MSAMETID"]` (cached after first access)."""
         try:
             return self._meta_ID
         except AttributeError:
@@ -215,6 +432,7 @@ class Spectrum:
 
     @property
     def dither_pt(self):
+        """`int`: Dither point/pattern index, taken from `meta["PATT_NUM"]` (cached after first access)."""
         try:
             return self._dither_pt
         except AttributeError:
@@ -233,18 +451,53 @@ class Spectrum:
         cls,
         url_path: str,
         save: bool = True,
-        version: str = "v3",
+        version: str = "v4_4",
         z: Union[float, None] = None,
         *args,
         **kwargs,
     ) -> Self:
+        """Construct a `Spectrum` from a DAWN JWST Archive (DJA) 2D spectrum.
 
+        Downloads (or loads a local cache of) the 2D spectrum FITS file at
+        `url_path`, extracts the source position and instrument
+        configuration from its header, extracts the 1D spectrum using
+        ``msaexp`` (caching the result as a local ``.h5`` file), and
+        downloads the associated MSA metafile. The extracted 1D wavelength,
+        flux and flux error arrays are passed to the `Spectrum` constructor.
+
+        Parameters
+        ----------
+        url_path : `str`
+            URL or local path to the DJA 2D spectrum FITS file.
+        save : `bool`, optional
+            Whether to save a local copy of the downloaded 2D spectrum FITS
+            file. Default is `True`.
+        version : `str`, optional
+            DJA reduction version (e.g. ``"v2"``, ``"v3"``, ``"v4_2"``,
+            ``"v4_4"``), used to determine how the flux errors and MSA
+            metafile name are extracted. Default is ``"v4_4"``.
+        z : `float` or `None`, optional
+            Redshift of the source. If given, `z_method` is set to
+            ``"cat"``, otherwise `z_method` is `None`. Default is `None`.
+        *args
+            Additional positional arguments passed to the `Spectrum`
+            constructor.
+        **kwargs
+            Additional keyword arguments passed to the `Spectrum`
+            constructor.
+
+        Returns
+        -------
+        `Spectrum`
+            A new `Spectrum` instance built from the DJA data, with an
+            additional `origin` attribute set to the local path of the 2D
+            spectrum FITS file.
+        """
         # open 2D spectrum
         loc_2d_path = url_path.replace(
             config["Spectra"]["DJA_WEB_DIR"],
             config["Spectra"]["DJA_2D_SPECTRA_DIR"],
         )
-        #breakpoint()
         if not Path(loc_2d_path).is_file():
             funcs.make_dirs(loc_2d_path)
             img = fits.open(url_path, cache=False)
@@ -292,6 +545,7 @@ class Spectrum:
                 flux_errs = spectrum_1D.spec["full_err"]
             else:
                 flux_errs = spectrum_1D.spec["full_err"]
+            #breakpoint()
             # save as local .h5 file
             funcs.make_dirs(loc_1d_path)
             hf = h5py.File(loc_1d_path, "w")
@@ -313,6 +567,7 @@ class Spectrum:
             flux_unit = u.Unit(hf.attrs["flux_unit"])
             fluxes = np.array(hf["fluxes"])
             flux_errs = np.array(hf["flux_errs"])
+
         wavs *= wav_unit
         fluxes = Masked(fluxes * flux_unit, mask = mask)
         flux_errs = Masked(np.array(flux_errs) * flux_unit, mask = mask)
@@ -365,6 +620,12 @@ class Spectrum:
         return spec_obj
 
     def load_MSA_metafile(self):
+        """Load the MSA metafile referenced by `MSA_metafile_name` into `MSA_metafile`.
+
+        If loading fails (e.g. `MSA_metafile_name` is invalid or `None`),
+        `MSA_metafile` is set to `None`. Does nothing if `MSA_metafile`
+        is already set.
+        """
         from msaexp import msa
 
         if not hasattr(self, "MSA_metafile"):
@@ -382,6 +643,33 @@ class Spectrum:
         nod_colour: str = "lightpink",
         **plot_kwargs,
     ):
+        """Overplot the NIRSpec MSA slitlet outlines for this source's dither point on an image.
+
+        Loads the MSA metafile if not already loaded, retrieves the slit
+        regions for this source's dither point/MSA metadata ID, converts
+        their sky-coordinate corners to pixel coordinates using `wcs`, and
+        draws each slit that overlaps the field of view onto `ax`. The
+        primary source slit is drawn in `colour`, nod slits in `nod_colour`.
+
+        Parameters
+        ----------
+        ax : `matplotlib.pyplot.Axes`
+            Axes to plot the slitlet outlines on.
+        wcs : `astropy.wcs.WCS`
+            WCS used to convert slit sky corners to pixel coordinates.
+        add_labels : `bool`, optional
+            Whether to annotate the axes with the dither point, MSA
+            metafile name and source ID. Default is `True`.
+        colour : `str`, optional
+            Colour used to draw the primary source slit. Default is
+            ``"magenta"``.
+        nod_colour : `str`, optional
+            Colour used to draw non-source (nod) slits. Default is
+            ``"lightpink"``.
+        **plot_kwargs
+            Additional keyword arguments passed to `ax.plot` when drawing
+            each slit outline.
+        """
         # mostly copied from msaexp MSAMetafile base code
         self.load_MSA_metafile()
         assert self.MSA_metafile is not None
@@ -456,6 +744,25 @@ class Spectrum:
         rest_cont_wav: u.Quantity,
         delta_wav: u.Quantity = 100 * u.AA,
     ):
+        """Compute the median signal-to-noise ratio in a rest-frame continuum window.
+
+        Selects data points within ``delta_wav / 2`` of `rest_cont_wav` in
+        the rest frame, computes the per-pixel flux/flux_err ratio, and
+        takes the median as the mean SNR. Also caches the result on `self.SNR`.
+
+        Parameters
+        ----------
+        rest_cont_wav : `astropy.units.Quantity`
+            Central rest-frame wavelength of the continuum window.
+        delta_wav : `astropy.units.Quantity`, optional
+            Full width of the rest-frame continuum window. Default is
+            ``100 * u.AA``.
+
+        Returns
+        -------
+        `float`
+            Median SNR of the data points within the continuum window.
+        """
         assert hasattr(self, "z"), galfind_logger.critical(
             f"{repr(self)} does not have a redshift (z) attribute!"
         )
@@ -473,19 +780,71 @@ class Spectrum:
 
     def plot(
         self: Self,
+        frame: str = "obs",
         src: str = "manual",
         out_dir: Optional[str] = f"{config['DEFAULT']['GALFIND_WORK']}/DJA_spec_plots/",
         fig: Optional[plt.Figure] = None,
         ax: Optional[plt.Axes] = None,
         wav_units: u.Unit = u.um,
         flux_units: u.Unit = u.uJy,
+        annotate: bool = True,
         log_fluxes: bool = False,
+        rest_wav_range: Optional[Tuple[float, float]] = None,
+        plot_masked: bool = True,
         **fit_kwargs: Dict[str, Any],
     ) -> NoReturn:
+        """Plot the spectrum, either via ``msaexp``'s plotting routine or manually.
+
+        If ``src == "msaexp"``, uses `msaexp.spectrum.plot_spectrum` on
+        `self.origin` and saves the figure under `out_dir`. If
+        ``src == "manual"``, plots the (mask-cropped) flux density against
+        wavelength on `ax` (creating `fig`/`ax` if not given), converting
+        units as requested and optionally plotting in log flux space.
+
+        Parameters
+        ----------
+        frame: `str`, optional
+            Frame to plot the spectrum in, either ``"obs"`` or ``"rest".
+            Default is ``"obs"``.
+        src : `str`, optional
+            Plotting method to use, either ``"msaexp"`` or ``"manual"``.
+            Default is ``"manual"``.
+        out_dir : `str` or `None`, optional
+            Output directory for the saved figure when ``src == "msaexp"``.
+            Default is ``f"{config['DEFAULT']['GALFIND_WORK']}/DJA_spec_plots/"``.
+        fig : `matplotlib.pyplot.Figure` or `None`, optional
+            Figure to plot on when ``src == "manual"``. Created if `None`.
+            Default is `None`.
+        ax : `matplotlib.pyplot.Axes` or `None`, optional
+            Axes to plot on when ``src == "manual"``. Created if `None`.
+            Default is `None`.
+        wav_units : `astropy.units.Unit`, optional
+            Units to convert the wavelength axis to. Default is `u.um`.
+        flux_units : `astropy.units.Unit`, optional
+            Units to convert the flux axis to. Default is `u.uJy`.
+        annotate : `bool`, optional
+            Whether to annotate the axes with labels, title and legend.
+            Default is `True`.
+        log_fluxes : `bool`, optional
+            Whether to plot the flux axis in log10 space. Default is `False`.
+        rest_wav_range : `tuple` of `float` or `None`, optional
+            Rest-frame wavelength range to plot, as ``(min, max)``.
+            If given, the spectrum is cropped to this range before plotting.
+            Default is `None`.
+        plot_masked : `bool`, optional
+            Whether to plot masked data points. Default is `True`.
+        **fit_kwargs : `dict`
+            Additional keyword arguments passed to the plotting calls
+            (e.g. line colour, alpha).
+        """
         assert src in ["msaexp", "manual"], galfind_logger.critical(
             f"{src=} not in ['msaexp', 'manual']"
         )
+        assert frame in ["obs", "rest"], galfind_logger.critical(
+            f"{frame=} not in ['obs', 'rest']"
+        )
         if src == "msaexp":
+            raise NotImplementedError()
             import msaexp.spectrum
 
             fig, spec, data = msaexp.spectrum.plot_spectrum(
@@ -502,17 +861,32 @@ class Spectrum:
                 fig, ax = plt.subplots()
             # unit conversions
             mask = ~self.fluxes.mask
-            wavs = funcs.convert_wav_units(self.wavs[mask], wav_units).value
-            fluxes = funcs.convert_mag_units(self.wavs[mask], self.fluxes[mask].filled(np.nan), flux_units).value
+            wavs = funcs.convert_wav_units(self.wavs[mask], wav_units)
+            if frame == "rest":
+                wavs /= (1 + self.z)
+            if rest_wav_range is None:
+                wav_range_mask = np.ones_like(wavs, dtype=bool)
+            else:
+                if frame == "rest":
+                    wav_range = np.array(rest_wav_range.to(u.AA).value)
+                else: # frame == "obs":
+                    wav_range = np.array(rest_wav_range.to(u.AA).value) * (1 + self.z)
+                wav_range_mask = np.array(
+                    [wav > wav_range[0] and wav < wav_range[1] for wav in wavs.to(u.AA).value]
+                ).astype(bool)
+            wavs = wavs[wav_range_mask]
+            fluxes = funcs.convert_mag_units(wavs, self.fluxes[mask][wav_range_mask].filled(np.nan), flux_units)
             flux_errs = funcs.convert_mag_err_units(
-                self.wavs[mask],
-                self.fluxes[mask].filled(np.nan),
+                wavs,
+                self.fluxes[mask][wav_range_mask].filled(np.nan),
                 np.array([
-                    self.flux_errs[mask].filled(np.nan).value,
-                    self.flux_errs[mask].filled(np.nan).value
+                    self.flux_errs[mask][wav_range_mask].filled(np.nan).value,
+                    self.flux_errs[mask][wav_range_mask].filled(np.nan).value
                 ]) * self.flux_errs.unit,
                 flux_units
             )
+            wavs = wavs.value
+            fluxes = fluxes.value
             if log_fluxes:
                 flux_errs_l1 = np.log10(fluxes / (fluxes - flux_errs[0].value))
                 flux_errs_u1 = np.log10((fluxes + flux_errs[1].value) / fluxes)
@@ -524,28 +898,89 @@ class Spectrum:
             ax.plot(wavs, fluxes, label=self.src_name, **fit_kwargs)
             alpha = deepcopy(fit_kwargs).pop("alpha", 1.0) * 0.5
             ax.fill_between(wavs, fluxes - flux_errs[0], fluxes + flux_errs[1], alpha = alpha, **fit_kwargs)
+        if annotate:
+            # label x and y axes
+            ax.set_xlabel(f"{frame.capitalize()} wavelength [{wav_units.to_string()}]")
+            if log_fluxes:
+                ax.set_ylabel(f"log10(flux [{flux_units.to_string()}])")
+            else:
+                ax.set_ylabel(f"flux [{flux_units.to_string()}]")
+            # add title with source name and redshift
+            ax.set_title(f"{self.src_name} (z={self.z:.3f})")
+            # add legend
+            ax.legend()
     
     def make_mock_phot(
         self: Self,
         filterset: Multiple_Filter,
         depths: Optional[Dict[str, float]] = None,
     ):
+        """Create mock photometry in a given filterset from this spectrum.
+
+        Builds an `SED_obs` from the spectrum's wavelength/flux arrays and
+        redshift, then creates mock photometry by convolving it with
+        `filterset`.
+
+        Parameters
+        ----------
+        filterset : `Multiple_Filter`
+            Set of filters to create mock photometry for.
+        depths : `dict` of `str` to `float`, optional
+            Per-band depths used when generating the mock photometry.
+            Default is `None`.
+
+        Returns
+        -------
+        Mock photometry created from the spectrum's `SED_obs` representation
+        via `SED_obs.create_mock_photometry`.
+        """
         from . import SED_obs
         # TODO: Link SED and Spectrum objects
         # make SED object from self
         assert self.z is not None, galfind_logger.critical(
             f"{repr(self)} does not have a redshift (z) attribute!"
         )
-        sed_obs = SED_obs(self.z, self.wavs.value, self.fluxes.value, self.wavs.unit, self.fluxes.unit)
+        sed_obs = SED_obs(
+            self.z,
+            self.wavs.value, 
+            self.fluxes.value,
+            self.wavs.unit,
+            self.fluxes.unit,
+        )
         return sed_obs.create_mock_photometry(
             filterset,
-            depths = depths
+            depths = depths,
         )
 
     def fit_UV_slope(
         self: Self,
         wav_range: Union[str, u.Quantity] = "Calzetti+94",
     ) -> Tuple[float, List[float]]:
+        """Fit the rest-frame UV continuum slope, beta, of the spectrum.
+
+        Crops the rest-frame spectrum to the Calzetti et al. (1994)
+        continuum windows, converts fluxes to f_lambda, and fits a
+        power-law ``f(wav) = 10**A * wav**beta`` via `scipy.optimize.curve_fit`.
+
+        Parameters
+        ----------
+        wav_range : `str` or `astropy.units.Quantity`, optional
+            Wavelength range/window definition to fit over. Only
+            ``"Calzetti+94"`` is currently implemented. Default is
+            ``"Calzetti+94"``.
+
+        Returns
+        -------
+        `tuple` of (`float`, `list` of `float`)
+            The fitted UV slope ``beta`` and its symmetric
+            ``[beta_err, beta_err]`` uncertainty. Returns ``(nan, [nan, nan])``
+            if there are not enough valid data points or if the fit fails.
+
+        Raises
+        ------
+        NotImplementedError
+            If `wav_range` is not ``"Calzetti+94"``.
+        """
         assert hasattr(self, "z"), galfind_logger.critical(
             f"{repr(self)} does not have a redshift (z) attribute!"
         )
@@ -583,8 +1018,37 @@ class Spectrum:
         return beta, [beta_err, beta_err]
 
 
-    def fit_Muv(self: Self, wav_range: u.Quantity = [1_450.0, 1_550.0] * u.AA, size = 10_000):
-        assert hasattr(self, "z"), galfind_logger.critical( 
+    def fit_Muv(
+        self: Self,
+        wav_range: u.Quantity = [1_450.0, 1_550.0] * u.AA,
+        size = 10_000,
+    ):
+        """Compute the absolute UV magnitude, M_UV, of the spectrum.
+
+        Takes the inverse-variance weighted mean rest-frame f_lambda flux
+        density within `wav_range`, propagates its uncertainty via Monte
+        Carlo sampling of size `size`, converts to apparent AB magnitude at
+        1500 Angstrom, and applies the distance and cosmological-dimming
+        corrections to obtain M_UV. Also caches `flambda_1500_chains`,
+        `MUV_arr`, `MUV`, `MUV_l1` and `MUV_u1` on `self`.
+
+        Parameters
+        ----------
+        wav_range : `astropy.units.Quantity`, optional
+            Rest-frame wavelength range to average the continuum flux
+            density over. Default is ``[1450.0, 1550.0] * u.AA``.
+        size : `int`, optional
+            Number of Monte Carlo samples used to propagate the flux
+            uncertainty into M_UV. Default is `10_000`.
+
+        Returns
+        -------
+        `tuple` of (`astropy.units.Magnitude`, `list`)
+            The median M_UV and its ``[l1, u1]`` 16th/84th percentile
+            uncertainties. Returns ``(nan, [nan, nan])`` if there is no
+            valid data or the unit conversion fails.
+        """
+        assert hasattr(self, "z"), galfind_logger.critical(
             f"{repr(self)} does not have a redshift (z) attribute!"
         )
         rest_wavs = funcs.convert_wav_units(self.wavs, u.AA) / (1.0 + self.z)
@@ -599,7 +1063,6 @@ class Spectrum:
                 flux_errs = funcs.convert_mag_err_units(rest_wavs, fluxes, [flux_errs, flux_errs], u.erg / u.s / u.cm**2 / u.AA)[0] # symmetric in flux space
             except Exception as e:
                 galfind_logger.debug(f"Failed to convert mag err units for {repr(self)}: {e}")
-                #breakpoint()
                 return np.nan, [np.nan, np.nan]
         else:
             galfind_logger.debug(f"No valid data for {self.src_name}")
@@ -630,7 +1093,33 @@ class Spectrum:
         wav_ranges: u.Quantity = [[3_400., 3_600.], [4_150., 4_250.]] * u.AA,
         size = 10_000,
     ) -> Tuple[float, List[float]]:
-        assert hasattr(self, "z"), galfind_logger.critical( 
+        """Compute the D4000 spectral break strength of the spectrum.
+
+        Computes the median flux in the two rest-frame wavelength windows
+        given by `wav_ranges` (blue and red side of the 4000 Angstrom
+        break), forms their flux ratio, propagates its uncertainty via
+        Monte Carlo sampling of size `size`, and converts to the
+        magnitude-like D4000 index ``-2.5 * log10(ratio)``.
+
+        Parameters
+        ----------
+        wav_ranges : `astropy.units.Quantity`, optional
+            Two rest-frame wavelength ranges ``[blue_range, red_range]``
+            used to measure the continuum either side of the break. The
+            first range must be entirely blueward of the second. Default
+            is ``[[3400.0, 3600.0], [4150.0, 4250.0]] * u.AA``.
+        size : `int`, optional
+            Number of Monte Carlo samples used to propagate the flux ratio
+            uncertainty. Default is `10_000`.
+
+        Returns
+        -------
+        `tuple` of (`float`, `list` of `float`)
+            The median D4000 value and its ``[l1, u1]`` 16th/84th
+            percentile uncertainties. Returns ``(nan, [nan, nan])`` if
+            either continuum window has a negative median flux.
+        """
+        assert hasattr(self, "z"), galfind_logger.critical(
             f"{repr(self)} does not have a redshift (z) attribute!"
         )
         assert len(wav_ranges) == 2, galfind_logger.critical(
@@ -684,6 +1173,49 @@ class Spectrum:
         plot: bool = True,
         size: int = 10_000,
     ):
+        """Fit an H-alpha Gaussian-plus-continuum model to the spectrum.
+
+        Crops the rest-frame spectrum to `wav_range`, fits a Gaussian plus
+        constant continuum model (`Halpha_gauss`/`Halpha_residual`) via
+        ``lmfit.minimize``, propagates the fitted parameter uncertainties
+        via Monte Carlo sampling of size `size`, and derives the H-alpha
+        flux, equivalent width and integrated SNR. Caches
+        `Halpha_flux_arr`, `Ha_EWrest`/`Ha_EWobs`, `Ha_cont`, `Ha_flux` and
+        `Ha_SNR` on `self`. If `plot` is `True`, also saves a plot of the
+        data and best-fit model.
+
+        Parameters
+        ----------
+        wav_range : `astropy.units.Quantity`, optional
+            Rest-frame wavelength range to fit over. Default is
+            ``[6200.0, 6900.0] * u.AA``.
+        Halpha_wav : `astropy.units.Quantity`, optional
+            Rest-frame wavelength of the H-alpha line, used to define the
+            feature mask for the SNR calculation. Default is
+            ``6562.8 * u.AA``.
+        frame : `str`, optional
+            Frame in which to compute the equivalent width, either
+            ``"rest"`` or ``"obs"``. Default is ``"rest"``.
+        plot : `bool`, optional
+            Whether to plot and save the data and best-fit model. Default
+            is `True`.
+        size : `int`, optional
+            Number of Monte Carlo samples used to propagate parameter
+            uncertainties. Default is `10_000`.
+
+        Returns
+        -------
+        `None`
+            Returns `None` if there is no valid data in `wav_range` or if
+            the fit fails (in which case `failed_Ha_fit` is set to `True`).
+            Otherwise returns `None` implicitly after setting the
+            attributes described above.
+
+        Raises
+        ------
+        ValueError
+            If `frame` is not ``"rest"`` or ``"obs"``.
+        """
         rest_wavs = funcs.convert_wav_units(self.wavs, u.AA) / (1. + self.z)
         wav_range_AA = wav_range.to(u.AA)
         valid = (~self.fluxes.mask & (rest_wavs < wav_range_AA[1]) & (rest_wavs > wav_range_AA[0]))
@@ -778,9 +1310,24 @@ class Spectrum:
             plt.clf()
 
     def fit_xi_ion(self: Self, plot: bool = False):
+        """Compute the ionizing photon production efficiency, xi_ion, of the source.
+
+        Runs `fit_Muv` and `fit_Ha` to obtain the rest-frame UV and
+        H-alpha luminosities, converts the H-alpha luminosity to an
+        ionizing photon production rate using the Kennicutt (1998)-derived
+        calibration ``ndot_ion = 7.28e11 * L(Halpha)``, and divides by the
+        UV luminosity to obtain xi_ion. Caches `ndot_ion_arr`, `ndot_ion`,
+        `ndot_ion_l1`, `ndot_ion_u1`, `xi_ion_arr`, `xi_ion`, `xi_ion_l1`
+        and `xi_ion_u1` on `self`.
+
+        Parameters
+        ----------
+        plot : `bool`, optional
+            Whether `fit_Ha` should plot and save the H-alpha fit. Default
+            is `False`.
+        """
         self.fit_Muv()
         self.fit_Ha(plot = plot)
-        #breakpoint()
         LUV_arr = funcs.flux_to_luminosity(self.flambda_1500_chains, 1_500.0 * u.AA, self.z)
         LHa_arr = funcs.flux_to_luminosity(self.Halpha_flux_arr / (1.0 + self.z), 6_562.8 * u.AA, self.z, out_units = u.erg / u.s)
         self.ndot_ion_arr = 7.28e11 * LHa_arr.value
@@ -793,9 +1340,46 @@ class Spectrum:
         self.xi_ion_u1 = np.percentile(self.xi_ion_arr, 84)
 
 def Halpha_gauss(x, A, sigma, c):
+    """Evaluate a Gaussian-plus-constant model of the H-alpha emission line.
+
+    Parameters
+    ----------
+    x : array-like
+        Rest-frame wavelength(s) in Angstrom.
+    A : `float`
+        Gaussian amplitude.
+    sigma : `float`
+        Gaussian standard deviation, in Angstrom.
+    c : `float`
+        Constant continuum level.
+
+    Returns
+    -------
+    array-like
+        Model flux values at `x`, centred on the H-alpha rest wavelength
+        (6562.8 Angstrom).
+    """
     return A * np.exp(-0.5 * ((x - 6562.8) / sigma)**2) + c
 
 def Halpha_residual(params, x, y, y_err):
+    """Compute the weighted residual of `Halpha_gauss` for use with `lmfit.minimize`.
+
+    Parameters
+    ----------
+    params : `lmfit.Parameters`
+        Fit parameters, must contain ``'A'``, ``'sigma'`` and ``'c'``.
+    x : array-like
+        Rest-frame wavelength(s) in Angstrom.
+    y : array-like
+        Observed flux values at `x`.
+    y_err : array-like
+        Uncertainties on `y`.
+
+    Returns
+    -------
+    array-like
+        ``(model - y) / y_err`` evaluated at `x`.
+    """
     # gaussian plus a constant
     model = Halpha_gauss(x, params['A'], params['sigma'], params['c'])
     return (model - y) / y_err
@@ -803,7 +1387,26 @@ def Halpha_residual(params, x, y, y_err):
 
 # should inherit from Catalogue_Base
 class Spectral_Catalogue:
-    def __init__(self, spectrum_arr: NDArray[Spectrum]) -> NoReturn:
+    """A collection of `Spectrum` objects, grouped by unique source.
+
+    Spectra sharing the same `Spectrum.src_name` are grouped together
+    under a single entry, so that a single `Spectral_Catalogue` element
+    may contain multiple spectra (e.g. from different observations) of
+    the same source.
+
+    Parameters
+    ----------
+    spectrum_arr : `numpy.typing.NDArray` of `Spectrum`
+        Array of `Spectrum` objects to group into the catalogue.
+
+    Attributes
+    ----------
+    spectrum_arr : `list` of `list` of `Spectrum`
+        Spectra grouped by unique source name; each element is a list of
+        the `Spectrum` objects belonging to one unique source.
+    """
+
+    def __init__(self, spectrum_arr: NDArray[Spectrum]) -> None:
         # check if any of the sources are the same
         orig_src_names = [spec.src_name for spec in spectrum_arr]
         unique_src_names = np.unique(orig_src_names)
@@ -875,6 +1478,58 @@ class Spectral_Catalogue:
         version: str = "v4_4",
         zlabel: str = "z",
     ):
+        """Construct a `Spectral_Catalogue` by querying the DAWN JWST Archive (DJA) catalogue.
+
+        Loads the DJA source catalogue for the given `version`, optionally
+        filters it (by `filename_arr`, or by any combination of `ra_range`,
+        `dec_range`, `grade`, `grating_filter`, `z_cat_range`, `PID`), and
+        loads a `Spectrum` for each remaining row via `Spectrum.from_DJA`.
+
+        Parameters
+        ----------
+        ra_range : `list`, `numpy.array` or `astropy.units.Quantity`, optional
+            Two-element right ascension range to filter the catalogue to.
+            Ignored if `filename_arr` is given. Default is `None`.
+        dec_range : `list`, `numpy.array` or `astropy.units.Quantity`, optional
+            Two-element declination range to filter the catalogue to.
+            Ignored if `filename_arr` is given. Default is `None`.
+        PID : `int` or `None`, optional
+            JWST program ID to filter the catalogue to. Ignored if
+            `filename_arr` is given. Default is `None`.
+        z_cat_range : `list`, `numpy.array` or `None`, optional
+            Two-element catalogue redshift range to filter the catalogue
+            to. If given, `z_from_cat` is set to `True`. Ignored if
+            `filename_arr` is given. Default is `None`.
+        grating_filter : `str` or `None`, optional
+            Grating/filter combination (from
+            `NIRSpec.available_grating_filters`) to filter the catalogue
+            to. Ignored if `filename_arr` is given. Default is `None`.
+        grade : `int`, optional
+            DJA redshift quality grade to filter the catalogue to. Ignored
+            if `filename_arr` is given. Default is `3`.
+        filename_arr : `list` of `str`, optional
+            Explicit list of DJA ``"file"`` values to select from the
+            catalogue, bypassing all other filtering criteria. Default is
+            `None`.
+        save : `bool`, optional
+            Whether to save a local copy of each downloaded 2D spectrum
+            FITS file, passed to `Spectrum.from_DJA`. Default is `True`.
+        z_from_cat : `bool`, optional
+            Whether to pass the catalogue redshift to `Spectrum.from_DJA`
+            for each source. Automatically set to `True` if `z_cat_range`
+            is given. Default is `False`.
+        version : `str`, optional
+            DJA reduction version to query. Default is ``"v4_4"``.
+        zlabel : `str`, optional
+            Name of the redshift column in the DJA catalogue. Default is
+            ``"z"``.
+
+        Returns
+        -------
+        `Spectral_Catalogue`
+            A new `Spectral_Catalogue` containing a `Spectrum` for each
+            selected DJA catalogue row.
+        """
         if grating_filter is not None:
             assert grating_filter in NIRSpec.available_grating_filters
         available_versions = ["v1", "v2", "v3", "v4_2", "v4_4"]
@@ -884,7 +1539,7 @@ class Spectral_Catalogue:
         # open and crop catalogue
         # DJA_cat = utils.read_catalog(config['Spectra']['DJA_CAT_PATH'], format = "ascii.ecsv")
         DJA_cat = Table.read(
-            config["Spectra"]["DJA_CAT_PATH"].replace("v2", version)
+            config["Spectra"]["DJA_CAT_PATH"].replace("v4_4", version)
         )
         if filename_arr is None:
             if ra_range is not None:
@@ -957,7 +1612,6 @@ class Spectral_Catalogue:
             mask = np.isin(np.array(DJA_cat["file"]), np.array(filename_arr))
             DJA_cat = DJA_cat[mask]
             # TODO: assertions that these follow the other rules
-
         if z_from_cat:
             return cls(
                 [
@@ -998,8 +1652,19 @@ class Spectral_Catalogue:
     
     def plot(
         self: Self,
-        src: str = "msaexp"
+        src: str = "msaexp",
     ):
+        """Plot every spectrum in the catalogue.
+
+        Calls `Spectrum.plot` for every spectrum belonging to every
+        source in the catalogue.
+
+        Parameters
+        ----------
+        src : `str`, optional
+            Plotting method passed to `Spectrum.plot`, either ``"msaexp"``
+            or ``"manual"``. Default is ``"msaexp"``.
+        """
         for gal in tqdm(self, desc="Plotting spectra"):
             for spec in gal:
                 spec.plot(src = src)
