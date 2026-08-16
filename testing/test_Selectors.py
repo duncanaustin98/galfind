@@ -450,7 +450,7 @@ def fail_min_band_selector(request):
 @pytest.fixture(
     scope = "module",
     params = [
-        ({"band_name": "F444W"}, True),
+        ({"filt_name": "F444W"}, True),
     ]
 )
 def call_unmasked_band_selector(request):
@@ -459,10 +459,10 @@ def call_unmasked_band_selector(request):
 @pytest.fixture(
     scope = "module",
     params = [
-        ({"band_name": "invalid"}, Exception),
-        ({"band_name": 0}, Exception),
-        ({"band_name": 0.32 * u.arcsec}, Exception),
-        ({"band_name": [0, 1]}, Exception),
+        ({"filt_name": "invalid"}, Exception),
+        ({"filt_name": 0}, Exception),
+        ({"filt_name": 0.32 * u.arcsec}, Exception),
+        ({"filt_name": [0, 1]}, Exception),
     ]
 )
 def fail_unmasked_band_selector(request):
@@ -1182,21 +1182,21 @@ def fail_robust_zPDF_selector(request):
     params = [
         (
             {
-                "band_name": "F444W",
+                "filt_name": "F444W",
                 "gtr_or_less": "gtr",
                 "lim": 50.0 * u.marcsec,
             }, True
         ),
         (
             {
-                "band_name": "F444W",
+                "filt_name": "F444W",
                 "gtr_or_less": "less",
                 "lim": 100.0 * u.marcsec,
             }, True
         ),
         (
             {
-                "band_name": "F200W",
+                "filt_name": "F200W",
                 "gtr_or_less": "gtr",
                 "lim": 45.0 * u.marcsec,
             }, True
@@ -1211,28 +1211,28 @@ def call_sextractor_band_radius_selector(request):
     params = [
         (
             {
-                "band_name": "invalid_band",
+                "filt_name": "invalid_band",
                 "gtr_or_less": "gtr",
                 "lim": 50.0 * u.marcsec,
             }, Exception
         ),
         (
             {
-                "band_name": "F444W",
+                "filt_name": "F444W",
                 "gtr_or_less": "invalid",
                 "lim": 50.0 * u.marcsec,
             }, Exception
         ),
         (
             {
-                "band_name": "F444W",
+                "filt_name": "F444W",
                 "gtr_or_less": "gtr",
                 "lim": -50.0 * u.marcsec,
             }, Exception
         ),
         (
             {
-                "band_name": "F444W",
+                "filt_name": "F444W",
                 "gtr_or_less": "gtr",
                 "lim": 50.0,  # missing units
             }, Exception
@@ -1293,11 +1293,11 @@ def fail_kokorev24_lrd_selector(fail_kokorev24_lrd_red1_selector):
 @pytest.fixture(
     scope = "module",
     params = [
-        ({"band_names": "F444W"}, True),
-        ({"band_names": ["F444W"]}, True),
-        ({"band_names": ["F200W", "F444W"]}, True),
-        ({"band_names": "F200W+F444W"}, True),
-        ({"band_names": "F277W+F444W"}, Exception),
+        ({"filt_names": "F444W"}, True),
+        ({"filt_names": ["F444W"]}, True),
+        ({"filt_names": ["F200W", "F444W"]}, True),
+        ({"filt_names": "F200W+F444W"}, True),
+        ({"filt_names": "F277W+F444W"}, Exception),
     ]
 )
 def call_unmasked_bands_selector(request):
@@ -1306,8 +1306,8 @@ def call_unmasked_bands_selector(request):
 @pytest.fixture(
     scope = "module",
     params = [
-        ({"band_names": "invalid_band"}, Exception),
-        ({"band_names": ["invalid1", "invalid2"]}, Exception),
+        ({"filt_names": "invalid_band"}, Exception),
+        ({"filt_names": ["invalid1", "invalid2"]}, Exception),
     ]
 )
 def fail_unmasked_bands_selector(request):
@@ -1340,14 +1340,14 @@ def fail_unmasked_instrument_selector(request):
     params = [
         (
             {
-                "band_names": ["F277W", "F356W", "F444W"],
+                "filt_names": ["F277W", "F356W", "F444W"],
                 "gtr_or_less": "gtr",
                 "lim": 45.0 * u.marcsec,
             }, Exception
         ),
         (
             {
-                "band_names": ["F444W"],
+                "filt_names": ["F444W"],
                 "gtr_or_less": "less",
                 "lim": 100.0 * u.marcsec,
             }, True
@@ -1362,14 +1362,14 @@ def call_sextractor_bands_radius_selector(request):
     params = [
         (
             {
-                "band_names": ["invalid_band"],
+                "filt_names": ["invalid_band"],
                 "gtr_or_less": "gtr",
                 "lim": 45.0 * u.marcsec,
             }, Exception
         ),
         (
             {
-                "band_names": ["F444W"],
+                "filt_names": ["F444W"],
                 "gtr_or_less": "invalid",
                 "lim": 45.0 * u.marcsec,
             }, Exception

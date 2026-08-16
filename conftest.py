@@ -17,6 +17,7 @@ from galfind import (
     NIRCam,
     Filter,
     EAZY,
+    LePhare,
     Data,
     Band_Data,
     Stacked_Band_Data,
@@ -37,7 +38,7 @@ test_aper_diams = [0.32] * u.arcsec
 test_forced_phot_band_ = ["F200W", "F444W"]
 
 
-@pytest.fixture
+@pytest.fixture(scope = "session")
 def test_bands():
     return test_bands_
 
@@ -125,6 +126,16 @@ def f444w():
 def blank_multi_filt():
     return Multiple_Filter([])
 
+@pytest.fixture(scope = "session")
+def nircam_multi_filter():
+    return Multiple_Filter.from_instrument("NIRCam")
+
+@pytest.fixture(scope = "session")
+def multi_filter_test_bands(test_bands):
+    return Multiple_Filter([
+        Filter.from_filt_name(name) for name in test_bands
+    ])
+
 # @pytest.fixture(scope = "session")
 # def cat():
 #     return 
@@ -141,11 +152,16 @@ def eazy_fsps_larson_sed_fitter():
 def eazy_sfhz_sed_fitter():
     return EAZY({"templates": "sfhz", "lowz_zmax": None})
 
+@pytest.fixture(scope="session")
+def lephare_sed_fitter():
+    return LePhare({"GAL_TEMPLATES": "BC03_Chabrier2003_Zm42m62"})
+
 @pytest.fixture(
     scope = "session",
     params = [
         lf(eazy_fsps_larson_sed_fitter),
         lf(eazy_sfhz_sed_fitter),
+        lf(lephare_sed_fitter),
     ]
 )
 def sed_fitter(request):
@@ -236,6 +252,18 @@ def gal_eazy_loaded(cat_eazy_loaded):
     return cat_eazy_loaded[0]
 
 @pytest.fixture(scope="session")
+def cat_lephare_loaded(data, lephare_sed_fitter, aper_diams):
+    # load catalogue from data
+    cat = Catalogue.from_data(data)
+    # load/run SED fitting
+    lephare_sed_fitter(cat, aper_diams[0], update = True)
+    return cat
+
+@pytest.fixture(scope="session")
+def gal_lephare_loaded(cat_lephare_loaded):
+    return cat_lephare_loaded[0]
+
+@pytest.fixture(scope="session")
 def cat_eazy_sex_params_loaded(cat_eazy_loaded):
     cat_eazy_loaded_ = deepcopy(cat_eazy_loaded)
     cat_eazy_loaded_.load_sextractor_params()
@@ -245,6 +273,58 @@ def cat_eazy_sex_params_loaded(cat_eazy_loaded):
 @pytest.fixture(scope="session")
 def gal_eazy_sex_params_loaded(cat_eazy_sex_params_loaded):
     return cat_eazy_sex_params_loaded[0]
+
+@pytest.fixture(scope="session")
+def cat_lephare_eazy_loaded(
+    cat_lephare_loaded,
+    eazy_fsps_larson_sed_fitter,
+    aper_diams,
+):
+    # load/run EAZY SED fitting
+    eazy_fsps_larson_sed_fitter(cat_lephare_loaded, aper_diams[0], update = True)
+    return cat_lephare_loaded
+
+@pytest.fixture(scope="session")
+def gal_lephare_eazy_loaded(cat_lephare_eazy_loaded):
+    return cat_lephare_eazy_loaded[0]
+
+@pytest.fixture(scope = "session")
+def custom_lephare_sed_fitter():
+    # TODO: SED_fit_params here doesn't actually fold in anywhere
+    SED_fit_params = {"GAL_TEMPLATES": "BC03_Chabrier2003_Zm42m62"}
+    acs_wfc_nircam_medwide = Multiple_Filter.from_instruments(["ACS_WFC", "NIRCam"], keep_suffix = ["M", "W", "LP"])
+    LePhare_fitter = LePhare(
+        SED_fit_params,
+        filterset = acs_wfc_nircam_medwide,
+        gal_lib_name = "BC03_ACS_WFC+NIRCam_MedWide_HZ_Dusty",
+        star_lib_name = "STAR+BD_ACS_WFC+NIRCam_MedWide",
+        qso_lib_name = "QSO_MARA_ACS_WFC+NIRCam_MedWide_HZ_Dusty",
+    )
+    return LePhare_fitter
+
+@pytest.fixture(scope = "session")
+def cat_custom_lephare_loaded(cat, custom_lephare_sed_fitter, aper_diams):
+    # load custom lephare
+    custom_lephare_sed_fitter(cat, aper_diams[0], load_PDFs = True, load_SEDs = True, update = True)
+    return cat
+
+@pytest.fixture(scope = "session")
+def gal_custom_lephare_loaded(cat_custom_lephare_loaded):
+    return cat_custom_lephare_loaded[0]
+
+@pytest.fixture(scope="session")
+def cat_custom_lephare_eazy_loaded(
+    cat_custom_lephare_loaded,
+    eazy_fsps_larson_sed_fitter,
+    aper_diams,
+):
+    # load/run EAZY SED fitting
+    eazy_fsps_larson_sed_fitter(cat_custom_lephare_loaded, aper_diams[0], update = True)
+    return cat_custom_lephare_loaded
+
+@pytest.fixture(scope="session")
+def gal_custom_lephare_eazy_loaded(cat_custom_lephare_eazy_loaded):
+    return cat_custom_lephare_eazy_loaded[0]
 
 @pytest.fixture(scope="session")
 def phot_rest(

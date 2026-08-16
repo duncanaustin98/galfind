@@ -37,9 +37,12 @@ def get_code() -> str:
 def get_segmentation_path(
     self: Type[Band_Data_Base],
     err_map_type: str,
-) -> str:
+) -> str: 
     seg_dir = f"{config['SExtractor']['SEX_DIR']}/{self.instr_name}/{self.version}/{self.survey}/{err_map_type}/segmentation"
-    seg_path = f"{seg_dir}/{self.survey}_{self.filt_name}_{self.filt_name}_sel_cat_{self.version}_seg.fits"
+    seg_name = f"{self.survey}_{self.filt_name}_{self.filt_name}_sel_cat_{self.version}"
+    if self.is_native:
+        seg_name += "_native"
+    seg_path = f"{seg_dir}/{seg_name}_seg.fits"
     funcs.make_dirs(seg_path)
     return seg_path
 
@@ -50,10 +53,10 @@ def get_forced_phot_path(
 ) -> str:
     forced_phot_dir = f"{config['SExtractor']['SEX_DIR']}/{self.instr_name}/{self.version}/{self.survey}/{err_map_type}/forced_phot/{funcs.aper_diams_to_str(self.aper_diams)}"
     if forced_phot_band is None:
-        select_band_name = self.filt_name
+        select_filt_name = self.filt_name
     else:
-        select_band_name = forced_phot_band.filt_name
-    forced_phot_path = f"{forced_phot_dir}/{self.survey}_{self.filt_name}_{select_band_name}_sel_cat_{self.version}.fits"
+        select_filt_name = forced_phot_band.filt_name
+    forced_phot_path = f"{forced_phot_dir}/{self.survey}_{self.filt_name}_{select_filt_name}_sel_cat_{self.version}.fits"
     funcs.make_dirs(forced_phot_path)
     return forced_phot_path
 
@@ -68,7 +71,7 @@ def get_err_map(
         return self.rms_err_path, self.rms_err_ext, "MAP_RMS"
             # raise (
             #     Exception(
-            #         f"No rms_err map available for {self.filt.band_name}"
+            #         f"No rms_err map available for {self.filt.filt_name}"
             #     )
             # )
     elif err_type == "wht":
@@ -77,7 +80,7 @@ def get_err_map(
         else:
             self._make_wht_from_rms_err()
             # raise (
-            #     Exception(f"No wht map available for {self.filt.band_name}")
+            #     Exception(f"No wht map available for {self.filt.filt_name}")
             # )
         return self.wht_path, self.wht_ext, "MAP_WEIGHT"
     else:
@@ -99,7 +102,7 @@ def segment(
 
     err_map_path, err_map_ext, err_map_type = get_err_map(self, err_type)
     seg_path = get_segmentation_path(self, err_map_type)
-    
+
     if not Path(seg_path).is_file() or overwrite:
         self._check_aper_diams()
         galfind_logger.info(
@@ -120,6 +123,7 @@ def segment(
             .replace("]", "")
             .replace(" ", "")
         )
+
         input = [
             "./make_seg_map.sh",
             config["SExtractor"]["SEX_DIR"],
@@ -137,12 +141,30 @@ def segment(
             sex_config_path,
             params_path,
             pix_aper_diams,
+            str(self.is_native).lower(),
         ]
         # SExtractor bash script python wrapper
         galfind_logger.debug(input)
         process = subprocess.Popen(input)
         process.wait()
-        funcs.change_file_permissions(seg_path)
+
+        temp_path = "/".join(seg_path.split("/")[:-1]) + "/temp.fits"
+        for i, ext in enumerate(["", "_bkg", "_seg"]):
+            full_filepath = seg_path.replace("_seg.fits", f"{ext}.fits")
+            if len(seg_path) >= 256:
+                if i == 0:
+                    galfind_logger.debug(
+                        f"Segmentation path {len(seg_path)}>=256 characters long!"
+                    )
+                temp_filepath = temp_path.replace(".fits", f"{ext}.fits")
+                if Path(temp_filepath).is_file():
+                    galfind_logger.debug(f"Renaming {temp_filepath} to {full_filepath}!")
+                    os.rename(temp_filepath, full_filepath)
+                else:
+                    err_message = f"Expected temp file {temp_filepath} not found!"
+                    galfind_logger.critical(err_message)
+                    raise Exception(err_message)
+            funcs.change_file_permissions(full_filepath)
     return seg_path
 
 
@@ -277,7 +299,7 @@ def perform_forced_phot(
         }
     return forced_phot_path, forced_phot_args
 
-    # if self.forced_phot_band not in self.instrument.band_names:
+    # if self.forced_phot_band not in self.instrument.filt_names:
     #     sextractor_bands = [band for band in self.instrument] + [
     #         self.forced_phot_band
     #     ]
@@ -294,6 +316,6 @@ def perform_forced_phot(
     # )
     # else:
     #     sextract = False
-    #     self.sex_cat_types[band_name] = (
+    #     self.sex_cat_types[filt_name] = (
     #         f"{forced_phot_code} v{globals()[forced_phot_code].__version__}"
     #     )

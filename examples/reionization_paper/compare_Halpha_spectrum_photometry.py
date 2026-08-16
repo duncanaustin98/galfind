@@ -49,7 +49,7 @@ def make_nircam_filterset(survey):
 def get_depths(survey, version, filterset, depth_region = "all"):
     depth_path = f"{galfind.config['Depths']['DEPTH_DIR']}/Depth_tables/{version}/{survey}/{survey}_depths.ecsv"
     depth_tab = Table.read(depth_path)
-    depths = [float(depth_tab[(depth_tab["filter"] == filt.band_name) & (depth_tab["region"] == depth_region)]["median_depth"]) for filt in filterset]
+    depths = [float(depth_tab[(depth_tab["filter"] == filt.filt_name) & (depth_tab["region"] == depth_region)]["median_depth"]) for filt in filterset]
     return depths
 
 def get_prism_cat_path(z_label, survey, version):
@@ -72,9 +72,9 @@ def make_prism_cat(survey = "JOF", version = "v11", depth_region = "all", z_rang
     mock_phot_arr = [sed.create_mock_phot(filterset, depths = depths) for sed in \
         tqdm(prism_seds, total = len(prism_seds), desc = "Making mock photometry")]
     scattered_mock_phot_arr = [mock_phot.scatter(1) for mock_phot in mock_phot_arr]
-    phot_dict = {f"{filt.band_name}_Jy": [mock_phot.flux[i].value for mock_phot in mock_phot_arr] for i, filt in enumerate(filterset)}
-    scattered_phot_dict = {f"{filt.band_name}_Jy_scattered": [mock_phot.flux[i].value for mock_phot in scattered_mock_phot_arr] for i, filt in enumerate(filterset)}
-    phot_errs_dict = {f"{filt.band_name}_Jy_errs": [mock_phot.flux_errs[i].value for mock_phot in mock_phot_arr] for i, filt in enumerate(filterset)}
+    phot_dict = {f"{filt.filt_name}_Jy": [mock_phot.flux[i].value for mock_phot in mock_phot_arr] for i, filt in enumerate(filterset)}
+    scattered_phot_dict = {f"{filt.filt_name}_Jy_scattered": [mock_phot.flux[i].value for mock_phot in scattered_mock_phot_arr] for i, filt in enumerate(filterset)}
+    phot_errs_dict = {f"{filt.filt_name}_Jy_errs": [mock_phot.flux_errs[i].value for mock_phot in mock_phot_arr] for i, filt in enumerate(filterset)}
     ID = list(np.array(range(1, len(prism_cat) + 1)).astype(str))
     z = [spec.z for spec in prism_cat]
     filenames = [spec.origin.split("/")[-1] for spec in prism_cat]

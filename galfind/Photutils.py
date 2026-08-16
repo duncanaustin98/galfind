@@ -52,16 +52,16 @@ def get_forced_phot_path(
     forced_phot_band: Optional[Type[Band_Data_Base]] = None,
 ) -> str:
     if forced_phot_band is None:
-        select_band_name = self.filt_name
+        select_filt_name = self.filt_name
         forced_phot_code = f"photutils-v{photutils.__version__}"
     else:
-        select_band_name = forced_phot_band.filt_name
+        select_filt_name = forced_phot_band.filt_name
         forced_phot_code = forced_phot_band.forced_phot_args["method"]
     forced_phot_dir = f"{config['Photutils']['PHOTUTILS_DIR']}/{self.instr_name}/" + \
         f"{self.version}/{self.survey}/{segment_type}/forced_phot/" + \
         funcs.aper_diams_to_str(self.aper_diams)
     forced_phot_path = f"{forced_phot_dir}/{self.survey}_{self.filt_name}" + \
-        f"_{select_band_name}_{forced_phot_code}_{self.version}.fits"
+        f"_{select_filt_name}_{forced_phot_code}_{self.version}.fits"
     funcs.make_dirs(forced_phot_path)
     return forced_phot_path
 

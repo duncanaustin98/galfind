@@ -49,11 +49,11 @@ def main(
     instrument = Instrument.from_name(instrument_name)
     for band in instrument:
         try:
-            tab[f"MAG_APER_{band.band_name}"]
+            tab[f"MAG_APER_{band.filt_name}"]
         except:
             instrument -= band
             pass
-    print(instrument.band_names)
+    print(instrument.filt_names)
 
     beta_raw_arr = []
     m_UV_raw_arr = []
@@ -73,8 +73,8 @@ def main(
     ):
         # calculate beta/M_UV for raw photometry
         raw_phot_vals = [
-            jaguar_phot_unit_conv(row[jaguar_phot_keys(band_name)])
-            for band_name in instrument.band_names
+            jaguar_phot_unit_conv(row[jaguar_phot_keys(filt_name)])
+            for filt_name in instrument.filt_names
         ]
         # run raw UV properties through galfind
         raw_phot_obj = Photometry(
@@ -95,12 +95,12 @@ def main(
 
         # calculate beta/M_UV for scattered photometry
         scattered_phot_vals = [
-            jaguar_phot_unit_conv(row[f"FLUX_APER_{band_name}"][0])
-            for band_name in instrument.band_names
+            jaguar_phot_unit_conv(row[f"FLUX_APER_{filt_name}"][0])
+            for filt_name in instrument.filt_names
         ]
         scattered_phot_errs = [
-            jaguar_phot_unit_conv(row[f"FLUXERR_APER_{band_name}"][0])
-            for band_name in instrument.band_names
+            jaguar_phot_unit_conv(row[f"FLUXERR_APER_{filt_name}"][0])
+            for filt_name in instrument.filt_names
         ]
 
         # run scattered UV properties through galfind

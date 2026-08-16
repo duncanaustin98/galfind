@@ -28,10 +28,6 @@ def forced_phot_multi_filter(test_forced_phot_band):
 # def test_multiple_filter_eq_invalid(multiple_filter_all, multiple_filter_forced_phot_band):
 #     assert multiple_filter_all != multiple_filter_forced_phot_band
 
-@pytest.fixture(scope = "module")
-def nircam_multi_filter():
-    return Multiple_Filter.from_instrument("NIRCam")
-
 # def test_multiple_instrument_getitem_filtstr(multiple_filter_nircam, f444w):
 #     assert multiple_filter_nircam["F444W"] == f444w
 
@@ -160,7 +156,7 @@ class TestFilterDunderMethods:
     def test_f444w_name(self, f444w):
         assert f444w.facility_name == "JWST"
         assert f444w.instrument_name == "NIRCam"
-        assert f444w.band_name == "F444W"
+        assert f444w.filt_name == "F444W"
 
     def test_str(self, filter):
         print(filter)

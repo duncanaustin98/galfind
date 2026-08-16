@@ -23,7 +23,7 @@ GAL_LIB		LIB_COSMOS  				# Bin. GAL LIBRARY ->
 							# $LEPHAREWORK/lib_bin
 #SEL_AGE   $LEPHAREDIR/sed/GAL/HYPERZ/AGE_GISSEL_ALL.dat # Age list(full path)
 							# (def=NONE)	
-#AGE_RANGE  0.,13.e9                                     # Age Min-Max in yr
+# AGE_RANGE  0.,13.e9                                     # Age Min-Max in yr
 #
 #############################################################################
 #                           FILTERS                                         #
@@ -70,7 +70,7 @@ GAL_LIB_OUT	COSMOS_UDS_DR11_EBV_MAX_1_5      # Output GAL LIBRARY  -> $LEPHAREWO
 #
 #-------   MAG + Z_STEP + EXTINCTION + COSMOLOGY
 MAGTYPE         AB		     # Magnitude type (AB or VEGA)
-Z_STEP 		0.04,18.,0.1 	     # dz, zmax, dzsup(if zmax>6) 
+Z_STEP 		0.04,15.,0.1 	     # dz, zmax, dzsup(if zmax>6) 
 COSMOLOGY	70,0.3,0.7	     # H0,om0,lbd0    (if lb0>0->om0+lbd0=1)
 MOD_EXTINC  	13,23,23,31,23,31,23,31
 EXTINC_LAW  	SMC_prevot.dat,SB_calzetti.dat,SB_calzetti_bump1.dat,SB_calzetti_bump2.dat $
@@ -92,7 +92,7 @@ LIB_ASCII       NO		     # Writes output in ASCII
 #
 #-------    Input Catalog Informations   
 CAT_IN       /nvme/scratch/work/austind/LePhare/GLASS/input_cat/glass_MASTER_Sel-f444W_v5a_aper_corr_masked_5pc.in  # Input catalog  (full path) 
-INP_TYPE     M		          # Input type      (F:Flux or M:MAG)
+INP_TYPE     F		          # Input type      (F:Flux or M:MAG)
 CAT_MAG      AB                   # Input Magnitude (AB or VEGA)
 CAT_FMT      MEME  		  # MEME: (Mag,Err)i  
   		                  # MMEE: (Mag)i,(Err)i  

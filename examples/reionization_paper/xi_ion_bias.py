@@ -90,15 +90,15 @@ def calc_xi_ion_bias(
         ]
         instrument = ACS_WFC(
             excl_bands=[
-                band.band_name
+                band.filt_name
                 for band in ACS_WFC()
-                if band.band_name not in ACS_WFC_bands
+                if band.filt_name not in ACS_WFC_bands
             ]
         ) + NIRCam(
             excl_bands=[
-                band.band_name
+                band.filt_name
                 for band in NIRCam()
-                if band.band_name not in NIRCam_bands
+                if band.filt_name not in NIRCam_bands
             ]
         )
         # [sed_obs.create_mock_phot(instrument) for sed_obs in sed_obs_arr]
@@ -174,14 +174,14 @@ def plot_band_z_coverage(phot_rest_arr):
     cmap = plt.get_cmap("Spectral_r", len(phot_rest_arr[0].instrument))
     already_labelled = []
     for i, band in enumerate(phot_rest_arr[0].instrument):
-        band_name = band.band_name
+        filt_name = band.filt_name
         # colour = cmap[i]
         _cont_band_z_coverage = np.array(
-            [z for i, z in enumerate(z_arr) if band_name in cont_bands_arr[i]]
+            [z for i, z in enumerate(z_arr) if filt_name in cont_bands_arr[i]]
         )
         if len(_cont_band_z_coverage) > 1:
             z_coverage = calc_z_coverage(
-                _cont_band_z_coverage, z_arr, band_name
+                _cont_band_z_coverage, z_arr, filt_name
             )
             plot_band_coverage(
                 ax,
@@ -196,10 +196,10 @@ def plot_band_z_coverage(phot_rest_arr):
             #            facecolors = colours[0], label = "Continuum" if not plotted_cont else None)
             plotted_cont = True
         _em_band_z_coverage = np.array(
-            [z for i, z in enumerate(z_arr) if band_name in em_bands_arr[i]]
+            [z for i, z in enumerate(z_arr) if filt_name in em_bands_arr[i]]
         )
         if len(_em_band_z_coverage) > 1:
-            z_coverage = calc_z_coverage(_em_band_z_coverage, z_arr, band_name)
+            z_coverage = calc_z_coverage(_em_band_z_coverage, z_arr, filt_name)
             plot_band_coverage(
                 ax,
                 z_coverage,
@@ -214,7 +214,7 @@ def plot_band_z_coverage(phot_rest_arr):
             plotted_em = True
         if plotted_cont or plotted_em:
             j += 1
-            plot_bands.append(band_name)
+            plot_bands.append(filt_name)
     for line in strong_optical_lines:
         ax.axhline(
             line_diagnostics[line]["line_wav"].to(u.AA).value,
@@ -245,7 +245,7 @@ def plot_band_z_coverage(phot_rest_arr):
     plt.savefig("band_coverage_plot.png")
 
 
-def calc_z_coverage(z, orig_z_arr, band_name=None):
+def calc_z_coverage(z, orig_z_arr, filt_name=None):
     # find all instances of orig_z_arr that are not in z
     matching_indices = np.searchsorted(orig_z_arr, z)
     start_indices = [
@@ -304,7 +304,7 @@ def plot_band_coverage(
                 / 2.0
             )
             / (1.0 + z_mean),
-            band.band_name,
+            band.filt_name,
             c=label_colour,
             size=10.0,
             va="center",

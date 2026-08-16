@@ -10,6 +10,7 @@ def get_depth_dir(galfind_work_dir, survey, version, instrument_names):
     out_dirs = []
     for instrument_name in instrument_names:
         out_dirs.append(f"{galfind_work_dir}/Depths/{instrument_name}/{version}/{survey}")
+    #breakpoint()
     return np.array(out_dirs)
 
 def get_eazy_dir(galfind_work_dir, survey, version, instrument_names):
@@ -48,7 +49,7 @@ def find_target_dir(galfind_work_dir, survey, version, instrument_names, keyword
     else:
         raise ValueError(f"Keyword {keyword} not recognised")
 
-def main(target_galfind_work, symlink_galfind_work, survey, version, instrument_names, keywords):
+def symlink(target_galfind_work, symlink_galfind_work, survey, version, instrument_names, keywords):
     for keyword in keywords:
         target_dirs = find_target_dir(target_galfind_work, survey, version, instrument_names, keyword)
         for target_dir in target_dirs:
@@ -57,14 +58,29 @@ def main(target_galfind_work, symlink_galfind_work, survey, version, instrument_
             for target_path, symlink_path in zip(target_paths, symlink_paths):
                 funcs.symlink(target_path, symlink_path)
 
+def unlink(target_galfind_work, survey, version, instrument_names, keywords):
+    for keyword in keywords:
+        target_dirs = find_target_dir(target_galfind_work, survey, version, instrument_names, keyword)
+        for target_dir in target_dirs:
+            target_paths = [str(path) for path in Path(target_dir).rglob("*") if path.is_file()]
+            for symlink_path in target_paths:
+                if os.path.islink(symlink_path):
+                    os.unlink(symlink_path)
+
 if __name__ == "__main__":
 
-    survey = "COSMOS-Web-1A"
-    version = "v11"
+    #survey = "COSMOS-Web-1A"
+    version = "v11" #"mosaic_1084_wispnathan_v2"
     instrument_names = ["ACS_WFC", "NIRCam"]
     target_dir = "/raid/scratch/work/jarcidia/GALFIND_WORK" #galfind.config["DEFAULT"]["GALFIND_WORK"]
 
     symlink_dir = "/raid/scratch/work/austind/GALFIND_WORK"
-    dirs_to_link = ["Depths", "EAZY", "Masks", "SExtractor", "Stacked_Images"]
-
-    main(target_dir, symlink_dir, survey, version, instrument_names, dirs_to_link)
+    dirs_to_link = ["Masks"] #["Depths", "EAZY", "Masks", "SExtractor", "Stacked_Images"]
+    type = "symlink"
+    for survey in [f"COSMOS-Web-{x}{letter}" for x in range(0,8) for letter in ["A", "B"]]:
+        if type == "symlink":
+            symlink(target_dir, symlink_dir, survey, version, instrument_names, dirs_to_link)
+        elif type == "unlink":
+            unlink(symlink_dir, survey, version, instrument_names, dirs_to_link)
+        else:
+            raise ValueError(f"Type {type} not recognised")

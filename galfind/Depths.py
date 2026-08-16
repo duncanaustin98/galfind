@@ -27,10 +27,11 @@ from scipy.stats import gaussian_kde
 from skimage import morphology
 from sklearn.cluster import KMeans
 from tqdm import tqdm
+from numpy.typing import NDArray
 from typing import Optional, Union, Tuple, Dict, List, Any, NoReturn, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from . import Band_Data_Base, Data
+    from . import Band_Data_Base, Data, Mask_Selector, Region_Selector
 
 try:
     from typing import Type  # python 3.11+
@@ -39,7 +40,7 @@ except ImportError:
 
 # install cv2, skimage, sklearn
 from . import useful_funcs_austind as funcs
-from . import config, galfind_logger
+from . import config, galfind_logger, Masking
 
 
 def do_photometry(image, xy_coords, radius_pixels):
@@ -851,6 +852,17 @@ def get_depth_dir(
     return depth_dir
 
 
+def get_forced_phot_subdir(aper_diams: u.Quantity, forced_phot_args: Dict[str, Any]) -> str:
+    forced_phot_code = forced_phot_args["method"]
+    dates = funcs.date_finder(forced_phot_code)
+    for remove in dates + ["version", "(", ")", " "]:
+        forced_phot_code = forced_phot_code.replace(remove, "")
+    forced_phot_str = f"_{forced_phot_args['err_type'].split('_')[0]}" + \
+        f"_{forced_phot_args['forced_phot_band'].filt_name}_"
+    return f"{forced_phot_code}{forced_phot_str}{funcs.aper_diams_to_str(aper_diams)}"
+
+
+
 def get_grid_depth_path(
     self: Type[Band_Data_Base],
     aper_diam: u.Quantity,
@@ -861,12 +873,7 @@ def get_grid_depth_path(
         galfind_logger.critical(
             f"Forced photometry not run for {repr(self)}, cannot run depths!"
         )
-    forced_phot_code = self.forced_phot_args["method"]
-    dates = funcs.date_finder(forced_phot_code)
-    for remove in dates + ["version", "(", ")", " "]:
-        forced_phot_code = forced_phot_code.replace(remove, "")
-    subdir = f"{forced_phot_code}_{self.forced_phot_args['err_type'].split('_')[0]}" + \
-        f"_{self.forced_phot_args['forced_phot_band'].filt_name}"
+    subdir = get_forced_phot_subdir(self.aper_diams, self.forced_phot_args)
     depth_path = f"{depth_dir}/{subdir}/{self.filt_name}.h5"
     funcs.make_dirs(depth_path)
     return depth_path
@@ -1078,12 +1085,17 @@ def make_depth_tab(self: Data) -> NoReturn:
             for band_data in self
             for aper_diam in band_data.aper_diams
         ]
-        if self.forced_phot_band not in self:
+        if self.forced_phot_band in self:
+            stacked_band_data_arr = []
+        else:
+            stacked_band_data_arr = [self.forced_phot_band]
+        stacked_band_data_arr += getattr(self, "stacked_band_data_arr", [])
+        for stacked_band_data in stacked_band_data_arr:
             calc_params_arr.extend(
                 [
-                    (self.forced_phot_band, aper_diam, 
-                    self.forced_phot_band.depth_args[aper_diam]["mode"])
-                    for aper_diam in self.forced_phot_band.aper_diams
+                    (stacked_band_data, aper_diam, 
+                    stacked_band_data.depth_args[aper_diam]["mode"])
+                    for aper_diam in stacked_band_data.aper_diams
                 ]
             )
     else:
@@ -1103,16 +1115,21 @@ def make_depth_tab(self: Data) -> NoReturn:
             if (band_data.filt_name, f"{format(aper_diam.value, '.2f')}as", 
             band_data.depth_args[aper_diam]["mode"]) not in filt_aper_diams
         ]
-        if self.forced_phot_band not in self:
+        if self.forced_phot_band in self:
+            stacked_band_data_arr = []
+        else:
+            stacked_band_data_arr = [self.forced_phot_band]
+        stacked_band_data_arr += getattr(self, "stacked_band_data_arr", [])
+        for stacked_band_data in stacked_band_data_arr:
             calc_params_arr.extend(
                 [
-                    (self.forced_phot_band, aper_diam, 
-                    self.forced_phot_band.depth_args[aper_diam]["mode"])
-                    for aper_diam in self.forced_phot_band.aper_diams
+                    (stacked_band_data, aper_diam, 
+                    stacked_band_data.depth_args[aper_diam]["mode"])
+                    for aper_diam in stacked_band_data.aper_diams
                     if (
-                        self.forced_phot_band.filt_name,
+                        stacked_band_data.filt_name,
                         f"{format(aper_diam.value, '.2f')}as",
-                        self.forced_phot_band.depth_args[aper_diam]["mode"]
+                        stacked_band_data.depth_args[aper_diam]["mode"]
                     )
                     not in filt_aper_diams
                 ]
@@ -1222,119 +1239,380 @@ def get_depth_plot_path(
     return depth_plot_path
 
 
-def get_area_depth_dir(self: Data) -> str:
+def get_area_depth_dir(self: Union[Type[Band_Data_Base], Data]) -> str:
     return (
-        f"{config['Depths']['DEPTH_DIR']}/Depth_area_plots/"
+        f"{config['Depths']['DEPTH_DIR']}/Depth_area/"
         + f"{self.version}/{self.survey}"
     )
 
-
-def plot_area_depth(
-    self: Data,
+def get_area_depth_h5_path(
+    self: Type[Band_Data_Base],
     aper_diam: u.Quantity,
+    mask_selector: Union[str, List[str], Type[Mask_Selector]],
+    mask_type: Union[str, List[str]],
+    region_selector: Optional[Union[Type[Region_Selector], List[Type[Region_Selector]]]] = None,
+    invert_region: bool = False,
+    zbin: Optional[Tuple[float, float]] = None,
+) -> str:
+    mask_selector_name, mask_save_name, reg_name, mask_save_path = \
+        Masking.sort_area_mask_names(
+            self,
+            mask_selector,
+            mask_type,
+            region_selector,
+            invert_region,
+            zbin,
+        )
+    rebin_mask_path = Masking.get_rebin_mask_path(self, mask_selector_name, mask_save_name, reg_name, shape = None)
+    path = f"{get_area_depth_dir(self)}/{rebin_mask_path.split('/')[-1].replace('.fits', '')}_{format(aper_diam.value, '.2f')}as_{self.filt_name}.h5"
+    funcs.make_dirs(path)
+    return path
+
+def get_area_depth_plot_path(
+    self: Type[Data],
+    aper_diam: u.Quantity,
+    mask_selector: Union[str, List[str], Type[Mask_Selector]],
+    mask_type: Union[str, List[str]],
+    region_selector: Optional[Union[Type[Region_Selector], List[Type[Region_Selector]]]] = None,
+    invert_region: bool = False,
+    zbin: Optional[Tuple[float, float]] = None,
+) -> str:
+    mask_selector_name, mask_save_name, reg_name, mask_save_path = \
+        Masking.sort_area_mask_names(
+            self,
+            mask_selector,
+            mask_type,
+            region_selector,
+            invert_region,
+            zbin,
+        )
+    rebin_mask_path = Masking.get_rebin_mask_path(self, mask_selector_name, mask_save_name, reg_name, shape = None)
+    path = f"{get_area_depth_dir(self)}/{rebin_mask_path.split('/')[-1].replace('.fits', '')}_{format(aper_diam.value, '.2f')}as_plot.png"
+    funcs.make_dirs(path)
+    return path
+
+def calc_band_data_area_depth(
+    self: Type[Band_Data_Base],
+    aper_diam: u.Quantity,
+    mask_selector: Union[str, List[str], Type[Mask_Selector]] = None,
+    mask_type: Union[str, List[str]] = "MASK",
+    region_selector: Optional[Type[Region_Selector], List[Type[Region_Selector]]] = None,
+    invert_region: bool = False,
+    zbin: Optional[float] = None,
+) -> Tuple[NDArray[float], NDArray[float], float]:
+    assert aper_diam in self.depth_args.keys()
+    #galfind_logger.info(f"Calculating area-depth for {repr(self)} in sub-region {depth_subreg}")
+    area_depth_save_path = get_area_depth_h5_path(self, aper_diam, mask_selector, mask_type, region_selector, invert_region, zbin)
+    from . import Stacked_Band_Data
+    if not Path(area_depth_save_path).is_file():
+        start = time.time()
+        # load appropriate mask if not provided
+        hf_output = get_hf_output(self, aper_diam)
+        nmad_grid = hf_output["nmad_grid"]
+        # load mask and re-bin to nmad grid
+        # if mask is None:
+        #     re_binned_mask = np.ones(nmad_grid.shape, dtype=bool)
+        #     raise NotImplementedError("Area calculation without mask not implemented yet")
+        # else:
+        # calculate total area from this mask
+        mask, mask_selector_name, mask_save_name, reg_name = Masking.make_area_mask_from_band_data(
+            self,
+            mask_selector,
+            mask_type,
+            region_selector,
+            invert_region,
+            zbin = zbin,
+            #**kwargs,
+        )
+        re_binned_mask_path = Masking.get_rebin_mask_path(self, mask_selector_name, mask_save_name, reg_name, shape = nmad_grid.shape)
+        if Path(re_binned_mask_path).is_file():
+            galfind_logger.info(f"Loading rebinned mask from {re_binned_mask_path} for area-depth calculation for {repr(self)}")
+            re_binned_mask = fits.open(re_binned_mask_path, ignore_missing_simple = True)[1].data.astype(bool)
+        else:
+            re_binned_mask = Masking.rebin_mask_to_shape(mask, shape = nmad_grid.shape)
+            # save rebinned boolean mask as .fits file
+            hdu = fits.ImageHDU(re_binned_mask.astype(np.uint8), name=mask_selector_name)
+            hdu.writeto(re_binned_mask_path, overwrite=True)
+            galfind_logger.info(f"Saved rebinned mask to {re_binned_mask_path} for area-depth calculation for {repr(self)}")
+            funcs.change_file_permissions(re_binned_mask_path)
+        # save rebinned mask to file
+        # determine total area of mask
+        area = funcs.calc_unmasked_area(mask, self.pix_scale)
+        # re-bin mask onto nmad grid
+        total_depths = nmad_grid[re_binned_mask].flatten()
+        total_depths = total_depths[~np.isnan(total_depths)]
+        total_depths = total_depths[total_depths != 0]
+        total_depths = total_depths[total_depths != np.inf]
+        total_depths = np.flip(np.sort(total_depths))
+        # Calculate the cumulative distribution scaled to area of band
+        cum_dist = np.arange(1, len(total_depths) + 1) * area / len(total_depths)
+        end = time.time()
+        galfind_logger.info(f"Area-depth calculation for {repr(self)} took {end - start:.2f} seconds")
+        # save total depths and cum_dist to .h5 file
+        hf = h5py.File(area_depth_save_path, "w")
+        hf.create_dataset("total_depths", data=total_depths, compression="gzip")
+        hf.create_dataset("cum_dist", data=cum_dist, compression="gzip")
+        hf.create_dataset("area", data=area)
+        hf.close()
+        galfind_logger.info(f"Saved area-depth data for {repr(self)} to {area_depth_save_path}")
+    else:
+        # load from .h5 file
+        galfind_logger.debug(f"Loading area-depth data from {area_depth_save_path} for {repr(self)}")
+        hf = h5py.File(area_depth_save_path, "r")
+        total_depths = np.array(hf.get("total_depths"))
+        cum_dist = np.array(hf.get("cum_dist"))
+        area = hf.get("area")[()]
+        hf.close()
+    return total_depths, cum_dist, area
+    
+
+def plot_band_data_area_depth(
+    self: Type[Band_Data_Base],
+    aper_diam: u.Quantity,
+    mask_selector: Union[str, List[str], Type[Mask_Selector]] = None,
+    mask_type: Union[str, List[str]] = "MASK",
+    region_selector: Optional[Type[Region_Selector], List[Type[Region_Selector]]] = None,
+    invert_region: bool = False,
+    zbin: Optional[float] = None,
     fig: Optional[plt.Figure] = None,
     ax: Optional[plt.Axes] = None,
+    save: bool = False,
     show: bool = False,
-    use_area_per_band=True,
-    save: bool = True,
-    return_array=False,
+    close: bool = False,
+    **plot_kwargs: Dict[str, Any],
+):
+    total_depths, cum_dist, area = calc_band_data_area_depth(
+        self,
+        aper_diam,
+        mask_selector,
+        mask_type,
+        region_selector,
+        invert_region,
+        zbin,
+    )
+    # update default plot kwargs with any user provided ones
+    plot_kwargs_ = {
+        "drawstyle": "steps-post",
+        "linestyle": "solid",
+        "color": "black",
+        "alpha": 1.0,
+        "linewidth": 1.5,
+        "label": self.filt_name,
+    }
+    plot_kwargs_.update(plot_kwargs)
+    # from . import Stacked_Band_Data
+    # if isinstance(self, Stacked_Band_Data):
+    #     breakpoint()
+    ax.plot(
+        total_depths,
+        cum_dist,
+        **plot_kwargs_,
+        #color=colors[i] if band_data.__class__.__name__ == "Band_Data" else "black",
+        #drawstyle="steps-post",
+        #linestyle="solid" if band_data.__class__.__name__ == "Band_Data" else "dashed",
+    )
+    galfind_logger.info(f"Plotted area-depth for {repr(self)}")
+    if save:
+        save_path = f"{get_area_depth_dir(self)}/{format(aper_diam.value, '.2f')}as_area_depth.png"
+        funcs.make_dirs(save_path)
+        fig.savefig(save_path, dpi=300, bbox_inches="tight")
+        galfind_logger.info(f"Saved area-depth plot for {repr(self)} to {save_path}")
+    if show:
+        plt.show()
+    if close:
+        plt.close(fig)
+
+def calc_data_area_depth(
+    self: Data,
+    aper_diam: u.Quantity,
+    mask_selector: Union[str, List[str], Type[Mask_Selector]] = None,
+    mask_type: Union[str, List[str]] = "MASK",
+    region_selector: Optional[Type[Region_Selector], List[Type[Region_Selector]]] = None,
+    invert_region: bool = True,
+    zbin: Optional[Tuple[float, float]] = None,
+) -> Tuple[Dict[str, NDArray[float]], Dict[str, NDArray[float]], Dict[str, float]]:
+    Masking.make_area_mask_from_data(
+        self,
+        mask_selector,
+        mask_type,
+        region_selector,
+        invert_region,
+        zbin = zbin,
+    )
+    total_depths = {}
+    cum_dist = {}
+    area = {}
+    self_band_data_arr = deepcopy(self.band_data_arr)
+    if hasattr(self, "forced_phot_band") and self.forced_phot_band not in self_band_data_arr:
+        self_band_data_arr += [self.forced_phot_band]
+    if hasattr(self, "stacked_band_data_arr"):
+        self_band_data_arr += self.stacked_band_data_arr
+    for band_data in self_band_data_arr:
+        total_depths_, cum_dist_, area_ = calc_band_data_area_depth(
+            band_data,
+            aper_diam,
+            mask_selector,
+            mask_type,
+            region_selector,
+            invert_region,
+            zbin,
+        )
+        total_depths[band_data.filt_name] = total_depths_
+        cum_dist[band_data.filt_name] = cum_dist_
+        area[band_data.filt_name] = area_
+    return total_depths, cum_dist, area
+
+def plot_data_area_depth(
+    self: Data,
+    aper_diam: u.Quantity,
+    mask_selector: Union[str, List[str], Type[Mask_Selector]] = None,
+    mask_type: Union[str, List[str]] = "MASK",
+    region_selector: Optional[Type[Region_Selector], List[Type[Region_Selector]]] = None,
+    invert_region: bool = True,
+    fig: Optional[plt.Figure] = None,
+    ax: Optional[plt.Axes] = None,
     cmap_name: str = "RdYlBu_r",
-    overwrite: bool = True
-) -> NoReturn:
-    # ensure the depths for all bands are calculated in the given aper_diam
-    assert all(aper_diam in band_data.depth_args.keys() for band_data in self)
-    
-    area_tab = None #self.calc_unmasked_area(
-    #     masking_instrument_or_band_name=self.forced_phot_band,
-    #     forced_phot_band=self.forced_phot_band,
-    # )
+    overwrite: bool = False,
+    save: bool = True,
+    show: bool = False,
+    close: bool = True,
+    **kwargs: Dict[str, Any],
+) -> None:
 
-    if hasattr(self, "forced_phot_band"):
-        if self.forced_phot_band not in self:
-            self.band_data_arr = self.band_data_arr + [self.forced_phot_band]
-        else:
-            self_band_data = self.band_data_arr
+    if "z" in kwargs.keys():
+        zbins = mask_selector.extract_zbins(self)
+        # select zbin which matches the redshift of the data
+        zbin = [zbin_ for zbin_ in zbins if zbin_[0] <= kwargs["z"] < zbin_[1]]
+        assert len(zbin) == 1, \
+            galfind_logger.critical(
+                f"Multiple or no zbins found for z={kwargs['z']}!"
+            )
+        zbin = zbin[0]
     else:
-        self_band_data = self.band_data_arr
-
-    save_path = f"{get_area_depth_dir(self)}/{format(aper_diam.value, '.2f')}as_area_depth.png"
+        zbin = None
+    
+    save_path = get_area_depth_plot_path(self, aper_diam, mask_selector, mask_type, region_selector, invert_region, zbin)
     funcs.make_dirs(save_path)
-
     if not Path(save_path).is_file() or overwrite:
 
         if fig is None or ax is None:
             fig, ax = plt.subplots(1, 1, figsize=(4, 4))
         cmap = plt.cm.get_cmap(cmap_name)
-        colors = cmap(np.linspace(0, 1, len(self_band_data)))
+        colours = cmap(np.linspace(0, 1, len(self.band_data_arr)))
 
-        data = {}
-        for i, band_data in enumerate(self_band_data):
-            area = None
-            hf_output = get_hf_output(band_data, aper_diam)
-
-            total_depths = hf_output["nmad_grid"].flatten()
-            total_depths = total_depths[~np.isnan(total_depths)]
-            total_depths = total_depths[total_depths != 0]
-            total_depths = total_depths[total_depths != np.inf]
-            total_depths = np.flip(np.sort(total_depths))
-            # Calculate the cumulative distribution scaled to area of band
-            cum_dist = np.arange(1, len(total_depths) + 1) * area / len(total_depths)
-
-            # Plot
-            ax.plot(
-                cum_dist,
-                total_depths,
-                label=band_data.filt_name,
-                color=colors[i] if band_data.__class__.__name__ == "Band_Data" else "black",
-                drawstyle="steps-post",
-                linestyle="solid" if band_data.__class__.__name__ == "Band_Data" else "dashed",
+        for band_data, colour in zip(self.band_data_arr, colours):
+            band_data.plot_area_depth(
+                aper_diam = aper_diam, 
+                mask_selector = mask_selector,
+                mask_type = mask_type,
+                region_selector = region_selector,
+                invert_region = invert_region,
+                zbin = zbin,
+                color = colour,
+                fig = fig,
+                ax = ax,
+                show = False,
+                #**kwargs
             )
-
-            if i == 0:
-                min_depth = np.percentile(total_depths, 0.5)
-                max_depth = np.percentile(total_depths, 99.5)
-            else:
-                min_temp = np.percentile(total_depths, 0.5)
-                max_temp = np.percentile(total_depths, 99.5)
-                if min_temp < min_depth:
-                    min_depth = min_temp
-                if max_temp > max_depth:
-                    max_depth = max_temp
-
-        ax.set_ylim(max_depth, min_depth)
-        # Place legend under plot
-        ax.legend(
-            frameon=False,
-            ncol=4,
-            bbox_to_anchor=(0.5, -0.14),
-            loc="upper center",
-            fontsize=8,
-            columnspacing=1,
-            handletextpad=0.5,
-        )
-        # ax.legend(frameon = False, ncol = 2)
-        # Add inner ticks
-        from matplotlib.ticker import AutoMinorLocator
-
-        ax.xaxis.set_minor_locator(AutoMinorLocator())
-        ax.yaxis.set_minor_locator(AutoMinorLocator())
-        # Make ticks face inwards
-        ax.tick_params(direction="in", axis="both", which="both")
-        # Set minor ticks to face in
-
-        ax.yaxis.set_ticks_position("both")
-        ax.xaxis.set_ticks_position("both")
+        if hasattr(self, "forced_phot_band"):
+            self.forced_phot_band.plot_area_depth(
+                aper_diam = aper_diam,
+                mask_selector = mask_selector,
+                mask_type = mask_type,
+                region_selector = region_selector,
+                invert_region = invert_region,
+                zbin = zbin,
+                color = "black",
+                linestyle = "--",
+                fig = fig,
+                ax = ax,
+                show = False,
+                #**kwargs
+            )
+        if hasattr(self, "stacked_band_data_arr"):
+            for stacked_band_data in self.stacked_band_data_arr:
+                stacked_band_data.plot_area_depth(
+                    aper_diam = aper_diam,
+                    mask_selector = mask_selector,
+                    mask_type = mask_type,
+                    region_selector = region_selector,
+                    invert_region = invert_region,
+                    zbin = zbin,
+                    color = "black",
+                    linestyle = ":",
+                    fig = fig,
+                    ax = ax,
+                    show = False,
+                    #**kwargs
+                )
         
-        # ax.set_xlim(0, area_master * 1.02)
-        # Add hlines at integer depths
-        depths = np.arange(20, 35, 1)
-        # for depth in depths:
-        #    ax.hlines(depth, 0, area_master, color = "black", linestyle = "dotted", alpha = 0.5)
-        ax.grid(True)
+        #breakpoint()
+        # data = {}
+        # for i, band_data in enumerate(self_band_data):
+        #     area = None
+        #     hf_output = get_hf_output(band_data, aper_diam)
+
+        #     total_depths = hf_output["nmad_grid"].flatten()
+        #     total_depths = total_depths[~np.isnan(total_depths)]
+        #     total_depths = total_depths[total_depths != 0]
+        #     total_depths = total_depths[total_depths != np.inf]
+        #     total_depths = np.flip(np.sort(total_depths))
+        #     # Calculate the cumulative distribution scaled to area of band
+        #     cum_dist = np.arange(1, len(total_depths) + 1) * area / len(total_depths)
+
+        #     # Plot
+        #     ax.plot(
+        #         cum_dist,
+        #         total_depths,
+        #         label=band_data.filt_name,
+        #         color=colors[i] if band_data.__class__.__name__ == "Band_Data" else "black",
+        #         drawstyle="steps-post",
+        #         linestyle="solid" if band_data.__class__.__name__ == "Band_Data" else "dashed",
+        #     )
+
+            # if i == 0:
+            #     min_depth = np.percentile(total_depths, 0.5)
+            #     max_depth = np.percentile(total_depths, 99.5)
+            # else:
+            #     min_temp = np.percentile(total_depths, 0.5)
+            #     max_temp = np.percentile(total_depths, 99.5)
+            #     if min_temp < min_depth:
+            #         min_depth = min_temp
+            #     if max_temp > max_depth:
+            #         max_depth = max_temp
+
         if save:
+            #ax.set_ylim(max_depth, min_depth)
+            # Place legend under plot
+            ax.legend(
+                frameon=False,
+                ncol=4,
+                bbox_to_anchor=(0.5, -0.14),
+                loc="upper center",
+                fontsize=8,
+                columnspacing=1,
+                handletextpad=0.5,
+            )
+            # Add inner ticks
+            from matplotlib.ticker import AutoMinorLocator
+            ax.xaxis.set_minor_locator(AutoMinorLocator())
+            ax.yaxis.set_minor_locator(AutoMinorLocator())
+            # Make ticks face inwards
+            ax.tick_params(direction="in", axis="both", which="both")
+            ax.invert_xaxis()
+            # Set minor ticks to face in
+            ax.yaxis.set_ticks_position("both")
+            ax.xaxis.set_ticks_position("both")
+            #breakpoint()
+            ax.set_xlabel(rf"{format(aper_diam.value, '.2f')}as 5$\sigma$ Depth (AB mag)")
+            ax.set_ylabel("Cumulative Area (arcmin$^2$)")
+            
             fig.savefig(save_path, dpi=300, bbox_inches="tight")
+            galfind_logger.info(f"Saved area-depth plot for {repr(self)} to {save_path}")
         if show:
             plt.show()
+        if close:
+            plt.close(fig)
 
 def get_hf_output(
     self: Type[Band_Data_Base], 
@@ -1739,16 +2017,18 @@ def get_depth_h5_labels():
 def append_loc_depth_cols(
     self: Data, 
     min_flux_pc_err: Optional[Union[int, float]] = None, 
+    update: bool = True,
     overwrite: bool = False
-) -> NoReturn:
+) -> None:
+    from . import Catalogue, Stacked_Band_Data
     # open catalogue
-    cat = Table.read(self.phot_cat_path)
+    tab = Table.read(self.phot_cat_path)
     # update catalogue with local depths if not already done so
-    if not (f"FLUX_APER_{self[0].filt_name}_aper_corr" in cat.colnames):
+    if not all(f"FLUX_APER_{band_data.filt_name}_aper_corr" in tab.colnames for band_data in self):
         galfind_logger.critical(
             "Must run aperture corrections before appending local depth columns!"
         )
-    elif f"loc_depth_{self[0].filt_name}" not in cat.colnames or overwrite:
+    elif not all(f"loc_depth_{band_data.filt_name}" in tab.colnames for band_data in self) or update or overwrite:
         assert hasattr(self, "forced_phot_band"), \
             galfind_logger.critical(
                 f"{repr(self)} has no 'forced_phot_band'"
@@ -1759,17 +2039,34 @@ def append_loc_depth_cols(
             for band_data in self), galfind_logger.critical(
                 f"Aperture diameters are not the same for all bands in {repr(self)}"
             )
-        if overwrite:
-            # TODO: Delete already existing columns
-            raise(Exception())
         aper_diams = self[0].aper_diams.to(u.arcsec).value
-        for i, band_data in tqdm(enumerate(self.band_data_arr), 
-                total=len(self), desc="Appending local depth columns",
+        self_band_data_arr = deepcopy(self.band_data_arr)
+        if hasattr(self, "forced_phot_band") and self.forced_phot_band not in self_band_data_arr:
+            self_band_data_arr += [self.forced_phot_band]
+        if hasattr(self, "stacked_band_data_arr"):
+            self_band_data_arr += self.stacked_band_data_arr
+
+        if overwrite:
+            # TODO: Delete pre-existing columns
+            raise NotImplementedError(
+                "Overwriting existing local depth columns not implemented yet"
+            )
+        elif update:
+            # only compute for bands which havn't already been computed
+            self_band_data_arr = [
+                band_data for band_data in self_band_data_arr 
+                if f"loc_depth_{band_data.filt_name}" not in tab.colnames
+            ]
+
+        for i, band_data in tqdm(enumerate(self_band_data_arr), 
+                total=len(self_band_data_arr), desc="Appending local depth columns",
                 disable=galfind_logger.getEffectiveLevel() > logging.INFO):
             for j, aper_diam in enumerate(aper_diams):
                 aper_diam *= u.arcsec
                 h5_path = get_grid_depth_path(
-                    band_data, aper_diam, band_data.depth_args[aper_diam]["mode"]
+                    band_data,
+                    aper_diam,
+                    band_data.depth_args[aper_diam]["mode"],
                 )
                 if Path(h5_path).is_file():
                     # open depth .h5
@@ -1789,13 +2086,13 @@ def append_loc_depth_cols(
                     assert diagnostic_name_ == diagnostic_name
                     hf.close()
                 else:
-                    depths = np.full(len(cat), np.nan)
-                    diagnostics = np.full(len(cat), np.nan)
+                    depths = np.full(len(tab), np.nan)
+                    diagnostics = np.full(len(tab), np.nan)
                 if len(aper_diams) == 1:
                     band_depths = list(depths)
                     band_diagnostics = list(diagnostics)
                     band_sigmas = list(funcs.n_sigma_detection(
-                        depths, cat[f"MAG_APER_{band_data.filt_name}"], band_data.ZP
+                        depths, tab[f"MAG_APER_{band_data.filt_name}"], band_data.ZP
                         ))
                 else:
                     if j == 0:
@@ -1810,7 +2107,7 @@ def append_loc_depth_cols(
                                 ),
                             )
                             for depth, mag_aper in zip(
-                                depths, cat[f"MAG_APER_{band_data.filt_name}"]
+                                depths, tab[f"MAG_APER_{band_data.filt_name}"]
                             )
                         ]
                     else:
@@ -1834,20 +2131,20 @@ def append_loc_depth_cols(
                                 ),
                             )
                             for band_sigma, depth, mag_aper in zip(
-                                band_sigmas, depths, cat[f"MAG_APER_{band_data.filt_name}"]
+                                band_sigmas, depths, tab[f"MAG_APER_{band_data.filt_name}"]
                             )
                         ]
 
             # update band with depths and diagnostics
-            cat[f"loc_depth_{band_data.filt_name}"] = band_depths
-            cat[f"{diagnostic_name}_{band_data.filt_name}"] = band_diagnostics
-            cat[f"sigma_{band_data.filt_name}"] = band_sigmas
+            tab[f"loc_depth_{band_data.filt_name}"] = band_depths
+            tab[f"{diagnostic_name}_{band_data.filt_name}"] = band_diagnostics
+            tab[f"sigma_{band_data.filt_name}"] = band_sigmas
             # make local depth error columns in image units
             if len(aper_diams) == 1:
-                cat[f"FLUXERR_APER_{band_data.filt_name}_loc_depth"] = \
+                tab[f"FLUXERR_APER_{band_data.filt_name}_loc_depth"] = \
                     list(funcs.mag_to_flux(np.array(band_depths), band_data.ZP) / 5.0)
             else:
-                cat[f"FLUXERR_APER_{band_data.filt_name}_loc_depth"] = [
+                tab[f"FLUXERR_APER_{band_data.filt_name}_loc_depth"] = [
                     tuple(
                         [
                             funcs.mag_to_flux(val, band_data.ZP) / 5.0
@@ -1857,38 +2154,17 @@ def append_loc_depth_cols(
                     for element in band_depths
                 ]
 
-            # impose n_pc min flux error and convert to Jy where appropriate
-            if len(aper_diams) == 1:
-                # TODO: Speed up this bit of code
-                cat[f"FLUXERR_APER_{band_data.filt_name}_loc_depth_{str(int(min_flux_pc_err))}pc_Jy"] = \
-                    [
-                        np.nan
-                        if flux == 0.0
-                        else funcs.flux_image_to_Jy(
-                            flux, band_data.ZP
-                        ).value
-                        * min_flux_pc_err
-                        / 100.0
-                        if err / flux
-                        < min_flux_pc_err / 100.0
-                        and flux > 0.0
-                        else funcs.flux_image_to_Jy(
-                            err, band_data.ZP
-                        ).value
-                        for flux, err in zip(
-                            cat[f"FLUX_APER_{band_data.filt_name}_aper_corr"],
-                            cat[f"FLUXERR_APER_{band_data.filt_name}_loc_depth"],
-                        )
-                    ]
-            else:
-                cat[f"FLUXERR_APER_{band_data.filt_name}_loc_depth_{str(int(min_flux_pc_err))}pc_Jy"] = \
-                    [
-                    tuple(
+            if not isinstance(band_data, Stacked_Band_Data): # or psf_homogenized
+                # impose n_pc min flux error and convert to Jy where appropriate
+                if len(aper_diams) == 1:
+                    # TODO: Speed up this bit of code
+                    tab[f"FLUXERR_APER_{band_data.filt_name}_loc_depth_{str(int(min_flux_pc_err))}pc_Jy"] = \
                         [
                             np.nan
                             if flux == 0.0
                             else funcs.flux_image_to_Jy(
-                                flux, band_data.ZP
+                                flux,
+                                band_data.ZP
                             ).value
                             * min_flux_pc_err
                             / 100.0
@@ -1898,24 +2174,61 @@ def append_loc_depth_cols(
                             else funcs.flux_image_to_Jy(
                                 err, band_data.ZP
                             ).value
-                            for flux, err in zip(flux_tup, err_tup)
+                            for flux, err in zip(
+                                tab[f"FLUX_APER_{band_data.filt_name}_aper_corr"],
+                                tab[f"FLUXERR_APER_{band_data.filt_name}_loc_depth"],
+                            )
                         ]
-                    )
-                    for flux_tup, err_tup in zip(
-                        cat[f"FLUX_APER_{band_data.filt_name}_aper_corr"],
-                        cat[f"FLUXERR_APER_{band_data.filt_name}_loc_depth"],
-                    )
-                ]
+                else:
+                    tab[f"FLUXERR_APER_{band_data.filt_name}_loc_depth_{str(int(min_flux_pc_err))}pc_Jy"] = \
+                        [
+                        tuple(
+                            [
+                                np.nan
+                                if flux == 0.0
+                                else funcs.flux_image_to_Jy(
+                                    flux, band_data.ZP
+                                ).value
+                                * min_flux_pc_err
+                                / 100.0
+                                if err / flux
+                                < min_flux_pc_err / 100.0
+                                and flux > 0.0
+                                else funcs.flux_image_to_Jy(
+                                    err, band_data.ZP
+                                ).value
+                                for flux, err in zip(flux_tup, err_tup)
+                            ]
+                        )
+                        for flux_tup, err_tup in zip(
+                            tab[f"FLUX_APER_{band_data.filt_name}_aper_corr"],
+                            tab[f"FLUXERR_APER_{band_data.filt_name}_loc_depth"],
+                        )
+                    ]
+            else:
+                galfind_logger.debug(
+                    f"Not imposing minimum flux error for {repr(self)}" + \
+                    "Aperture corrections cannot be applied unless PSF homogenized"
+                )
         # update meta
-        cat.meta = {**cat.meta, "MINPCERR": min_flux_pc_err}
-
-        # overwrite original catalogue with local depth columns
-        cat.write(self.phot_cat_path, overwrite=True)
-        funcs.change_file_permissions(self.phot_cat_path)
-        galfind_logger.info(
-            f"Appended local depth columns to {self.phot_cat_path}"
-        )
+        tab.meta = {
+            **tab.meta,
+            "MINPCERR": min_flux_pc_err
+        }
+        if update:
+            Catalogue.update_fits_cat(
+                tab,
+                self.phot_cat_path,
+                "OBJECTS",
+            )
+        else:
+            # overwrite original catalogue with local depth columns
+            tab.write(self.phot_cat_path, overwrite=True)
+            funcs.change_file_permissions(self.phot_cat_path)
+            galfind_logger.info(
+                f"Appended local depth columns to {self.phot_cat_path}"
+            )
     else:
-        galfind_logger.info(
+        galfind_logger.debug(
             f"Local depth columns already exist in {self.phot_cat_path}"
         )

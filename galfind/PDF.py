@@ -68,7 +68,7 @@ class PDF:
 
     def __add__(
         self,
-        other: Union["PDF", int, float, u.Quantity, u.Magnitude, u.Dex],
+        other: Union[PDF, int, float, u.Quantity, u.Magnitude, u.Dex],
         name_ext: Union[str, None] = None,
         add_kwargs: dict = {},
         save: bool = False,
@@ -310,7 +310,9 @@ class PDF:
         return np.random.choice(self.x, size=size, p=self.p_x/np.sum(self.p_x)) * self.x.unit
 
     def integrate_between_lims(
-        self, lower_x_lim: Union[int, float], upper_x_lim: Union[int, float]
+        self,
+        lower_x_lim: Union[int, float],
+        upper_x_lim: Union[int, float],
     ):
         # find index of closest values in self.x to lower_x_lim and upper_x_lim
         index_x_min = np.argmin(np.absolute(self.x - lower_x_lim))
@@ -454,13 +456,15 @@ class PDF:
             input_arr = np.log10(input_arr)
         
         # construct gaussian_kde
-        kde = gaussian_kde(input_arr)
+        # kde = gaussian_kde(input_arr)
         x = np.linspace(
             np.min(input_arr),
             np.max(input_arr),
             len(input_arr)
         )
-        y = kde(x)
+        # y = kde(x)
+        #x = np.sort(input_arr)
+        y = np.interp(x, self.x.value, self.p_x)
 
         # plot the pdf
         ax.plot(
@@ -488,7 +492,7 @@ class PDF:
             perc[p] = perc_
 
         # Set x and y plot limits
-        ax.set_xlim(np.max([np.min(x), perc[1.0]]), np.max(x))#np.min([np.max(x), perc[99.0]]))
+        ax.set_xlim(np.max([np.min(x), perc[1.0]]), np.max(x)) #np.min([np.max(x), perc[99.0]]))
         ax.set_ylim(0, 1.1 * np.max(y))
 
         if self.property_name in funcs.property_name_to_label:
@@ -549,48 +553,54 @@ class PDF:
                 color=colour,
                 path_effects=[pe.withStroke(linewidth=3, foreground="white")],
             )
-            ax.annotate(
-                r"$z_{\rm phot}=$"
-                + f'{self.get_peak(0, log = log)["value"]:.1f}'
-                + f'$^{{+{(perc[84.0] - self.get_peak(0, log = log)["value"]):.1f}}}_{{-{(self.get_peak(0, log = log)["value"] - perc[16.]):.1f}}}$',
-                (self.get_peak(0, log = log)["value"], 1.17),
+            ax.text(
+                0.05,
+                0.95,
+                r"$z_{\rm phot}="
+                + f'{self.get_peak(0, log = log)["value"].value:.1f}'
+                + f'^{{+{(perc[84.0] - self.get_peak(0, log = log)["value"].value):.1f}}}_{{-{(self.get_peak(0, log = log)["value"].value - perc[16.]):.1f}}}$',
+                transform=ax.transAxes,
+                #(self.get_peak(0, log = log)["value"], 1.17),
                 fontsize="medium",
                 va="top",
-                ha="center",
+                ha="left",
                 color=colour,
                 path_effects=[pe.withStroke(linewidth=3, foreground="white")],
             )
 
             # Horizontal arrow at PDF peak going left or right depending on which side PDF is on, labelled with chi2
             # Check if highest peak is closer to xlim[0] or xlim[1]
-            x_lim = ax.get_xlim()
+            #x_lim = ax.get_xlim()
             #y_lim = ax.get_ylim()
-            amount = 0.3 * (x_lim[1] - x_lim[0])
-            if (
-                self.get_peak(0, log = log)["value"] - x_lim[0]
-                < x_lim[1] - self.get_peak(0, log = log)["value"]
-            ):
-                direction = 1
-            else:
-                direction = -1
-            ax.annotate(
+            # amount = 0.3 * (x_lim[1] - x_lim[0])
+            # if (
+            #     self.get_peak(0, log = log)["value"] - x_lim[0]
+            #     < x_lim[1] - self.get_peak(0, log = log)["value"]
+            # ):
+            #     direction = 1
+            # else:
+            #     direction = -1
+            ax.text(
+                0.05,
+                0.80,
                 r"$\chi^2=$" + f'{self.get_peak(0, log = log)["chi_sq"]:.2f}',
-                (self.get_peak(0, log = log)["value"], 1.0),
-                xytext=(self.get_peak(0, log = log)["value"] + direction * amount, 0.90),
+                #(self.get_peak(0, log = log)["value"], 1.0),
+                transform=ax.transAxes,
+                #xytext=(self.get_peak(0, log = log)["value"] + direction * amount, 0.90),
                 fontsize="small",
                 va="top",
-                ha="center",
+                ha="left",
                 color=colour,
                 path_effects=[pe.withStroke(linewidth=3, foreground="white")],
-                arrowprops=dict(
-                    facecolor=colour,
-                    edgecolor=colour,
-                    arrowstyle="-|>",
-                    lw=1.5,
-                    path_effects=[
-                        pe.withStroke(linewidth=1, foreground="white")
-                    ],
-                ),
+                # arrowprops=dict(
+                #     facecolor=colour,
+                #     edgecolor=colour,
+                #     arrowstyle="-|>",
+                #     lw=1.5,
+                #     path_effects=[
+                #         pe.withStroke(linewidth=1, foreground="white")
+                #     ],
+                # ),
             )
 
             # annotate PDF with peak locations etc
@@ -715,15 +725,15 @@ class Redshift_PDF(SED_fit_PDF):
 
     def integrate_between_lims(
         self,
-        delta_z_over_z,
+        delta_z_over_z: float,
         zbest: Optional[float] = None,
         z_min: float = 0.,
         z_max: float = 25.,
     ):
         # find best fitting redshift from peak of the PDF distribution - not needed if peak is loaded in PDF object
-        if type(zbest) == type(None):
+        if zbest is None:
             zbest = self.get_peak(0)["value"]  # find first peak
-        elif type(zbest) in [int, float]:  # correct format
+        elif isinstance(zbest, (int, float)):  # correct format
             pass
         else:
             galfind_logger.critical(
