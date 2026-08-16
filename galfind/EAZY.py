@@ -448,9 +448,14 @@ class EAZY(SED_code):
             params["TEMPLATES_FILE"] = (
                 f"{eazy_templates_path}/sfhz/carnall_sfhz_13_galfind.param"
             )
-        elif templates == "sfhz+carnall_eelg+agn":
+        elif templates == "sfhz_blue_agn": #"sfhz+carnall_eelg+agn":
             params["TEMPLATES_FILE"] = (
                 f"{eazy_templates_path}/sfhz/sorted_agn_blue_sfhz_13_galfind.param"
+            )
+        elif templates == "pegase":
+            params["TEMPLATE_COMBOS"] = "1"
+            params["TEMPLATES_FILE"] = (
+                f"{eazy_templates_path}/pegase13.spectra_galfind.param"
             )
 
         # Redshift limits
@@ -560,7 +565,7 @@ class EAZY(SED_code):
                         f_numbers = [1, 2, 3, 4],
                         simple = False,
                         percentiles = [16, 50, 84],
-                        n_proc = 0, #self.SED_fit_params["N_PROC"] 
+                        n_proc = self.SED_fit_params["N_PROC"], #0
                     )
                     for i, ubvj_filt in enumerate(["U", "B", "V", "J"]):
                         table[f"{ubvj_filt}_rf_flux"] = ubvj[:, i, 1]

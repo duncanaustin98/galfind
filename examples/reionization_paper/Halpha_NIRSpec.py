@@ -35,11 +35,11 @@ def main():
         "F444W",
     ]
     JOF_medium_bands = ["F162M", "F182M", "F210M", "F250M", "F300M", "F335M"]
-    # NIRCam_8_widebands = NIRCam(excl_bands = [band for band in NIRCam().band_names if band not in widebands])
+    # NIRCam_8_widebands = NIRCam(excl_bands = [band for band in NIRCam().filt_names if band not in widebands])
     NIRCam_JOF = NIRCam(
         excl_bands=[
             band
-            for band in NIRCam().band_names
+            for band in NIRCam().filt_names
             if band not in widebands + JOF_medium_bands
         ]
     )
@@ -89,7 +89,7 @@ def main():
         Halpha_JOF.extend([_Halpha_JOF.to(u.AA).value])
         # print(Halpha_widebands, Halpha_widebands_kwargs, Halpha_JOF, Halpha_JOF_kwargs)
 
-    # phot = {band: mock_phot_JOF for i, band in NIRCam_JOF.band_names}
+    # phot = {band: mock_phot_JOF for i, band in NIRCam_JOF.filt_names}
     tab = Table(
         {
             "ID": [spec.src_name for spec in spectra],

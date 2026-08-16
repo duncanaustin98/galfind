@@ -327,7 +327,6 @@ class Photometry_rest(Photometry):
         kwargs["save_path"] = save_path
 
         properties = SED_rest_property_function(**kwargs)[0]
-        # breakpoint()
         # print(properties, property_name)
         for property, property_name in zip(properties, property_names):
             # update property PDFs
@@ -339,7 +338,6 @@ class Photometry_rest(Photometry):
                         f"{type(property)=} not in [dict]!"
                     )
                     breakpoint()
-                # breakpoint()
                 # construct PDF from property output if required
                 if "PDF" in property.keys():
                     new_PDF = property["PDF"]
@@ -362,7 +360,7 @@ class Photometry_rest(Photometry):
                 self.recently_updated.append(property_name)
                 self.property_PDFs[property_name] = PDF_obj
                 self._update_properties_from_PDF(property_name)
-                if type(save_path) != type(None):
+                if save_path is not None:
                     self._save_SED_rest_PDF(
                         property_name,
                         save_path.replace(
@@ -373,7 +371,7 @@ class Photometry_rest(Photometry):
 
     def _save_SED_rest_PDF(self, property_name, save_path):
         funcs.make_dirs(save_path)
-        if self.property_PDFs[property_name]is not None:
+        if self.property_PDFs[property_name] is not None:
             self.property_PDFs[property_name].save(save_path)
 
     def _update_properties_from_PDF(self, property_name):

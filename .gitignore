@@ -29,3 +29,4 @@ htmlcov
 .coverage
 .pytest_cache
 configs/DJA_spectral_catalogues
+configs/EAZY_templates/templates/PEGASE2.0

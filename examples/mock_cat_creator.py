@@ -412,14 +412,14 @@ def split_mock_galfind_tab(tab, instrument, out_path):
         z_split_tab.remove_columns(
             [
                 f"FLUX_APER_{band}_aper_corr_Jy"
-                for band in instrument.band_names
+                for band in instrument.filt_names
                 if band not in bands
             ]
         )
         z_split_tab.remove_columns(
             [
                 f"FLUXERR_APER_{band}_loc_depth_10pc_Jy"
-                for band in instrument.band_names
+                for band in instrument.filt_names
                 if band not in bands
             ]
         )
@@ -630,7 +630,7 @@ def pure_power_law_beta_bias(surveys_arr=[["CEERSP9"] * 2, []], beta_in=-3.0):
                     keys_right="NUMBER",
                     join_type="inner",
                 )
-                for band in instrument.band_names:
+                for band in instrument.filt_names:
                     try:
                         del select_tab[f"FLUX_APER_{band}_aper_corr_Jy_2"]
                         del select_tab[
@@ -790,7 +790,7 @@ def line_beta_bias(line_name="Lya"):
                     keys_right="NUMBER",
                     join_type="inner",
                 )
-                for band in instrument.band_names:
+                for band in instrument.filt_names:
                     try:
                         del select_tab[f"FLUX_APER_{band}_aper_corr_Jy_2"]
                         del select_tab[
@@ -1282,7 +1282,7 @@ def DLA_beta_bias():
                     keys_right="NUMBER",
                     join_type="inner",
                 )
-                for band in instrument.band_names:
+                for band in instrument.filt_names:
                     try:
                         del select_tab[f"FLUX_APER_{band}_aper_corr_Jy_2"]
                         del select_tab[

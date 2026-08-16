@@ -217,7 +217,7 @@ class Bagpipes(SED_code):
                 elif isinstance(self.SED_fit_params["z_calculator"], Redshift_Extractor):
                     z_label = f"z{self.SED_fit_params['z_calculator'].SED_fit_label.replace('_', '').replace('zfree', '')}"
                 else:
-                    z_label = f"z{self.SED_fit_params['z_calculator']:0.1f}"
+                    z_label = f"z{self.SED_fit_params['z_calculator']:.1f}"
                 sfh_label = f"{self.SED_fit_params['sfh']}_{z_label}"
                 if "fixed_bin_ages" in self.SED_fit_params.keys():
                     # ensure fixed_bin_ages is a Quantity
@@ -248,11 +248,14 @@ class Bagpipes(SED_code):
                 sfh_label = sfh_label.replace("continuity", "cont")
             else:
                 sfh_label = self.SED_fit_params["sfh"]
-            # '_dust' label
+            if self.SED_fit_params["fesc"] is None:
+                fesc_label = ""
+            else:
+                fesc_label = f"_fesc_{self.SED_fit_params['fesc_prior']}"
             return (
                 f"Bagpipes_sfh_{sfh_label}_{self.SED_fit_params['dust']}_"
                 + f"{self.SED_fit_params['dust_prior']}_Z_{self.SED_fit_params['metallicity_prior']}"
-                + f"_{sps_label}_{redshift_label}{self.excl_bands_label}"
+                + f"{fesc_label}_{sps_label}_{redshift_label}{self.excl_bands_label}"
             )
 
     @property
@@ -398,12 +401,15 @@ class Bagpipes(SED_code):
         filterset: Multiple_Filter,
         redshift: float,
         n_draws: int = 10_000,
-        plot: bool = True,
+        h5_suffix: Optional[str] = None
     ) -> str:
         save_path = f"{config['Bagpipes']['PIPES_OUT_DIR']}/priors/{self.label}_z{redshift:.1f}.h5"
+        if h5_suffix is not None:
+            save_path = save_path.replace(".h5", f"_{h5_suffix}.h5")
         funcs.make_dirs(save_path)
         if not Path(save_path).is_file():
-            self.reload()
+            galfind_logger.info(f"Extracting priors for {save_path.split('/')[-1].replace('.h5', '')}...")
+            bagpipes = self.reload()
             if not hasattr(self, "fit_instructions"):
                 self._load_fit_instructions()
                 if "continuity" in self.SED_fit_params["sfh"]:
@@ -420,25 +426,42 @@ class Bagpipes(SED_code):
                 fit_instructions = self.fit_instructions
                 fit_instructions["redshift"] = redshift
             filt_list = [self._get_filt_path(filt) for filt in filterset]
-            galfind_logger.info(f"Extracting priors for {self.label} at z={redshift:.1f}")
-            bagpipes = self.reload()
             priors = bagpipes.fitting.check_priors(fit_instructions, filt_list = filt_list, n_draws = n_draws)
+            # update priors if sfh is unphysical
+            if priors.sfh.unphysical:
+                galfind_logger.info(
+                    f"Bagpipes {self.fit_instructions=} produces unphysical SFH! Updating fit parameters!"
+                )
+                fit_instructions = self._make_fit_instructions_physical_sfh(fit_instructions)
+                priors = bagpipes.fitting.check_priors(
+                    fit_instructions,
+                    filt_list = filt_list,
+                    n_draws = n_draws,
+                )
+                assert not priors.sfh.unphysical, \
+                    galfind_logger.critical(
+                        f"Bagpipes {self.fit_instructions=} produces unphysical " + \
+                        f"SFH at z={redshift:.1f} even after updating fit parameters!"
+                    )
+
             hf = h5py.File(save_path, "w")
             for key, vals in priors.samples.items():
                 hf.create_dataset(key, data=np.array(vals).flatten())
             hf.close()
-            if plot:
-                for i, (key, vals) in enumerate(priors.samples.items()):
+            for key, vals in priors.samples.items():
+                out_path = f"{save_path.replace('.h5', f'/{key}.png')}"
+                if not Path(out_path).is_file():
                     try:
                         fig, ax = plt.subplots()
                         ax.hist(vals, bins = int(n_draws / 100), histtype = "step", label = key)
                         ax.set_xlabel(key)
-                        out_path = f"{save_path.replace('.h5', f'/{key}.png')}"
                         funcs.make_dirs(out_path)
                         fig.savefig(out_path)
-                        fig.clf()
-                    except:
-                        pass
+                        plt.close(fig)
+                    except Exception as e:
+                        galfind_logger.warning(
+                            f"Failed to plot prior for {key=} with {vals=} due to {e=}"
+                        )
         return save_path
 
     def make_in(
@@ -454,17 +477,22 @@ class Bagpipes(SED_code):
         self: Self,
         cat: Union[Catalogue, Spectral_Catalogue],
         aper_diam: u.Quantity,
-        temp_label: Optional[str] = None,
+        temp_label: Optional[str] = "temp", #None,
     ) -> str:
         from galfind import Catalogue
         if isinstance(cat, Catalogue):
-            temp_subdir = f"{cat.version}/{cat.survey}/{cat.filterset.instrument_name}/" +\
-                f"{aper_diam.to(u.arcsec).value:.2f}as/temp"
+            # temp_subdir = f"{cat.version}/{cat.survey}/{cat.filterset.instrument_name}/" + \
+            #     f"{aper_diam.to(u.arcsec).value:.2f}as/temp"
+            temp_subdir = f"{cat.survey}/temp"
             if temp_label is None:
                 while len(glob.glob(f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/posterior/{temp_subdir}/*")) > 0:
                     temp_subdir += "_"
             else:
                 temp_subdir = temp_subdir.replace("/temp", f"/{temp_label}")
+            galfind_logger.info(
+                f"Using {temp_subdir=} for {cat.survey} with {cat.version} {cat.filterset.instrument_name} " + \
+                f"{aper_diam.to(u.arcsec).value:.2f}as"
+            )
         else:
             from galfind import Spectral_Catalogue
             assert isinstance(cat, Spectral_Catalogue), \
@@ -591,7 +619,7 @@ class Bagpipes(SED_code):
         cat: Union[Catalogue, Spectral_Catalogue],
         aper_diam: u.Quantity,
         save_SEDs: bool = True,
-        save_PDFs: bool = True,
+        save_PDFs: bool = False,
         overwrite: bool = False,
         **kwargs: Dict[str, Any],
     ) -> NoReturn:
@@ -637,7 +665,7 @@ class Bagpipes(SED_code):
         if "temp_label" in kwargs.keys():
             temp_label = kwargs["temp_label"]
         else:
-            temp_label = None
+            temp_label = "temp" #None
         # # dump priors if not already done
         # self.dump_priors(new_path_post)
         # determine temp directories
@@ -771,13 +799,8 @@ class Bagpipes(SED_code):
             load_func = self._load_pipes_spec
             run_cat = cat # temporary
             load_data_kwargs = {"cat": run_cat}
-        
-        if "plot" in kwargs.keys():
-            plot = kwargs["plot"]
-        else:
-            plot = True
+
         bagpipes = self.reload()
-        #breakpoint()
         fit_cat = bagpipes.fit_catalogue(
             IDs,
             self.fit_instructions,
@@ -785,7 +808,8 @@ class Bagpipes(SED_code):
             spectrum_exists = spectrum_exists,
             photometry_exists = photometry_exists,
             run = out_subdir,
-            make_plots = plot,
+            make_plots = kwargs.get("plot", True),
+            plot_csfh = kwargs.get("plot_csfh", False),
             cat_filt_list = filters,
             redshifts = redshifts, 
             redshift_sigma = None, #redshift_sigma if use_redshift_sigma else None, 
@@ -797,14 +821,15 @@ class Bagpipes(SED_code):
             #time_calls = time_calls
             load_data_kwargs = load_data_kwargs,
         )
-        #breakpoint()
         #galfind_logger.info(f"Fitting bagpipes with {self.fit_instructions=}")
         try:
-            run_parallel = False
+            print(f"Fitting bagpipes with {self.size=}")
+            mpi_serial = False if self.size == 1 else True
             fit_cat.fit(
                 verbose = False,
-                mpi_serial = run_parallel,
+                mpi_serial = mpi_serial,
                 sampler = self.sampler,
+                pool = self.size, # nautilus sampler only
                 overwrite_h5 = True, #overwrite,
             )
         except Exception as e:
@@ -1078,7 +1103,7 @@ class Bagpipes(SED_code):
             z_arr = [np.full(length, z) for z in self.SED_fit_params["fix_z"]]
         elif self.SED_fit_params["fix_z"]:
             length = 500 # TODO: Calculate this at runtime
-            z_arr = [np.full(length, z) for z in self.SED_fit_params["z_calculator"](cat)]
+            z_arr = [np.full(length, self.SED_fit_params["z_calculator"](gal).value) for gal in cat]
         else:
             assert "zPDFs" in kwargs.keys(), \
                 galfind_logger.critical(
@@ -1182,10 +1207,11 @@ class Bagpipes(SED_code):
     
     def _get_wavs(self: Self, ft: Type[filter_set]) -> u.Quantity:
         bagpipes = self.reload()
-        if self.SED_fit_params["sps_model"] == "BPASS":
-            from bagpipes import config_bpass as pipes_config
-        else:
-            from bagpipes import config as pipes_config
+        from bagpipes import config as pipes_config
+        # if self.SED_fit_params["sps_model"] == "BPASS":
+        #     from bagpipes import config_bpass as pipes_config
+        # else:
+        #     from bagpipes import config as pipes_config
 
         min_wav = ft.min_phot_wav
         max_wav = ft.max_phot_wav
@@ -1304,7 +1330,7 @@ class Bagpipes(SED_code):
             galfind_logger.critical(
                 f"{len(IDs)=} != {len(PDF_paths)=}"
             )
-        ignore_labels = ["dust_curve", "photometry", "spectrum_full", "uvj", "sfh", "mass_weighted_zmet", "chisq_phot", "ndot_ion_caseB_rest", "ndot_ion_caseB_obs"]
+        ignore_labels = ["dust_curve", "photometry", "spectrum_full", "uvj", "sfh", "mass_weighted_zmet", "chisq_phot"]#, "ndot_ion_caseB_rest", "ndot_ion_caseB_obs"]
         cat_property_PDFs = []
         for h5_path, ID in tqdm(zip(PDF_paths, IDs), desc=f"Loading {self.label} PDFs", total=len(IDs), disable=galfind_logger.getEffectiveLevel() > logging.INFO):
             gal_property_PDFs = {}
@@ -1481,7 +1507,7 @@ class Bagpipes(SED_code):
             delayed["age_prior"] = self.SED_fit_params["age_prior"]
             delayed["metallicity_prior"] = self.SED_fit_params["metallicity_prior"]
             if self.SED_fit_params["metallicity_prior"] == "log_10":
-                delayed["metallicity"] = (1.e-3, 3)
+                delayed["metallicity"] = (1.e-3, 3.0)
             elif self.SED_fit_params["metallicity_prior"] == "uniform":
                 delayed["metallicity"] = (0, 3)
 
@@ -1492,7 +1518,7 @@ class Bagpipes(SED_code):
 
             burst["metallicity_prior"] = self.SED_fit_params["metallicity_prior"]
             if self.SED_fit_params["metallicity_prior"] == "log_10":
-                burst["metallicity"] = (1e-03, 3)
+                burst["metallicity"] = (1e-03, 3.0)
             elif self.SED_fit_params["metallicity_prior"] == "uniform":
                 burst["metallicity"] = (0, 3)
 
@@ -1517,7 +1543,7 @@ class Bagpipes(SED_code):
             # practice the code automatically stops this
             # exceeding the age of the universe at the
             # observed redshift.
-            dblplaw["tau"] = (0.0, 15.0)
+            dblplaw["tau"] = (0.001, 15.0)
             dblplaw["tau_prior"] = self.SED_fit_params["age_prior"]
             # Vary the falling power law slope from 0.01 to 1000.
             dblplaw["alpha"] = (0.01, 1000.0)
@@ -1672,14 +1698,14 @@ class Bagpipes(SED_code):
                     to calculate the SFR bins for the continuity SFH!"
                 )
             z_calculator = self.SED_fit_params["z_calculator"]
-            if cat is None:
-                assert isinstance(z_calculator, float)
-                z_arr = [z_calculator]
+            if isinstance(z_calculator, float):
+                z_arr = np.full(len(cat), z_calculator)
             else:
-                if isinstance(z_calculator, float):
-                    z_arr = np.full(len(cat), z_calculator)
-                else:
-                    z_arr = z_calculator.extract_vals(cat)
+                z_arr = z_calculator.extract_vals(cat)
+        elif cat is None:
+            z_calculator = self.SED_fit_params["z_calculator"]
+            assert isinstance(z_calculator, float)
+            z_arr = [z_calculator]
         else:
             # take the PRISM redshifts if available, else the 0th element
             z_arr = np.full(len(cat), None)
@@ -1759,6 +1785,44 @@ class Bagpipes(SED_code):
             fit_instructions["redshift_prior_sigma"] = mean_err
 
         self.fit_instructions = fit_instructions_arr
+
+    def _make_fit_instructions_physical_sfh(
+        self: Self,
+        fit_instructions: Dict[str, Any],
+    ):
+        bagpipes = self.reload()
+        # extract the redshift from the fit_instructions
+        if "redshift" in fit_instructions.keys():
+            if isinstance(fit_instructions["redshift"], tuple):
+                z = np.mean(fit_instructions["redshift"])
+            elif isinstance(fit_instructions["redshift"], (float, int)):
+                z = fit_instructions["redshift"]
+            else:
+                galfind_logger.critical(
+                    f"Cannot extract redshift from fit_instructions: {fit_instructions['redshift']=}"
+                )
+        else:
+            galfind_logger.critical(
+                f"Cannot extract redshift from fit_instructions: {fit_instructions=}"
+            )
+        # calculate the age of the universe
+        age_of_universe = np.interp(
+            z,
+            bagpipes.utils.z_array,
+            bagpipes.utils.age_at_z
+        )
+        if self.SED_fit_params["sfh"] == "dblplaw":
+            # extract tau
+            fit_instructions["dblplaw"]["tau"] = (0.001, 1.5 * age_of_universe)
+        elif self.SED_fit_params["sfh"] == "const":
+            # extract age_max
+            fit_instructions["constant"]["age_max"] = (0.01, age_of_universe)
+        else:
+            err_message = f"Cannot make fit_instructions physical for {self.SED_fit_params['sfh']=}"
+            galfind_logger.critical(err_message)
+            raise NotImplementedError(err_message)
+        return fit_instructions
+
 
 def calculate_bins(redshift, redshift_sfr_start=20, log_time=True, output_unit = 'yr', return_flat = False, num_bins=6, fixed_bin_ages = [10.0] * u.Myr): #, cosmo = funcs.astropy_cosmo):
     time_observed = cosmo.lookback_time(redshift)

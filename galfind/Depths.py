@@ -1357,7 +1357,7 @@ def calc_band_data_area_depth(
         galfind_logger.info(f"Saved area-depth data for {repr(self)} to {area_depth_save_path}")
     else:
         # load from .h5 file
-        galfind_logger.info(f"Loading area-depth data from {area_depth_save_path} for {repr(self)}")
+        galfind_logger.debug(f"Loading area-depth data from {area_depth_save_path} for {repr(self)}")
         hf = h5py.File(area_depth_save_path, "r")
         total_depths = np.array(hf.get("total_depths"))
         cum_dist = np.array(hf.get("cum_dist"))
@@ -1438,7 +1438,6 @@ def calc_data_area_depth(
         region_selector,
         invert_region,
         zbin = zbin,
-        #**kwargs,
     )
     total_depths = {}
     cum_dist = {}
@@ -2164,7 +2163,8 @@ def append_loc_depth_cols(
                             np.nan
                             if flux == 0.0
                             else funcs.flux_image_to_Jy(
-                                flux, band_data.ZP
+                                flux,
+                                band_data.ZP
                             ).value
                             * min_flux_pc_err
                             / 100.0

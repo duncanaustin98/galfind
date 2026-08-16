@@ -4,7 +4,6 @@ import astropy.units as u
 import numpy as np
 from regions import Regions
 from astropy.io import fits
-from astroquery.gaia import Gaia
 from tqdm import tqdm
 from astropy.table import Column
 from pathlib import Path
@@ -244,12 +243,15 @@ def auto_mask(
     edge_mask_distance: Union[int, float] = 50,
     scale_extra: float = 0.2,
     exclude_gaia_galaxies: bool = True,
-    angle: float = -0.0,
+    angle: Optional[float] = None,
     edge_value: float = 0.0,
+    edge_threshold: Optional[float] = None,
     element: str = "ELLIPSE",
     gaia_row_lim: int = 500,
     overwrite: bool = False,
 ):
+    from astroquery.gaia import Gaia
+    
     output_mask_path = f"{config['Masking']['MASK_DIR']}/{self.survey}" + \
         f"/auto/{self.version}/{self.filt_name}_auto.fits"
     funcs.make_dirs(output_mask_path)
@@ -269,6 +271,36 @@ def auto_mask(
             #     Exception("Star mask making only implemented for NIRCam data!")
             # )
 
+        # Load data
+        im_data, im_hdr = self.load_im()
+        wcs = self.load_wcs()
+
+        if angle is None:
+            # compute the angle from WCS
+            if all(
+                hdr_kwarg in im_hdr.keys()
+                for hdr_kwarg in ["CD1_1", "CD1_2", "CD2_1", "CD2_2", "V3PA"]
+            ):
+                cd_matrix = np.array(
+                    [
+                        [im_hdr["CD1_1"], im_hdr["CD1_2"]],
+                        [im_hdr["CD2_1"], im_hdr["CD2_2"]],
+                    ]
+                )
+                angle_east = np.arctan2(cd_matrix[0, 1], cd_matrix[0, 0]) * (180.0 / np.pi)
+                angle = im_hdr["V3PA"] + angle_east
+                galfind_logger.info(
+                    f"Computed {repr(self)} angle from WCS: {angle}"
+                )
+                galfind_logger.warning(
+                    f"Angle computation from WCS for {repr(self)} may be unreliable, please check!"
+                )
+            else:
+                galfind_logger.debug(
+                    f"WCS CD matrix keywords not found in header for {repr(self)}, setting angle to 0.0"
+                )
+                angle = 0.0
+
         # angle rotation is anti-clockwise for positive angles
         composite = (
             lambda x_coord,
@@ -285,10 +317,6 @@ def auto_mask(
                 ellipse({x_coord},{y_coord},{29*spike_scale**(2/3)},{730*spike_scale},{str(np.round(360. + angle, 2))}) ||
                 ellipse({x_coord},{y_coord},{29*spike_scale**(2/3)},{300*spike_scale},{str(np.round(269.48 + angle, 2))}) ||"""
         )
-
-        # Load data
-        im_data = self.load_im()[0]
-        wcs = self.load_wcs()
 
         # Scale up the image by boundary by scale_extra factor to include diffraction spikes from stars outside image footprint
         scale_factor = scale_extra * np.array(
@@ -410,6 +438,7 @@ def auto_mask(
             self,
             edge_value = edge_value,
             edge_mask_distance = edge_mask_distance,
+            edge_threshold = edge_threshold,
             element = element,
         )
 
@@ -570,6 +599,7 @@ def make_edge_mask(
     self: Type[Band_Data_Base],
     edge_value: float = 0.0,
     edge_mask_distance: Union[int, float] = 50,
+    edge_threshold: Optional[float] = None,
     element: str = "ELLIPSE",
 ) -> NDArray[np.uint8]:
     import cv2
@@ -579,8 +609,14 @@ def make_edge_mask(
     im_data = self.load_im()[0]
     # Mask image edges
     fill = np.logical_or(
-        (im_data == edge_value), np.isnan(im_data)
+        (im_data == edge_value),
+        np.isnan(im_data)
     )  # true false array of where 0's are
+    if edge_threshold is not None:
+        fill = np.logical_or(
+            fill,
+            (abs(im_data) <= edge_threshold)
+        ) # also mask any values with magnitude below the threshold
     # also fill in nans
     edges = fill * 1  # convert to 1 for true and 0 for false
     edges = edges.astype(np.uint8)  # dtype for cv2
@@ -685,6 +721,7 @@ def combine_masks(
     self: Stacked_Band_Data,
     edge_value: float = 0.0,
     edge_mask_distance: Union[int, float] = 50,
+    edge_threshold: Optional[float] = None,
     element: str = "ELLIPSE",
 ) -> str:
     out_path = get_combined_path_name(self)
@@ -721,6 +758,7 @@ def combine_masks(
             self,
             edge_value = edge_value,
             edge_mask_distance = edge_mask_distance,
+            edge_threshold = edge_threshold,
             element = element,
         )
         # combine masks for each valid extension contained in all masks
@@ -831,8 +869,8 @@ def make_area_mask_from_data(
     overwrite: bool = False,
     **kwargs: Dict[str, Any],
 ) -> Tuple[NDArray[float], str, str, str]:
+    #try:
     from . import Mask_Selector
-
     mask_selector_name, mask_save_name, reg_name, mask_save_path = \
         sort_area_mask_names(
             self,
@@ -846,6 +884,8 @@ def make_area_mask_from_data(
         galfind_logger.info(
             f"Creating area mask {mask_selector_name} with types {mask_type} at {mask_save_path}"
         )
+        if "z" not in kwargs.keys() and zbin is not None:
+            kwargs["z"] = (zbin[0] + zbin[1]) / 2
         if isinstance(mask_selector, tuple(Mask_Selector.__subclasses__())):
             masks = [mask_selector.load_mask(self, invert = False, **kwargs)]
             pix_scales = [band_data.pix_scale for band_data in self]
@@ -901,9 +941,8 @@ def make_area_mask_from_data(
         hdu = fits.ImageHDU(mask.astype(np.uint8), name=mask_selector_name)
         hdu.writeto(mask_save_path, overwrite=True)
         funcs.change_file_permissions(mask_save_path)
-
     else:
-        galfind_logger.info(
+        galfind_logger.debug(
             f"Area mask at {mask_save_path} already exists, loading!"
         )
         hdu = fits.open(mask_save_path)[mask_selector_name]
@@ -922,9 +961,18 @@ def make_area_mask_from_data(
         unmasked_area = self[mask_selector_name[0]].unmasked_area[mask_save_name]
     else:
         unmasked_area = funcs.calc_unmasked_area(mask, pix_scale)
-
-    self.unmasked_area[mask_selector_name][mask_save_name] = unmasked_area
-    
+    try:
+        if not hasattr(self, "unmasked_area"):
+            self.unmasked_area = {}
+        if mask_selector_name not in self.unmasked_area.keys():
+            self.unmasked_area[mask_selector_name] = {}
+        self.unmasked_area[mask_selector_name][mask_save_name] = unmasked_area
+    except Exception as e:
+        galfind_logger.warning(
+            f"Could not save unmasked area for {mask_selector_name} {mask_save_name} in {repr(self)}: {e}"
+        )
+        breakpoint()
+        raise e
     return mask, mask_selector_name, mask_save_name, reg_name
 
 
@@ -991,7 +1039,7 @@ def make_area_mask_from_band_data(
         hdu.writeto(mask_save_path, overwrite=True)
         funcs.change_file_permissions(mask_save_path)
     else:
-        galfind_logger.info(
+        galfind_logger.debug(
             f"Area mask at {mask_save_path} already exists, loading!"
         )
         hdu = fits.open(mask_save_path)[mask_selector_name]

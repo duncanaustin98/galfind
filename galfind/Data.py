@@ -23,6 +23,7 @@ import time
 import itertools
 import logging
 from matplotlib import cm
+import cmasher as cmr
 from copy import deepcopy
 from pathlib import Path
 from numpy.typing import NDArray
@@ -46,6 +47,7 @@ except ImportError:
 if TYPE_CHECKING:
     from . import Multiple_Filter, Region_Selector, Mask_Selector
     from .PSF import PSF
+    from . import PSF_Base, PSF_Cutout
 
 import astropy.units as u
 import astropy.visualization as vis
@@ -59,7 +61,7 @@ from astropy.io import fits
 from astropy.table import Column, Table, QTable, hstack, vstack
 from astropy.visualization.mpl_normalize import ImageNormalize
 from astropy.wcs import WCS
-from astroquery.gaia import Gaia
+#from astroquery.gaia import Gaia
 from joblib import Parallel, delayed, parallel_config
 from matplotlib.colors import LogNorm, Normalize
 from regions import Regions
@@ -100,6 +102,7 @@ class Band_Data_Base(ABC):
         wht_ext_name: Union[str, List[str]] = "WHT",
         use_galfind_err: bool = True,
         aper_diams: Optional[u.Quantity] = None,
+        psf: Optional[Type[PSF_Base]] = None,
     ):
         self.survey = survey
         self.version = version
@@ -115,7 +118,8 @@ class Band_Data_Base(ABC):
         self.pix_scale = pix_scale
         if aper_diams is not None:
             self.aper_diams = aper_diams
-        self._psf_match = None
+        self.psf = psf
+        self.is_native = False
 
         # make rms error / wht maps using galfind if required
         if use_galfind_err:
@@ -444,8 +448,12 @@ class Band_Data_Base(ABC):
             breakpoint()
             raise e
         seg_hdul = fits.open(self.seg_path, ignore_missing_simple = True, **kwargs)
-        seg_data = seg_hdul[0].data
-        seg_header = seg_hdul[0].header
+        if np.sum(["SEG" in hdu.name.upper() for hdu in seg_hdul]) == 1:
+            seg_hdu = [hdu for hdu in seg_hdul if "SEG" in hdu.name.upper()][0]
+        else:
+            seg_hdu = seg_hdul[0]
+        seg_data = seg_hdu.data
+        seg_header = seg_hdu.header
         if incl_hdr:
             return seg_data, seg_header
         else:
@@ -505,11 +513,134 @@ class Band_Data_Base(ABC):
         return area_tab_path
     # %% Complex methods
 
-    def psf_homogenize(self: Self, psf: PSF):
-        """Homogenize the SCI/RMS_ERR/WHT images to the given PSF"""
-        raise NotImplementedError
-        self._psf_match = psf
-        # Functionality in PSF_homogenization.py
+    def psf_homogenize(
+        self: Self,
+        psf: PSF_Cutout,
+        use_fft_conv: bool = True,
+        overwrite: bool = False,
+    ) -> None:
+        assert hasattr(self, "psf"), galfind_logger.critical(
+            f"PSF not loaded for {self.filt_name}! Cannot make PSF homogenization kernel!"
+        )
+
+        if use_fft_conv:
+            convolve_func = convolve_fft
+            convolve_kwargs = {"allow_huge": True}
+        else:
+            convolve_func = convolve
+            convolve_kwargs = {}
+        
+        filenames = {
+            "SCI": self.im_path,
+            "RMS_ERR": self.rms_err_path,
+            "WHT": self.wht_path,
+        }
+        open_funcs = {
+            "SCI": self.load_im,
+            "RMS_ERR": self.load_rms_err,
+            "WHT": self.load_wht,
+        }
+        same_orig_filename = all(name == filenames["SCI"] for name in filenames.values() if name is not None)
+        orig_wht = self.load_wht(output_hdr = False)
+
+        # determine new version and data directory based on kernel choice
+        new_version = f"{self.version}_psfmatch_{psf.name}"
+        new_data_dir = Data._get_data_dir(
+            self.survey,
+            new_version,
+            self.filt.instrument,
+            self.pix_scale,
+        )
+
+        # make psf homogenization kernel
+        kernel = self.psf.make_kernel(psf)
+        if kernel is None:
+            for ext, filename in filenames.items():
+                if filename is not None:
+                    galfind_logger.debug(
+                        f"Symlinking {repr(self)} {ext}!"
+                    )
+                    out_filepath = f"{new_data_dir}/{filename.split('/')[-1]}"
+                    if same_orig_filename:
+                        # add ext to suffix
+                        out_filepath = out_filepath.replace(".fits", f"_{ext.lower()}.fits")
+                    funcs.symlink(filename, out_filepath)
+            setattr(self, "version", new_version)
+            return
+        # convolve the image using the kernel
+        kernel_hdr, kernel_data = kernel.cutout.load()
+
+        for ext in ["SCI", "RMS_ERR", "WHT"]:
+            filename = filenames[ext]
+            if filename is not None:
+                out_filepath = f"{new_data_dir}/{filename.split('/')[-1]}"
+                if same_orig_filename:
+                    # add ext to suffix
+                    out_filepath = out_filepath.replace(".fits", f"_{ext.lower()}.fits")
+                if not Path(out_filepath).is_file() or overwrite:
+                    galfind_logger.info(
+                        f"Convolving {repr(self)} {ext} with {repr(kernel)} kernel!"
+                    )
+                    starttime = time.time()
+                    data, hdr = open_funcs[ext](output_hdr = True)
+                    out_hdul = fits.HDUList([])
+                    if ext == "WHT":
+                        rms_err = np.where(data == 0, 0, 1 / np.sqrt(data))
+                        out_rms_err_data = convolve_func(
+                            rms_err,
+                            kernel_data,
+                            **convolve_kwargs
+                        ).astype(np.float32)
+                        # convert back to weight map, retaining 0's
+                        convolved_data = np.where(out_rms_err_data == 0, 0, 1.0 / (out_rms_err_data**2))
+                    else:
+                        convolved_data = convolve_func(data, kernel_data, **convolve_kwargs).astype(np.float32)
+                    convolved_data[orig_wht == 0] = 0.0
+
+                    out_hdu = fits.PrimaryHDU(convolved_data, header = fits.Header(hdr))
+                    out_hdu.name = ext
+                    out_hdu.header["PSFHOMOG"] = kernel.name
+                    out_hdul.append(out_hdu)
+                    funcs.make_dirs(out_filepath)
+                    out_hdul.writeto(out_filepath, overwrite = True)
+                    endtime = time.time()
+                    galfind_logger.info(
+                        f"Written file to {out_filepath}! " + \
+                        f"Convolution took {endtime - starttime:.1f} seconds!"
+                    )
+                    funcs.change_file_permissions(out_filepath)
+                else:
+                    galfind_logger.debug(
+                        f"{new_version} {repr(self)} {ext} image exists! Skipping!"
+                    )
+            # update self paths to point to new psf homogenized imaging
+            if ext == "SCI":
+                self.im_path = out_filepath
+                self.im_ext = 0
+                self.im_ext_name = [ext]
+            elif ext == "RMS_ERR":
+                self.rms_err_path = out_filepath
+                self.rms_err_ext = 0
+                self.rms_err_ext_name = [ext]
+            else: # ext == "WHT":
+                self.wht_path = out_filepath
+                self.wht_ext = 0
+                self.wht_ext_name = [ext]
+        
+        # update the version and psf attributes
+        setattr(self, "version", new_version)
+        setattr(self, "psf", psf)
+    
+    @staticmethod
+    def _parallel_psf_homogenize(params: Dict[str, Any]) -> None:
+        # unpack parameters
+        band_data, psf, use_fft_conv, overwrite = params
+        # run psf homogenization
+        band_data.psf_homogenize(
+            psf,
+            use_fft_conv = use_fft_conv,
+            overwrite = overwrite,
+        )
 
     def segment(
         self: Self,
@@ -545,7 +676,7 @@ class Band_Data_Base(ABC):
             Segments the data using the specified method and error type.
         """
         # do not re-segment if already done
-        if not (hasattr(self, "seg_args") and hasattr(self, "seg_path")):
+        if not (hasattr(self, "seg_args") and hasattr(self, "seg_path")) or overwrite:
             # segment the data
             if "sextractor" in method.lower():
                 self.seg_path = SExtractor.segment(
@@ -571,7 +702,7 @@ class Band_Data_Base(ABC):
             )
 
     def perform_forced_phot(
-        self,
+        self: Self,
         forced_phot_band: Type[Band_Data_Base],
         err_type: str = "rms_err",
         method: str = "sextractor",
@@ -639,7 +770,7 @@ class Band_Data_Base(ABC):
 
 
     def mask(
-        self,
+        self: Self,
         method: Union[str, List[str], Dict[str, str]] = "auto",
         fits_mask_path: Optional[Union[str, List[str], Dict[str, str]]] = None,
         star_mask_params: Optional[
@@ -656,12 +787,13 @@ class Band_Data_Base(ABC):
         ] = 50,
         scale_extra: Union[float, List[float], Dict[str, float]] = 0.2,
         exclude_gaia_galaxies: Union[bool, List[bool], Dict[str, bool]] = True,
-        angle: Union[float, List[float], Dict[str, float]] = 0.0,
+        angle: Optional[Union[float, List[float], Dict[str, float]]] = None,
         edge_value: Union[float, List[float], Dict[str, float]] = 0.0,
+        edge_threshold: Optional[Union[float, List[Optional[float]], Dict[str, Optional[float]]]] = None,
         element: Union[str, List[str], Dict[str, str]] = "ELLIPSE",
         gaia_row_lim: Union[int, List[int], Dict[str, int]] = 500,
         overwrite: Union[bool, List[bool], Dict[str, bool]] = False,
-    ) -> Union[None, NoReturn]:
+    ) -> None:
         if not (hasattr(self, "mask_args") and hasattr(self, "mask_path")):
             # load in already made fits mask
             if fits_mask_path is not None:
@@ -673,7 +805,8 @@ class Band_Data_Base(ABC):
             # create fits mask
             if method.lower() == "manual":
                 self.mask_path = Masking.manually_mask(
-                    self, overwrite=overwrite
+                    self,
+                    overwrite = overwrite,
                 )
                 self.mask_args = {"method": method}
             elif method.lower() == "auto":
@@ -685,6 +818,7 @@ class Band_Data_Base(ABC):
                     exclude_gaia_galaxies,
                     angle,
                     edge_value,
+                    edge_threshold,
                     element,
                     gaia_row_lim,
                     overwrite,
@@ -739,7 +873,11 @@ class Band_Data_Base(ABC):
             self._load_depths_from_params(params_arr)
             # plot depths
             if plot:
-                self.plot_depth_diagnostics(save = True, overwrite = False, master_cat_path = master_cat_path)
+                self.plot_depth_diagnostics(
+                    save = True,
+                    overwrite = False,
+                    master_cat_path = master_cat_path
+                )
         else:
             galfind_logger.warning(
                 f"Depths loaded for {self.filt_name}, skipping!"
@@ -749,7 +887,7 @@ class Band_Data_Base(ABC):
         return Depths.get_hf_output(self, aper_diam)
 
     def _sort_run_depth_params(
-        self,
+        self: Self,
         mode: str = "n_nearest",
         scatter_size: float = 0.1,
         distance_to_mask: Union[int, float] = 30,
@@ -950,7 +1088,7 @@ class Band_Data_Base(ABC):
         aper_diam: u.Quantity,
         mask_selector: Union[str, List[str], Type[Mask_Selector]] = None,
         mask_type: Union[str, List[str]] = "MASK",
-        region_selector: Optional[Type[Region_Selector], List[Type[Region_Selector]]] = None,
+        region_selector: Optional[Union[Type[Region_Selector], List[Type[Region_Selector]]]] = None,
         invert_region: bool = False,
         zbin: Optional[float] = None,
     ) -> Tuple[NDArray[float], NDArray[float], u.Quantity]:
@@ -1211,6 +1349,7 @@ class Band_Data(Band_Data_Base):
         wht_ext_name: Union[str, List[str]] = "WHT",
         use_galfind_err: bool = True,
         aper_diams: Optional[u.Quantity] = None,
+        psf: Optional[Type[PSF_Base]] = None,
     ):
         self.filt = filt
         super().__init__(
@@ -1228,6 +1367,7 @@ class Band_Data(Band_Data_Base):
             wht_ext_name,
             use_galfind_err,
             aper_diams,
+            psf,
         )
 
     @classmethod
@@ -1293,7 +1433,8 @@ class Band_Data(Band_Data_Base):
 
     # stacking/mosaicing
     def __mul__(
-        self, other: Union[Type[Band_Data_Base], List[Type[Band_Data_Base]]]
+        self: Self,
+        other: Union[Type[Band_Data_Base], List[Type[Band_Data_Base]]],
     ) -> Type[Band_Data_Base]:
         # if other is not a list, make it one
         if not isinstance(other, list):
@@ -1523,6 +1664,14 @@ class Band_Data(Band_Data_Base):
                 hdul.close()
         self.pix_scale = align_band_data.pix_scale
 
+    def load_psf(
+        self: Self,
+        method: str = "default",
+    ) -> None:
+        self.psf = self.filt.instrument.make_psf(
+            self,
+            method = method,
+        )
 
 class Stacked_Band_Data(Band_Data_Base):
     def __init__(
@@ -1542,6 +1691,7 @@ class Stacked_Band_Data(Band_Data_Base):
         wht_ext_name: Union[str, List[str]] = "WHT",
         use_galfind_err: bool = True,
         aper_diams: Optional[u.Quantity] = None,
+        psf: Optional[Type[PSF_Base]] = None,
     ):
         # ensure every band_data is from the same survey and version,
         # have the same pixel scale and are from different filters
@@ -1561,13 +1711,14 @@ class Stacked_Band_Data(Band_Data_Base):
             wht_ext_name,
             use_galfind_err,
             aper_diams,
+            psf,
         )
 
     @classmethod
     def from_band_data_arr(
         cls,
         band_data_arr: List[Band_Data],
-        err_type: str = "rms_err"
+        err_type: str = "rms_err",
     ) -> Stacked_Band_Data:
         # make sure all filters are different
         assert all(
@@ -1588,6 +1739,15 @@ class Stacked_Band_Data(Band_Data_Base):
             [band_data.filt for band_data in band_data_arr]
         )
         # instantiate the stacked band data object
+        try:
+            assert all(getattr(band_data, "psf") == getattr(band_data_arr[0], "psf") \
+                for band_data in band_data_arr), galfind_logger.critical(
+                    "All band_data in band_data_arr must have the same PSF homogenization status!"
+                )
+        except Exception as e:
+            galfind_logger.error(f"Error checking PSF homogenization status of band_data in band_data_arr: {e}")
+            breakpoint()
+        input_data["psf"] = getattr(band_data_arr[0], "psf")
         stacked_band_data = cls(filterset, **input_data)
 
         # if all band_data in band_data_arr have aper_diams included
@@ -1906,8 +2066,9 @@ class Stacked_Band_Data(Band_Data_Base):
         ] = 50,
         scale_extra: Union[float, List[float], Dict[str, float]] = 0.2,
         exclude_gaia_galaxies: Union[bool, List[bool], Dict[str, bool]] = True,
-        angle: Union[float, List[float], Dict[str, float]] = 0.0,
+        angle: Optional[Union[float, List[float], Dict[str, float]]] = None,
         edge_value: Union[float, List[float], Dict[str, float]] = 0.0,
+        edge_threshold: Optional[Union[float, List[Optional[float]], Dict[str, Optional[float]]]] = None,
         element: Union[str, List[str], Dict[str, str]] = "ELLIPSE",
         gaia_row_lim: Union[int, List[int], Dict[str, int]] = 500,
         overwrite: Union[bool, List[bool], Dict[str, bool]] = False,
@@ -1924,6 +2085,7 @@ class Stacked_Band_Data(Band_Data_Base):
                 exclude_gaia_galaxies=exclude_gaia_galaxies,
                 angle=angle,
                 edge_value=edge_value,
+                edge_threshold=edge_threshold,
                 element=element,
                 gaia_row_lim=gaia_row_lim,
                 overwrite=overwrite,
@@ -1940,12 +2102,104 @@ class Stacked_Band_Data(Band_Data_Base):
                     exclude_gaia_galaxies=exclude_gaia_galaxies,
                     angle=angle,
                     edge_value=edge_value,
+                    edge_threshold=edge_threshold,
                     element=element,
                     gaia_row_lim=gaia_row_lim,
                     overwrite=overwrite,
                 )
             # combine masks from individual bands
-            self.mask_path, self.mask_args = Masking.combine_masks(self)
+            self.mask_path, self.mask_args = Masking.combine_masks(
+                self,
+                edge_value=edge_value,
+                edge_mask_distance=edge_mask_distance,
+                edge_threshold=edge_threshold,
+                element=element,
+            )
+
+
+class Multiple_Band_Data_Base:
+
+    def __init__(
+        self: Self,
+        band_data_arr: List[Type[Band_Data_Base]],
+        name: str,
+    ):
+        assert all(
+            isinstance(band_data, funcs.all_subclasses(Band_Data_Base))
+            for band_data in band_data_arr
+        ), galfind_logger.critical(
+            "All band_data in band_data_arr must be subclasses of Band_Data_Base!"
+        )
+        self.band_data_arr = band_data_arr
+        self.name = name
+    
+    def __iter__(self):
+        self.iter = 0
+        return self
+    
+    def __next__(self) -> Type[Band_Data_Base]:
+        if self.iter > len(self.band_data_arr) - 1:
+            raise StopIteration
+        else:
+            band_data = self.band_data_arr[self.iter]
+            self.iter += 1
+            return band_data
+        
+    def __len__(self) -> int:
+        return len(self.band_data_arr)
+    
+    def __getitem__(
+        self: Self,
+        idx: Any,
+    ) -> Type[Band_Data_Base]:
+        return self.band_data_arr[idx]
+
+    def _get_property(self: Self, name: str) -> Union[str, List[str]]:
+        if all(
+            getattr(band_data, name) == getattr(self.band_data_arr[0], name)
+            for band_data in self.band_data_arr
+        ):
+            return getattr(self.band_data_arr[0], name)
+        else:
+            return "+".join(
+                np.unique(
+                    [
+                        getattr(band_data, name)
+                        for band_data in self.band_data_arr
+                    ]
+                )
+            )
+
+    @property
+    def survey(self) -> str:
+        return self.name
+        #return self._get_property("survey")
+
+    @property
+    def version(self) -> str:
+        return self._get_property("version")
+
+    @property
+    def pix_scale(self) -> u.Quantity:
+        return self._get_property("pix_scale")
+
+    @property
+    def filt_name(self) -> str:
+        return self._get_property("filt_name")
+
+    @property
+    def instr_name(self) -> str:
+        return self._get_property("instr_name")
+
+    @property
+    def filt(self) -> Union[Filter, Multiple_Filter]:
+        if all(
+            getattr(band_data, "filt") == getattr(self.band_data_arr[0], "filt")
+            for band_data in self.band_data_arr
+        ):
+            return getattr(self.band_data_arr[0], "filt")
+        else:
+            return [getattr(band_data, "filt") for band_data in self.band_data_arr]
 
 
 class Data:
@@ -1955,7 +2209,7 @@ class Data:
         forced_phot_band: Optional[
             Union[str, List[str], Type[Band_Data_Base]]
         ] = None,
-        xy_align_filt_name: str = "F444W",
+        #xy_align_filt_name: str = "F444W",
     ):
         # save and sort band_arr by central wavelength
         self.band_data_arr = funcs.sort_band_data_arr(band_data_arr)
@@ -1963,6 +2217,7 @@ class Data:
         # load forced photometry band
         if forced_phot_band is not None:
             self.load_forced_phot_band(forced_phot_band)
+        self.is_native = False
 
     @classmethod
     def pipeline(
@@ -1995,8 +2250,11 @@ class Data:
                 Union[str, List[str], Type[Stacked_Band_Data]]
             ]
         ]] = None,
+        mask_method: str = "auto",
+        psf_method: str = "default",
+        psf_homog_filt: Optional[str] = "F444W",
     ) -> Type[Data]:
-        data = cls.from_survey_version( \
+        data = cls.from_survey_version_psfs( \
             survey,
             version,
             instrument_names,
@@ -2010,13 +2268,17 @@ class Data:
             wht_ext_name,
             aper_diams,
             forced_phot_band,
+            psfs = None,
         )
+        data.load_psfs(method = psf_method)
+        if psf_homog_filt is not None:
+            data.psf_homogenize(psf_homog_filt)
         if stacked_band_data is not None:
             if not isinstance(stacked_band_data, (list, np.ndarray)):
                 stacked_band_data = [stacked_band_data]
             for stacked_band_data_ in stacked_band_data:
                 data.load_stacked_band_data(stacked_band_data_)
-        data.mask()
+        data.mask(method=mask_method)
         data.segment()
         data.perform_forced_phot()
         data.append_aper_corr_cols()
@@ -2026,7 +2288,7 @@ class Data:
         return data
 
     @classmethod
-    def from_survey_version(
+    def from_survey_version_psfs(
         cls,
         survey: str,
         version: str,
@@ -2050,6 +2312,7 @@ class Data:
         forced_phot_band: Optional[
             Union[str, List[str], Type[Band_Data_Base]]
         ] = None,
+        psfs: Optional[Type[PSF_Base], Dict[str, Type[PSF_Base]]] = None,
     ):
         # make im/rms_err/wht extension names lists if not already
         if isinstance(im_ext_name, str):
@@ -2074,7 +2337,7 @@ class Data:
                 survey,
                 version,
                 instrument,
-                pix_scales[instr_name],
+                pix_scale,
                 version_to_dir_dict,
             )
             galfind_logger.debug(
@@ -2087,7 +2350,7 @@ class Data:
                     path
                     for path in fits_paths
                     if any(
-                        path.find(substr) != -1
+                        path.split("/")[-1].find(substr) != -1
                         for substr in [
                             filt.upper(),
                             filt.lower(),
@@ -2096,7 +2359,7 @@ class Data:
                         ]
                     )
                     and not any(
-                        path.find(substr) != -1
+                        path.split("/")[-1].find(substr) != -1
                         for other_filt in instrument.filt_names
                         if other_filt != filt
                         for substr in [
@@ -2139,6 +2402,18 @@ class Data:
                 rms_err_ext_name,
                 wht_ext_name,
             )
+            if psfs is not None:
+                from . import PSF_Base
+                if isinstance(psfs, funcs.all_subclasses(PSF_Base)):
+                    psfs_dict = {filt_name: psfs for filt_name in im_paths.keys()}
+                else:
+                    psfs_dict = psfs
+                assert all(
+                    filt_name in psfs_dict.keys() for filt_name in im_paths.keys()
+                ), galfind_logger.critical(
+                    "PSF dictionary keys must match filter names for all filters with data!"
+                )
+
             for filt_name in im_paths.keys():
                 if len(im_paths[filt_name]) > 1:
                     # stack sci/rms_err/wht images together and move the old ones to a new directory
@@ -2150,6 +2425,10 @@ class Data:
                     # in the same fits file but different extensions.
                     raise NotImplementedError(err_message)
                 else:
+                    if psfs is None:
+                        psf = None
+                    else:
+                        psf = psfs_dict[filt_name]
                     band_data = Band_Data(
                         Filter.from_filt_name(filt_name),
                         survey,
@@ -2164,10 +2443,25 @@ class Data:
                         im_ext_name,
                         rms_err_ext_name,
                         wht_ext_name,
-                        aper_diams=aper_diams,
+                        aper_diams = aper_diams,
+                        psf = psf,
                     )
                 band_data_arr.extend([band_data])
-        return cls(band_data_arr, forced_phot_band=forced_phot_band)
+        return cls(
+            band_data_arr,
+            forced_phot_band = forced_phot_band,
+        )
+
+    @property
+    def psf_matched(self: Self) -> Optional[str]:
+        if not all(band_data.psf is not None for band_data in self):
+            return None
+        else:
+            psf_match_names = [band_data.psf.name for band_data in self]
+            if all(name == psf_match_names[0] for name in psf_match_names):
+                return psf_match_names[0]
+            else:
+                return None
 
     @staticmethod
     def _get_data_dir(
@@ -2289,8 +2583,8 @@ class Data:
                     ):
                         wht_paths[filt_name].extend([path])
                     else:
-                        galfind_logger.critical(
-                            f"{filt_name}, {path} not recognised as im, rms_err, or wht!"
+                        galfind_logger.warning(
+                            f"{filt_name}, {path} not recognised as im, rms_err, or wht! "
                             + "Consider updating 'im_str', 'rms_err_str', and 'wht_str'!"
                         )
                 # extract sci/rms_err/wht extensions
@@ -2455,12 +2749,22 @@ class Data:
 
     @property
     def survey(self: Self) -> str:
-        assert all(band_data.survey == self[0].survey for band_data in self)
+        assert all(
+            band_data.survey == self[0].survey
+            for band_data in self
+        ), galfind_logger.critical(
+            "Multiple surveys found across bands!"
+        )
         return self[0].survey
 
     @property
     def version(self: Self) -> str:
-        assert all(band_data.version == self[0].version for band_data in self)
+        assert all(
+            band_data.version == self[0].version
+            for band_data in self
+        ), galfind_logger.critical(
+            "Multiple versions found across bands!"
+        )
         return self[0].version
 
     @property
@@ -2525,7 +2829,7 @@ class Data:
 
     def __repr__(self: Self) -> str:
         return (
-            f"{self.__class__.__name__}({self.full_name.replace('_', ', ')})"
+            f"{self.__class__.__name__}({self.full_name})" # .replace('_', ', ')
         )
 
     def __str__(self):
@@ -2759,7 +3063,6 @@ class Data:
                 )
                 breakpoint()
         return result
-        
 
     def _indices_from_filt_names(
         self, filt_names: Union[str, List[str]]
@@ -2860,12 +3163,13 @@ class Data:
         return self[band].load_im(return_hdul)
 
     def load_wcs(
-        self, band: Union[int, str, Filter, List[Filter], Multiple_Filter]
+        self: Self,
+        band: Union[int, str, Filter, List[Filter], Multiple_Filter],
     ):
         return self[band].load_wcs()
 
     def load_wht(
-        self,
+        self: Self,
         band: Union[int, str, Filter, List[Filter], Multiple_Filter],
         output_hdr: bool = False,
     ):
@@ -2904,6 +3208,13 @@ class Data:
             band_data.load_aper_diams(aper_diams) for band_data in self
         ]
     
+    def load_psfs(
+        self: Self,
+        method: str = "default",
+    ) -> None:
+        for band_data in self:
+            band_data.load_psf(method)
+
     def _load_depths(
         self: Self,
         aper_diam: u.Quantity,
@@ -2982,11 +3293,71 @@ class Data:
                     f"Cannot align {repr(band_data)} to itself"
                 )
 
-    def psf_homogenize(self):
-        raise(NotImplementedError())
+    def psf_homogenize(
+        self: Self,
+        psf: PSF_Cutout,
+        use_fft_conv: bool = True,
+        save_native: bool = True,
+        overwrite: bool = False,
+        n_jobs: int = 1,
+    ):
+        assert getattr(self, "psf_matched") == None, \
+            galfind_logger.critical(
+                f"Data already has {self.psf_matched=}, cannot PSF homogenize!"
+            )
+        assert isinstance(n_jobs, int) and n_jobs > 0, \
+            galfind_logger.critical(f"{n_jobs=} must be a positive integer!")
+
+        if save_native:
+            self.native = deepcopy(self)
+            setattr(self.native, "is_native", True)
+            for band_data in self.native:
+                setattr(band_data, "is_native", True)
+        
+        if n_jobs == 1:
+            for band_data in self:
+                band_data.psf_homogenize(
+                    psf,
+                    use_fft_conv = use_fft_conv,
+                    overwrite = overwrite,
+                )
+        else:
+            params = [
+                (
+                    band_data,
+                    psf,
+                    use_fft_conv,
+                    overwrite,
+                )
+                for band_data in self
+            ]
+            with funcs.tqdm_joblib(
+                tqdm(
+                    desc = f"PSF homogenizing to {repr(psf)} with {n_jobs=}",
+                    total = len(params),
+                    disable = galfind_logger.getEffectiveLevel() > logging.INFO
+                )
+            ) as progress_bar:
+                Parallel(n_jobs = n_jobs)(
+                    delayed(Band_Data._parallel_psf_homogenize)(param) for param in params
+                )
+        # re-do stacks from new versions
+
+        if hasattr(self, "forced_phot_band"):
+            orig_filt_names = self.forced_phot_band.filt_name
+            delattr(self, "forced_phot_band")
+            self.load_forced_phot_band(orig_filt_names)
+
+        if hasattr(self, "stacked_band_data_arr"):
+            orig_filt_names = [
+                stacked_band_data.filt_name
+                for stacked_band_data in self.stacked_band_data_arr
+            ]
+            delattr(self, "stacked_band_data_arr")
+            self.load_stacked_band_data_arr(orig_filt_names)
 
     def segment(
-        self,
+        self: Self,
         err_type: str = "rms_err",
         method: str = "sextractor",
         config_name: str = "default.sex",
@@ -3019,10 +3390,24 @@ class Data:
 
         [
             band_data.segment(
-                err_type, method, config_name, params_name, overwrite
+                err_type,
+                method,
+                config_name,
+                params_name,
+                overwrite,
             )
             for band_data in self_band_data_arr
         ]
+
+        # segment native data if it exists
+        if hasattr(self, "native"):
+            self.native.segment(
+                err_type,
+                method,
+                config_name,
+                params_name,
+                overwrite,
+            )
 
     def perform_forced_phot(
         self,
@@ -3187,9 +3572,7 @@ class Data:
             self.phot_cat_path = phot_cat_path
         else:
             raise (Exception("MASTER Photometric catalogue already exists!"))
-        
-        if not Path(phot_cat_path).is_file() or update or overwrite:
-
+        if not Path(phot_cat_path).is_file() or overwrite or (Path(phot_cat_path).is_file() and update):
             master_tab_arr = [
                 self.forced_phot_band._get_master_tab(
                     output_ids_locs=True
@@ -3220,16 +3603,16 @@ class Data:
                     "METHODS": "+".join(np.unique([band_data.forced_phot_args["method"] for band_data in self_band_data_arr])),
                 },
             }
-            if update:
+            if not Path(phot_cat_path).is_file() or overwrite:
+                # save master table
+                master_tab.write(self.phot_cat_path, format="fits", overwrite=True)
+            else:
                 from . import Catalogue
                 Catalogue.update_fits_cat(
                     master_tab,
                     self.phot_cat_path,
                     "OBJECTS",
                 )
-            else:
-                # save master table
-                master_tab.write(self.phot_cat_path, format="fits", overwrite=True)
             galfind_logger.info(
                 f"Saved combined SExtractor catalogue as {self.phot_cat_path}"
             )
@@ -3270,8 +3653,9 @@ class Data:
         ] = 50,
         scale_extra: Union[float, List[float], Dict[str, float]] = 0.2,
         exclude_gaia_galaxies: Union[bool, List[bool], Dict[str, bool]] = True,
-        angle: Union[float, List[float], Dict[str, float]] = 0.0,
+        angle: Optional[Union[float, List[float], Dict[str, float]]] = None,
         edge_value: Union[float, List[float], Dict[str, float]] = 0.0,
+        edge_threshold: Optional[Union[float, List[Optional[float]], Dict[str, Optional[float]]]] = None,
         element: Union[str, List[str], Dict[str, str]] = "ELLIPSE",
         gaia_row_lim: Union[int, List[int], Dict[str, int]] = 500,
         overwrite: Union[bool, List[bool], Dict[str, bool]] = False,
@@ -3327,6 +3711,9 @@ class Data:
                 self_._sort_band_dependent_params(
                     band_data.filt_name, edge_value
                 ),
+                self._sort_band_dependent_params(
+                    band_data.filt_name, edge_threshold
+                ),
                 self_._sort_band_dependent_params(
                     band_data.filt_name, element
                 ),
@@ -3341,7 +3728,7 @@ class Data:
         ]
 
     def run_depths(
-        self,
+        self: Self,
         mode: Union[str, List[str], Dict[str, str]] = "n_nearest",
         scatter_size: Union[float, List[float], Dict[str, float]] = 0.1,
         distance_to_mask: Union[
@@ -3449,12 +3836,17 @@ class Data:
                 )
         if len(params) > 0:
             # Parallelise the calculation of depths for each band
-            with funcs.tqdm_joblib(
-                tqdm(desc="Calculating depths", total=len(params), disable = galfind_logger.getEffectiveLevel() > logging.INFO)
-            ) as progress_bar:
-                Parallel(n_jobs=n_jobs)(
-                    delayed(Depths.calc_band_depth)(param) for param in params
-                )
+            if n_jobs == 1:
+                outputs = [Depths.calc_band_depth(param) for param in params]
+            else:
+                with funcs.tqdm_joblib(
+                    tqdm(desc="Calculating depths", total=len(params), disable = galfind_logger.getEffectiveLevel() > logging.INFO)
+                ) as progress_bar:
+                    # TODO: Fix pointer parallelization issues
+                    outputs = Parallel(n_jobs=n_jobs)(
+                        delayed(Depths.calc_band_depth)(param) for param in params
+                    )
+                    #self_band_data_arr = outputs
             # save properties to individual band_data objects
             for band_data in self_band_data_arr:
                 [
@@ -3556,51 +3948,51 @@ class Data:
                 region = self.region_selector.name
         else:
             region = None
-        try:
-            if hasattr(self, "area_depths") and (
-                (
-                    region in self.area_depths.keys() and
-                    zbin_label in self.area_depths[region].keys()
-                )
-                or zbin_label in self.area_depths.keys()
-            ):
-                galfind_logger.debug(
-                    f"Area depths already calculated in {repr(self)} for {region=}, {zbin_label=}, skipping!"
-                )
-            else:
-                total_depths, cum_dist, area = Depths.calc_data_area_depth(
-                    self,
-                    aper_diam,
-                    mask_selector,
-                    mask_type,
-                    region_selector,
-                    invert_region,
-                    zbin,
-                )
-                if not hasattr(self, "area_depths"):
-                    self.area_depths = {}
-                if region is not None and region not in self.area_depths.keys():
-                    self.area_depths[region] = {}
-                if region is not None:
-                    if zbin_label not in self.area_depths[region].keys():
-                        self.area_depths[region][zbin_label] = {
-                            "total_depths": total_depths,
-                            "cum_dist": cum_dist,
-                            "area": area,
-                        }
-                else:
-                    if zbin_label not in self.area_depths.keys():
-                        self.area_depths[zbin_label] = {
-                            "total_depths": total_depths,
-                            "cum_dist": cum_dist,
-                            "area": area,
-                        }
-        except Exception as e:
-            galfind_logger.critical(
-                f"Could not calculate area depths for {repr(self)}: {e}"
+        #try:
+        if hasattr(self, "area_depths") and (
+            (
+                region in self.area_depths.keys() and
+                zbin_label in self.area_depths[region].keys()
             )
-            breakpoint()
-            raise e
+            or zbin_label in self.area_depths.keys()
+        ):
+            galfind_logger.debug(
+                f"Area depths already calculated in {repr(self)} for {region=}, {zbin_label=}, skipping!"
+            )
+        else:
+            if not hasattr(self, "area_depths"):
+                self.area_depths = {"all": {}}
+            if region is not None and region not in self.area_depths.keys():
+                self.area_depths[region] = {}
+            total_depths, cum_dist, area = Depths.calc_data_area_depth(
+                self,
+                aper_diam,
+                mask_selector,
+                mask_type,
+                region_selector,
+                invert_region,
+                zbin,
+            )
+            if region is not None:
+                if zbin_label not in self.area_depths[region].keys():
+                    self.area_depths[region][zbin_label] = {
+                        "total_depths": total_depths,
+                        "cum_dist": cum_dist,
+                        "area": area,
+                    }
+            else:
+                if zbin_label not in self.area_depths["all"].keys():
+                    self.area_depths["all"][zbin_label] = {
+                        "total_depths": total_depths,
+                        "cum_dist": cum_dist,
+                        "area": area,
+                    }
+        # except Exception as e:
+        #     galfind_logger.critical(
+        #         f"Could not calculate area depths for {repr(self)}: {e}"
+        #     )
+        #     breakpoint()
+        #     raise e
 
         if plot:
             self.plot_area_depth(
@@ -3658,6 +4050,45 @@ class Data:
         show: bool = True,
     ) -> NoReturn:
         self[band].plot(ax, ext, norm, save, show)
+
+    def plot_psf_eec(
+        self: Self,
+        fig: Optional[plt.Figure] = None,
+        ax: Optional[plt.Axes] = None,
+        cmap: str = "cmr.guppy_r",
+        save: bool = True,
+        show: bool = False,
+        close: bool = True,
+        **kwargs: Dict[str, Any],
+    ):
+        if fig is None or ax is None:
+            fig, ax = plt.subplots()
+        colours = cm.get_cmap(cmap)(np.linspace(0.0, 1.0, len(self)))
+        labels = [band_data.filt_name for band_data in self]
+        for i, band_data in enumerate(self):
+            plot_kwargs = deepcopy(kwargs)
+            if "color" not in plot_kwargs.keys() and "c" not in plot_kwargs.keys():
+                plot_kwargs["color"] = colours[i]
+            plot_kwargs["label"] = labels[i]
+            band_data.psf.plot_eec(
+                ax,
+                annotate = True if i == len(self)-1 else False,
+                **plot_kwargs,
+            )
+        if save:
+            ax.set_title(f"{self.survey} {self.version} {self.filterset.instrument_name}")
+            # TODO: determine whether psf is model or empirical and include in title
+            out_path = f"{config['PSF']['PSF_PLOT_DIR']}/{self.version}/{self.survey}/" + \
+                f"{self.filterset.instrument_name}_EEC.png"
+            funcs.make_dirs(out_path)
+            plt.savefig(out_path, dpi = 600)
+            funcs.change_file_permissions(out_path)
+            galfind_logger.info(f"Saved {repr(self)} EEC plot at {out_path}")
+        if show:
+            plt.show()
+        if close:
+            plt.close(fig)
+        
 
     def plot_RGB(
         self,
@@ -3747,12 +4178,7 @@ class Data:
     def append_aper_corr_cols(
         self: Self,
         overwrite: bool = False,
-        psf_wanted: str = "model"
     ) -> NoReturn:
-        assert psf_wanted in ["model", "empirical"], \
-            galfind_logger.critical(
-                f"PSF '{psf_wanted}' not in ['model', 'empirical']"
-            )
         cat = Table.read(self.phot_cat_path)
         if f"MAG_APER_{self[0].filt_name}_aper_corr" not in cat.colnames or overwrite:
             # ensure aperture diameters are the same for all bands
@@ -3778,9 +4204,14 @@ class Data:
                 mag_aper_corr_data = np.zeros(len(cat))
                 flux_aper_corr_data = np.zeros(len(cat))
                 if len(aper_diams) == 1:
-                    mag_aper_corr_factor = band_data.filt.instrument.\
-                        aper_corrs[band_data.filt_name][aper_diams[0] * u.arcsec]
-                    flux_aper_corr_factor = 10 ** (mag_aper_corr_factor / 2.5)
+                    mag_aper_corr_factor = band_data.psf.get_aper_corrs(
+                        aper_diams[0] * u.arcsec,
+                        out_type = "mag",
+                    )
+                    flux_aper_corr_factor = band_data.psf.get_aper_corrs(
+                        aper_diams[0] * u.arcsec,
+                        out_type = "flux",
+                    )
                     # only aperture correct if flux is positive
                     mag_aper_corr_data = [
                         mag_aper - mag_aper_corr_factor
@@ -3797,10 +4228,14 @@ class Data:
                     ]
                 else:
                     for j, aper_diam in enumerate(aper_diams):
-                        # assumes these have already been calculated for each band
-                        mag_aper_corr_factor = band_data.filt.instrument.\
-                            aper_corrs[band_data.filt_name][aper_diam * u.arcsec]
-                        flux_aper_corr_factor = 10 ** (mag_aper_corr_factor / 2.5)
+                        mag_aper_corr_factor = band_data.psf.get_aper_corrs(
+                            aper_diam * u.arcsec,
+                            out_type = "mag",
+                        )
+                        flux_aper_corr_factor = band_data.psf.get_aper_corrs(
+                            aper_diam * u.arcsec,
+                            out_type = "flux",
+                        )
                         
                         if j == 0:
                             # only aperture correct if flux is positive
@@ -3875,7 +4310,7 @@ class Data:
     def append_mask_cols(
         self: Self,
         overwrite: bool = False,
-    ) -> NoReturn:
+    ) -> None:
         # ensure forced photometry has been run on every band in catalogue
         assert all(hasattr(band_data, "forced_phot_args") for band_data in self), \
             galfind_logger.critical(
@@ -3897,8 +4332,7 @@ class Data:
                 all_bands += [self.forced_phot_band]
         if hasattr(self, "stacked_band_data_arr"):
             all_bands += self.stacked_band_data_arr
-
-        if not all(f"unmasked_{band_data.filt_name}" not in tab.colnames for band_data in all_bands) or overwrite:
+        if not all(f"unmasked_{band_data.filt_name}" in tab.colnames for band_data in all_bands) or overwrite:
             # make sky_coords
             ra = tab[self[0].forced_phot_args["ra_label"]]
             dec = tab[self[0].forced_phot_args["dec_label"]]
@@ -3939,6 +4373,10 @@ class Data:
             # TODO: update README
             galfind_logger.debug(
                 f"Updating README for mask not implemented!"
+            )
+        else:
+            galfind_logger.debug(
+                f"Mask columns already in {self.phot_cat_path}, skipping!"
             )
 
     # @staticmethod
@@ -4131,14 +4569,7 @@ class Data:
                 for region_selector_ in region_selector
             ])
 
-        if isinstance(mask_selector, tuple(Mask_Selector.__subclasses__())):
-            mask_selector_name = mask_selector.name
-        else:
-            mask_selector_name = f"{'+'.join(np.sort(mask_selector))}_{reg_name}"
-        
-        mask_save_name = "+".join(np.sort(mask_type))
-
-        if isinstance(mask_selector, tuple(Mask_Selector.__subclasses__())):
+        if isinstance(mask_selector, funcs.all_subclasses(Mask_Selector)):
             if "z" not in kwargs.keys():
                 galfind_logger.warning(
                     "'z' not included in Data.calc_unmasked_area, assuming no mask z dependence"
@@ -4153,9 +4584,11 @@ class Data:
                         f"Multiple or no zbins found for z={kwargs['z']}!"
                     )
                 zbin = zbin[0]
-                mask_selector_name = f"{mask_selector_name}_{zbin[0]:.2f}<z<{zbin[1]:.2f}"
         else:
             zbin = None
+        
+        mask_selector_name = self._get_mask_selector_name(mask_selector, reg_name, zbin)
+        mask_save_name = "+".join(np.sort(mask_type))
 
         if mask_selector_name not in self.unmasked_area.keys():
             self.unmasked_area[mask_selector_name] = {}
@@ -4188,6 +4621,8 @@ class Data:
                 mask_type,
                 region_selector,
                 invert_region,
+                zbin = zbin,
+                **kwargs,
             )
 
             area_data = {
@@ -4218,3 +4653,25 @@ class Data:
             )
         unmasked_area = unmasked_area_tab[0] * area_tab["unmasked_area"].unit
         return unmasked_area
+
+    @staticmethod
+    def _get_mask_selector_name(
+        mask_selector: Type[Mask_Selector],
+        reg_name: str,
+        zbin: Optional[Tuple[float, float]] = None,
+    ) -> str:
+        from . import Mask_Selector
+        if isinstance(mask_selector, tuple(Mask_Selector.__subclasses__())):
+            mask_selector_name = mask_selector.name
+        else:
+            mask_selector_name = f"{'+'.join(np.sort(mask_selector))}_{reg_name}"
+        
+        if zbin is not None:
+            assert len(zbin) == 2, galfind_logger.critical(
+                f"zbin must be a tuple of (zbin_min, zbin_max), got {zbin=}"
+            )
+            assert zbin[0] < zbin[1], galfind_logger.critical(
+                f"zbin_min must be less than zbin_max, got {zbin=}"
+            )
+            mask_selector_name += f"_{zbin[0]:.2f}<z<{zbin[1]:.2f}"
+        return mask_selector_name

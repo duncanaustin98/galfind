@@ -1,7 +1,6 @@
 
 from __future__ import annotations
 
-from BDFit import StarFit
 import numpy as np
 import astropy.units as u
 import h5py
@@ -108,8 +107,10 @@ class Template_Fitter(SED_code):
         save_SEDs: bool = True,
         save_PDFs: bool = True,
         overwrite: bool = False,
+        verbose: bool = True,
         **kwargs: Dict[str, Any],
     ) -> NoReturn:
+        from BDFit import StarFit
         out_path = self._get_out_paths(cat, aper_diam)[1]
         if not Path(out_path).is_file() or overwrite:
             # convert cat.filterset to bands used in StarFit
@@ -133,6 +134,7 @@ class Template_Fitter(SED_code):
                 facilities_to_search = facilities_to_search,
                 libraries = self.SED_fit_params["templates"],
                 compile_bands = bands,
+                verbose = verbose,
             )
             starfit.fit_catalog(
                 photometry_function = self._load_phot,
@@ -145,11 +147,11 @@ class Template_Fitter(SED_code):
                     "incl_units": True,
                     "input_filterset": fit_instrument_filterset,
                 },
-                sys_err = None, 
+                sys_err = None,
                 filter_mask = None,
                 subset = None,
             )
-            self.starfit = starfit
+            #self.starfit = starfit
             tab = starfit.make_cat()
             tab["ID"] = np.array(cat.ID)
             # save as a .fits file
@@ -237,7 +239,8 @@ class Brown_Dwarf_Fitter(Template_Fitter):
 
     @property
     def label(self) -> str:
-        return self.__class__.__name__
+        return "bd"
+        #return self.__class__.__name__
 
     @property
     def hdu_name(self) -> str:

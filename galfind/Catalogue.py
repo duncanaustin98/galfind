@@ -31,6 +31,8 @@ import itertools
 from astropy.utils.masked import Masked
 from tqdm import tqdm
 from typing import Union, Tuple, Any, List, Dict, Callable, Optional, NoReturn, TYPE_CHECKING
+
+from galfind.PSF import PSF_Base
 if TYPE_CHECKING:
     from . import (
         Filter,
@@ -51,6 +53,7 @@ except ImportError:
 
 from . import (
     EAZY,  # noqa F501
+    Depths,
     NIRCam,
     MIRI,
     Multiple_Filter,
@@ -250,22 +253,30 @@ def check_hdu_exists(cat_path: str, hdu: str) -> bool:
     hdul = fits.open(cat_path)
     return any(hdu_.name == hdu.upper() for hdu_ in hdul)
 
-def open_galfind_cat(cat_path: str, cat_type: str) -> Optional[Table]:
-    if cat_type in ["ID", "sky_coord", "phot", "mask", "depths"]:
+def open_galfind_cat(
+    cat_path: str,
+    cat_type: str,
+) -> Optional[Table]:
+    first_ext_keys = ["ID", "sky_coord", "phot", "mask", "depths"]
+    if cat_type in first_ext_keys:
         tab = Table.read(
-            cat_path, character_as_bytes=False, memmap=True
+            cat_path,
+            character_as_bytes = False,
+            memmap = True,
         )
     elif check_hdu_exists(cat_path, cat_type):
         tab = Table.read(
-            cat_path, character_as_bytes=False, memmap=True, hdu=cat_type
+            cat_path,
+            character_as_bytes = False,
+            memmap = True,
+            hdu = cat_type,
         )
     else:
-        err_message = f"cat_type = {cat_type=} not in " + \
-            "['ID', 'sky_coord', 'phot', 'mask', 'depths'] and " + \
+        err_message = f"{cat_type=} not in {first_ext_keys} and " + \
             f"not a valid HDU extension in {cat_path}!"
         galfind_logger.warning(err_message)
         return None
-        #raise Exception(err_message)
+        
     return tab
 
 def open_galfind_hdr(cat_path: str, cat_type: str) -> Dict[str, str]:
@@ -365,7 +376,7 @@ def galfind_selection_labels(
     **kwargs
 ) -> List[str]:
     # load selection names dict from header
-    return [name for name in tab.colnames if name not in "NUMBER"]
+    return [name for name in tab.colnames if tab[name].dtype in (bool, np.bool_)]
 
 def galfind_snr_labels(
     filterset: Multiple_Filter,
@@ -468,6 +479,7 @@ class Catalogue_Creator:
         cls,
         data: Data,
         crops: Optional[Union[Type[Selector], List[Type[Selector]]]] = None,
+        **kwargs: Dict[str, Any],
     ) -> Catalogue_Creator:
         cat_creator = cls(
             data.survey,
@@ -476,34 +488,58 @@ class Catalogue_Creator:
             data.filterset,
             data.aper_diams,
             crops = crops,
+            **kwargs,
         )
         cat_creator.data = data
         return cat_creator
 
     def __call__(
         self: Self,
+        psfs: Optional[
+            Union[
+                List[Optional[Type[PSF_Base]]],
+                NDArray[Optional[Type[PSF_Base]]],
+                Dict[str, Optional[Type[PSF_Base]]],
+            ]
+        ] = None,
         cropped: bool = True,
         load_gals: bool = True,
+        # extra_crops: Union[
+        #     Type[Selector],
+        #     List[Type[Selector]]
+        # ] = [],
     ) -> Catalogue:
         galfind_logger.info(
-            f"Making {self.survey} {self.version} {self.cat_name} catalogue!"
-        )
-        galfind_logger.debug(
-            f"Loading {self.survey} {self.version} {self.cat_name} photometry!"
+            f"Making {repr(self)} catalogue!"
         )
         if load_gals:
             # make array of Photometry_obs for each aperture diameter
+            galfind_logger.debug(
+                f"Loading {repr(self)} photometry!"
+            )
+            # if len(extra_crops) > 0:
+            #     self.load_crops(self.crops, extra_crops = extra_crops)
             IDs = self.load_IDs(cropped)
             sky_coords = self.load_skycoords(cropped)
             phot, phot_err = self.load_phot(cropped)
             depths = self.load_depths(cropped)
-            selection_flags = self.load_selection_flags(cropped)
+            selection_flags_arr, selection_kwargs_arr = self.load_selection_flags_kwargs(cropped)
             filterset_arr = self.load_gal_filtersets(length = len(IDs), cropped = cropped)
             SED_results = {}
-            phot_obs_arr = [{aper_diam: Photometry_obs(filterset_arr[i], \
-                phot[aper_diam][i], phot_err[aper_diam][i], depths[aper_diam][i], \
-                aper_diam, SED_results = SED_results, simulated = self.simulated) for aper_diam in self.aper_diams} \
-                for i in range(len(filterset_arr))]
+            phot_obs_arr = [
+                {
+                    aper_diam: Photometry_obs(
+                        filterset_arr[i],
+                        phot[aper_diam][i],
+                        phot_err[aper_diam][i],
+                        depths[aper_diam][i],
+                        aper_diam,
+                        SED_results = SED_results,
+                        psfs = psfs,
+                        simulated = self.simulated,
+                    ) for aper_diam in self.aper_diams
+                } for i in range(len(filterset_arr))
+            ]
             assert len(IDs) == len(sky_coords) == len(phot_obs_arr), \
                 galfind_logger.critical(
                     f"{len(IDs)=} != {len(sky_coords)=} != {len(phot_obs_arr)=}!"
@@ -513,21 +549,40 @@ class Catalogue_Creator:
                 f"Loading {self.survey} {self.version} {self.cat_name} galaxies!"
             )
             #, origin_survey = self.survey
-            gals = [Galaxy(ID, sky_coord, phot_obs, flags, self.filterset, survey = self.survey, simulated = self.simulated) \
-                for ID, sky_coord, phot_obs, flags in zip(IDs, sky_coords, phot_obs_arr, selection_flags)]
+            gals = [
+                Galaxy(
+                    ID,
+                    sky_coord,
+                    phot_obs,
+                    selection_flags = selection_flags,
+                    selection_kwargs = selection_kwargs,
+                    cat_filterset = self.filterset,
+                    survey = self.survey,
+                    simulated = self.simulated
+                ) for ID, sky_coord, phot_obs, selection_flags, selection_kwargs in 
+                zip(IDs, sky_coords, phot_obs_arr, selection_flags_arr, selection_kwargs_arr)
+            ]
+            # if len(extra_crops) > 0:
+            #     self.load_crops(self.crops)
         else:
             galfind_logger.info(
                 f"Not loading galaxies for {self.survey} {self.version} {self.cat_name} catalogue!"
             )
             gals = []
         cat = Catalogue(gals, self)
+        # if len(extra_crops) > 0:
+        #     setattr(cat, "extra_crops", extra_crops)
         if load_gals and cropped and len(self._crops_to_perform) != 0:
             # perform the crops
             for crop in self._crops_to_perform:
-                galfind_logger.info(f"Performing {repr(crop)}")
+                galfind_logger.info(f"Performing {repr(crop)}!")
                 crop(cat, return_copy = False)
             self.load_crops(self.crops)
-            cat = self(cropped = True, load_gals = load_gals)
+            cat = self(
+                psfs = psfs,
+                cropped = True,
+                load_gals = load_gals,
+            )
         else:
             # point to data if provided
             if hasattr(self, "data"):
@@ -547,7 +602,7 @@ class Catalogue_Creator:
     def load_tab(
         self: Self,
         cat_type: str,
-        cropped: bool = True
+        cropped: bool = True,
     ) -> Table:
         tab = self.open_cat(self.cat_path, cat_type)
         if tab is None:
@@ -560,46 +615,90 @@ class Catalogue_Creator:
     
     def load_crops(
         self: Self,
-        crops: Optional[Union[Type[Selector], List[Type[Selector]]]] = None
-    ) -> NoReturn:
+        crops: Optional[Union[Type[Selector], List[Type[Selector]]]] = None,
+        # extra_crops: Union[
+        #     Type[Selector],
+        #     List[Type[Selector]]
+        # ] = [],
+    ) -> None:
         if crops is None:
             self.crops = []
         elif not isinstance(crops, (list, np.ndarray)):
             self.crops = [crops]
         else:
             self.crops = crops
-        self._get_crop_mask()
+        self._get_crop_mask() #extra_crops = extra_crops)
         if self.apply_gal_instr_mask:
             self.make_gal_instr_mask()
 
+    @staticmethod
+    def _get_selection_kwarg_colnames(selector: Type[Selector]) -> List[str]:
+        from galfind import Multiple_Selector
+        kwarg_colnames = []
+        if isinstance(selector, funcs.all_subclasses(Multiple_Selector)):
+            for sub_selector in selector:
+                kwarg_colnames.extend(Catalogue_Creator._get_selection_kwarg_colnames(sub_selector))
+        else:
+            kwarg_colnames.extend([
+                f"{selector.name}__{kwarg_name}"
+                for kwarg_name, kwarg_dtype in zip(*selector.select_kwarg_names_dtypes)
+            ])
+        return kwarg_colnames
 
-    def _get_crop_mask(self) -> Optional[NDArray[bool]]:
-        self._crops_to_perform = []
+    def _get_crop_mask(
+        self: Self,
+        # extra_crops: Union[
+        #     Type[Selector],
+        #     List[Type[Selector]]
+        # ] = [],
+    ) -> Optional[NDArray[bool]]:
+        # from . import Selector
+        # if isinstance(extra_crops, funcs.all_subclasses(Selector)):
+        #     extra_crops = [extra_crops]
         tab = self.open_cat(self.cat_path, "SELECTION")
         if tab is None:
             tab = self.open_cat(self.cat_path, "ID")
-        elif len(self.crops) > 0:
+            self._crops_to_perform = self.crops
+        elif len(self.crops) > 0: #  + extra_crops
             # crop table using crop dict
+            self._crops_to_perform = []
             keep_arr = []
-            for selector in self.crops:
-                if selector.name in tab.colnames:
+            for selector in self.crops: # + extra_crops:
+                # iterate through selectors, appending all kwarg colnames
+                kwarg_colnames = self._get_selection_kwarg_colnames(selector)
+                kwarg_colnames = [
+                    selector.shorten_kwarg_colname(name, max_len=68)
+                    for name in kwarg_colnames
+                ]
+                if selector.name in tab.colnames and all(
+                    [
+                        kwarg_colname in tab.colnames
+                        for kwarg_colname in kwarg_colnames
+                    ]
+                ):
                     keep_arr.extend([np.array(tab[selector.name]).astype(bool)])
                     galfind_logger.info(
                         f"Catalogue cropped by {selector.name}"
                     )
                 else:
+                    # if selector in id_crop:
+                    #     err_message = f"extra_crop = {selector.name} not in {tab.colnames=}!"
+                    #     galfind_logger.critical(err_message)
+                    #     raise Exception(err_message)
+                    # else:
                     galfind_logger.info(f"{selector.name} not yet performed!")
                     self._crops_to_perform.append(selector)
             # crop table if required
             if len(keep_arr) > 0 and len(self._crops_to_perform) == 0:
                 self.crop_mask = np.array(np.logical_and.reduce(keep_arr)).astype(bool)
                 return self.crop_mask
+        else:
+            self._crops_to_perform = []
         if len(self._crops_to_perform) == 0:
             self.crop_mask = np.full(len(tab), True)
         else:
             self.crop_mask = None
         return self.crop_mask
-
 
     def load_IDs(
         self: Self,
@@ -630,7 +729,6 @@ class Catalogue_Creator:
                 gal_instr_mask = self.gal_instr_mask
             phot = {aper_diam: self._apply_gal_instr_mask(_phot, gal_instr_mask) for aper_diam, _phot in phot.items()}
             phot_err = {aper_diam: self._apply_gal_instr_mask(_phot_err, gal_instr_mask) for aper_diam, _phot_err in phot_err.items()}
-
         mask = self.load_mask(cropped)
         if mask is not None:
             phot = {aper_diam: [Masked(gal_phot, mask=gal_mask)
@@ -687,8 +785,10 @@ class Catalogue_Creator:
                     gal_instr_mask = self.gal_instr_mask[self.crop_mask]
                 else:
                     gal_instr_mask = self.gal_instr_mask
-                depths = {aper_diam: self._apply_gal_instr_mask(_depths, gal_instr_mask) \
-                    for aper_diam, _depths in depths.items()}
+                depths = {
+                    aper_diam: self._apply_gal_instr_mask(_depths, gal_instr_mask) \
+                    for aper_diam, _depths in depths.items()
+                }
             return depths
         else:
             galfind_logger.warning(
@@ -696,7 +796,10 @@ class Catalogue_Creator:
             )
             return {aper_diam: list(itertools.repeat(None, len(tab))) for aper_diam in self.aper_diams}
         
-    def load_selection_flags(self, cropped: bool = True) -> List[Dict[str, bool]]:
+    def load_selection_flags_kwargs(
+        self: Self,
+        cropped: bool = True,
+    ) -> Tuple[List[Dict[str, bool]], List[Dict[str, Dict[str, Any]]]]:
         tab = self.load_tab("SELECTION", cropped)
         if self.load_selection_func is not None and self.get_selection_labels is not None and tab is not None:
             select_labels = self.get_selection_labels(tab, **self.load_selection_kwargs)
@@ -704,18 +807,35 @@ class Catalogue_Creator:
             # ensure all selection dict values are the same length as the catalogue
             assert all(len(selection) == len(tab) for selection in select_dict.values()), \
                 galfind_logger.critical("Not all selection values are the same length as the catalogue!")
-            gal_selection = [{key: bool(values[i]) for key, values in select_dict.items()} for i in range(len(tab))]
-            return gal_selection
+            selection_flags = [{key: bool(values[i]) for key, values in select_dict.items()} for i in range(len(tab))]
+            # TODO: Generalize for non galfind-like tables
+            selection_kwarg_colnames = {
+                select_label: [
+                    colname.split('__')[1] for colname in tab.colnames
+                    if colname.startswith(select_label) and not tab[colname].dtype in (bool, np.bool_)
+                ] for select_label in select_labels
+            }
+            # TODO: Cast fits values to None instead of the numpy default (e.g. 'None', np.nan, etc.)
+            selection_kwargs = [
+                {
+                    select_label: {
+                        kwarg_name: tab[f"{select_label}__{kwarg_name}"][i]
+                        for kwarg_name in selection_kwarg_colnames[select_label]
+                        if tab[f"{select_label}__{kwarg_name}"].dtype not in (bool, np.bool_)
+                    } for select_label in select_labels
+                } for i in range(len(tab))
+            ]
         elif tab is None:
-            galfind_logger.warning(
-                "selection tab is None!"
-            )
+            galfind_logger.warning("'SELECTION' tab is None!")
             tab = self.load_tab("ID", cropped)
+            selection_flags = list(itertools.repeat(None, len(tab)))
+            selection_kwargs = list(itertools.repeat(None, len(tab)))
         else:
-            galfind_logger.warning(
-                "Selection function not provided!"
-            )
-        return list(itertools.repeat(None, len(tab)))
+            err_message = "Selection function not provided!"
+            galfind_logger.critical(err_message)
+            raise Exception(err_message)
+        
+        return selection_flags, selection_kwargs
 
     # current bottleneck
     def make_gal_instr_mask(
@@ -797,7 +917,7 @@ class Catalogue_Creator:
     def load_gal_filtersets(
         self: Self,
         length: int,
-        cropped: bool = True
+        cropped: bool = True,
     ) -> List[Multiple_Filter]:
         if self.apply_gal_instr_mask:
             # create set of filtersets to be pointed to by sources with these bands available
@@ -851,6 +971,9 @@ class Catalogue(Catalogue_Base):
         min_flux_pc_err: Union[int, float] = 10.,
         crops: Optional[Union[Type[Selector], List[Type[Selector]]]] = None,
         load_gals: bool = True,
+        mask_method: str = "auto",
+        psf_method: Optional[str] = "empirical",
+        psf_homog_filt: Optional[str] = "F444W",
     ) -> Catalogue:
         data = Data.pipeline(
             survey,
@@ -867,18 +990,30 @@ class Catalogue(Catalogue_Base):
             aper_diams=aper_diams,
             forced_phot_band=forced_phot_band,
             min_flux_pc_err=min_flux_pc_err,
+            mask_method=mask_method,
+            psf_method=psf_method,
+            psf_homog_filt=psf_homog_filt,
         )
         return cls.from_data(data, crops, load_gals = load_gals)
 
     @classmethod
     def from_data(
-        cls, 
+        cls,
         data: Data,
         crops: Optional[Union[Type[Selector], List[Type[Selector]]]] = None,
         load_gals: bool = True,
+        **cat_creator_kwargs: Dict[str, Any],
     ) -> Catalogue:
-        cat_creator = Catalogue_Creator.from_data(data, crops = crops)
-        return cat_creator(cropped = True, load_gals = load_gals)
+        cat_creator = Catalogue_Creator.from_data(
+            data,
+            crops = crops,
+            **cat_creator_kwargs,
+        )
+        return cat_creator(
+            psfs = data.psfs,
+            cropped = True,
+            load_gals = load_gals,
+        )
 
     def __repr__(self):
         return super().__repr__()
@@ -1014,19 +1149,6 @@ class Catalogue(Catalogue_Base):
         return cross_matched_cat
 
         # # calculate aperture corrections if not already
-        # if not hasattr(self.instrument, "aper_corrs"):
-        #     aper_corrs = self.instrument.get_aper_corrs(
-        #         self.cat_creator.aper_diam
-        #     )
-        # else:
-        #     aper_corrs = self.instrument.aper_corrs[self.cat_creator.aper_diam]
-        # assert len(aper_corrs) == len(self.instrument)
-        # aper_corrs = {
-        #     filt_name: aper_corr
-        #     for filt_name, aper_corr in zip(
-        #         self.instrument.filt_names, aper_corrs
-        #     )
-        # }
         # # calculate and save dict of ext_src_corrs for each galaxy in self
         # galfind_logger.debug(
         #     "Photometry_obs.calc_ext_src_corrs takes 2min 20s for JOF with 16,000 galaxies. Fairly slow!"
@@ -1084,13 +1206,11 @@ class Catalogue(Catalogue_Base):
         self,
         property_name: str,
         hdu: str = "OBJECTS",
+        dtype: Type = object,
         overwrite: bool = False,
-    ) -> NoReturn:
-        assert len(property_name) < 68, \
-            galfind_logger.critical(
-                f"{len(property_name)=}>68. Please shorten '{property_name}'" + \
-                "to avoid FITS column name length limits."
-            )
+    ) -> None:
+        from . import Selector
+        save_property_name = Selector.shorten_kwarg_colname(property_name)
         if hdu in ["OBJECTS", "SELECTION"]:
             ID_label = self.cat_creator.ID_label
         elif any([True for code in funcs.all_subclasses(SED_code) if hdu.find(code.__name__) != -1]):
@@ -1098,26 +1218,26 @@ class Catalogue(Catalogue_Base):
         else:
             raise NotImplementedError
         # TODO: Need to attach self.open_cat to catalogue_creator.open_cat
-        append_tab = self.open_cat(cropped=False, hdu=hdu)
+        append_tab = self.open_cat(cropped = False, hdu = hdu)
         # append to .fits table only if not already
         if append_tab is not None:
-            if property_name in append_tab.colnames:
+            if save_property_name in append_tab.colnames:
                 if overwrite:
                     # remove old column that already exists
-                    append_tab.remove_column(property_name)
+                    append_tab.remove_column(save_property_name)
                 else:
-                    err_message = f"{property_name=} already appended to " + \
+                    err_message = f"{save_property_name=} already appended to " + \
                         f"{hdu=} .fits table, not overwriting!"
-                    galfind_logger.warning(err_message)
+                    galfind_logger.debug(err_message)
                     return
         # return None
         galfind_logger.info(
-            f"Appending {property_name=} to {hdu=} .fits table!"
+            f"Appending {save_property_name=} to {hdu=} .fits table!"
         )
         # make new table with calculated properties
         gal_IDs = getattr(self, "ID")
         # TODO: get an array of properties to save (NOT an array in all cases!)
-        gal_properties = getattr(self, property_name)
+        gal_properties = np.array(getattr(self, property_name)).astype(dtype)
         assert len(gal_properties) == len(gal_IDs)
         # mask any NaN values
         # i = 0
@@ -1127,7 +1247,7 @@ class Catalogue(Catalogue_Base):
         #     i += 1
         #gal_properties = MaskedColumn(gal_properties, mask=np.isnan(gal_properties), dtype = property_type)
         new_tab = Table(
-            {"ID_temp": gal_IDs, property_name: gal_properties},
+            {"ID_temp": gal_IDs, save_property_name: gal_properties},
             dtype = [int, type(gal_properties[0])]
         )
         if append_tab is None:
@@ -1226,26 +1346,55 @@ class Catalogue(Catalogue_Base):
                     "sex_A_IMAGE",
                     update = False
                 )
-                [setattr(gal, "sex_A_IMAGE", A_image[self.data[0].filt_name]) for gal, A_image in zip(self, A_image_arr)]
-                A_image_as_arr = [{band_data.filt_name: kron_radius[band_data.filt_name] * A_image[band_data.filt_name] * band_data.pix_scale \
-                    for band_data in self.data} for kron_radius, A_image in zip(kron_radii, A_image_arr)]
-                [gal.load_property(A_image_as, "sex_A_IMAGE_AS") for gal, A_image_as in zip(self, A_image_as_arr)]
+                [
+                    setattr(gal, "sex_A_IMAGE", A_image[self.data[0].filt_name])
+                    for gal, A_image in zip(self, A_image_arr)
+                ]
+                A_image_as_arr = [
+                    {
+                        band_data.filt_name: kron_radius[band_data.filt_name] \
+                            * A_image[band_data.filt_name] \
+                            * band_data.pix_scale \
+                        for band_data in self.data
+                    } for kron_radius, A_image in zip(kron_radii, A_image_arr)
+                ]
+                [
+                    gal.load_property(A_image_as, "sex_A_IMAGE_AS")
+                    for gal, A_image_as in zip(self, A_image_as_arr)
+                ]
                 B_image_arr = self.load_band_properties_from_cat(
                     "B_IMAGE",
                     "sex_B_IMAGE",
                     update = False,
                 )
-                [setattr(gal, "sex_B_IMAGE", B_image[self.data[0].filt_name]) for gal, B_image in zip(self, B_image_arr)]
-                B_image_as_arr = [{band_data.filt_name: kron_radius[band_data.filt_name] * B_image[band_data.filt_name] * band_data.pix_scale \
-                    for band_data in self.data} for kron_radius, B_image in zip(kron_radii, B_image_arr)]
-                [gal.load_property(B_image_as, "sex_B_IMAGE_AS") for gal, B_image_as in zip(self, B_image_as_arr)]
+                [
+                    setattr(gal, "sex_B_IMAGE", B_image[self.data[0].filt_name])
+                    for gal, B_image in zip(self, B_image_arr)
+                ]
+                B_image_as_arr = [
+                    {
+                        band_data.filt_name: kron_radius[band_data.filt_name] \
+                            * B_image[band_data.filt_name] \
+                            * band_data.pix_scale \
+                        for band_data in self.data
+                    } for kron_radius, B_image in zip(kron_radii, B_image_arr)
+                ]
+                [
+                    gal.load_property(
+                        B_image_as,
+                        "sex_B_IMAGE_AS"
+                    ) for gal, B_image_as in zip(self, B_image_as_arr)
+                ]
                 theta_image_arr = self.load_band_properties_from_cat(
                     "THETA_IMAGE",
                     "sex_THETA_IMAGE",
                     multiply_factor = u.deg,
                     update = False,
                 )
-                [setattr(gal, "sex_THETA_IMAGE", theta_image[self.data[0].filt_name]) for gal, theta_image in zip(self, theta_image_arr)]
+                [
+                    setattr(gal, "sex_THETA_IMAGE", theta_image[self.data[0].filt_name])
+                    for gal, theta_image in zip(self, theta_image_arr)
+                ]
             except:
                 pass
             
@@ -1262,22 +1411,21 @@ class Catalogue(Catalogue_Base):
     def load_sextractor_ext_src_corrs(
         self: Self,
         multiply_factor: Optional[Dict[str, float]] = None,
+        aper_corrs: Optional[Dict[str, float]] = None, 
     ) -> None:
         if multiply_factor is None:
             filt_names = None
         else:
             filt_names = list(multiply_factor.keys())
         self.load_sextractor_auto_fluxes(multiply_factor = multiply_factor)
-        galfind_logger.info(
-            f"Loading SExtractor extended source corrections for {self.cat_name}!"
-        )
-        [filt.instrument._load_aper_corrs() for filt in self.filterset]
-        aper_corrs = {
-            filt.filt_name: filt.instrument.aper_corrs[filt.filt_name]
-            for filt in self.filterset
-            if filt_names is None or filt.filt_name in filt_names
-        }
-        [gal.load_sextractor_ext_src_corrs(aper_corrs, filt_names) for gal in self]
+        [
+            gal.load_sextractor_ext_src_corrs(filt_names, aper_corrs = aper_corrs) for gal in tqdm(
+                self,
+                desc = f"Loading SExtractor extended source corrections for {repr(self)}",
+                total = len(self),
+                disable = galfind_logger.getEffectiveLevel() > logging.INFO,
+            )
+        ]
 
         if len(self) == len(self.cat_creator.open_cat(self.cat_path, "ID")):
             galfind_logger.info(
@@ -1287,7 +1435,7 @@ class Catalogue(Catalogue_Base):
             for filt in self.filterset:
                 if filt_names is None or filt.filt_name in filt_names:
                     for aper_diam in self.aper_diams:
-                        self._append_property_to_tab(f"ext_src_corr_{aper_diam.to(u.arcsec).value:.2f}as_{filt.filt_name}", "OBJECTS")
+                        self._append_property_to_tab(f"ext_src_corr_{aper_diam.to(u.arcsec).value:.2f}as_{filt.filt_name}", "OBJECTS", dtype = float)
 
     def load_sextractor_params(self) -> None:
         self.load_sextractor_auto_mags()
@@ -1320,7 +1468,7 @@ class Catalogue(Catalogue_Base):
             )
             # load the same property from every available band
             # open catalogue with astropy
-            fits_cat = self.open_cat(cropped=True)
+            fits_cat = self.open_cat(cropped = True)
             if multiply_factor is None:
                 multiply_factor = {
                     filt.filt_name: 1.0 * u.dimensionless_unscaled
@@ -1380,8 +1528,7 @@ class Catalogue(Catalogue_Base):
         self,
         cat_colname: str,
         save_name: str,
-        multiply_factor: Union[u.Quantity, u.Magnitude] = 1.0
-        * u.dimensionless_unscaled,
+        multiply_factor: Union[u.Quantity, u.Magnitude] = 1.0 * u.dimensionless_unscaled,
         dest: str = "gal",
     ):
         assert dest in ["gal", "phot_obs"]
@@ -1391,7 +1538,7 @@ class Catalogue(Catalogue_Base):
             has_attr = hasattr(self[0].phot, save_name)
         if not has_attr:
             # open catalogue with astropy
-            fits_cat = self.open_cat(cropped=True)
+            fits_cat = self.open_cat(cropped = True)
             if cat_colname in fits_cat.colnames:
                 cat_property = np.array(fits_cat[cat_colname])
                 assert len(cat_property) == len(self)
@@ -1452,16 +1599,42 @@ class Catalogue(Catalogue_Base):
     def make_cutouts(
         self: Self,
         cutout_size: Union[u.Quantity, dict] = 0.96 * u.arcsec,
+        native: bool = False,
     ) -> List[Dict[str, Type[Band_Cutout_Base]]]:
-        return [gal.make_cutouts(self.data, cutout_size) for gal in self]
-    
+        if native:
+            assert hasattr(self.data, "native"), \
+                galfind_logger.critical("Native data not available")
+            data = self.data.native
+        else:
+            data = self.data
+        return [gal.make_cutouts(data, cutout_size) for gal in self]
+
     def make_band_cutouts(
         self: Self,
         filt: Union[str, Filter],
         cutout_size: u.Quantity = 0.96 * u.arcsec,
+        native: bool = False,
+        overwrite: bool = False,
     ) -> List[Band_Cutout]:
-        band_data = self.data[filt.filt_name]
-        return [gal.make_band_cutout(band_data, cutout_size) for gal in self]
+        if native:
+            assert hasattr(self.data, "native"), \
+                galfind_logger.critical("Native data not available")
+            data = self.data.native
+        else:
+            data = self.data
+        band_data = data[filt.filt_name]
+        return [
+            gal.make_band_cutout(
+                band_data,
+                cutout_size,
+                overwrite = overwrite,
+            ) for gal in tqdm(
+                self,
+                desc=f"Making {filt.filt_name} band cutouts",
+                total=len(self),
+                disable = galfind_logger.getEffectiveLevel() > logging.INFO,
+            )
+        ]
 
     def plot_cutouts(
         self: Self,
@@ -1509,7 +1682,7 @@ class Catalogue(Catalogue_Base):
         stacked_cutouts.plot(save_name=save_name)
 
     def make_RGBs(
-        self,
+        self: Self,
         cutout_size: u.Quantity = 0.96 * u.arcsec,
         rgb_bands: Dict[str, List[str]] = {
             "B": ["F090W"],
@@ -1585,18 +1758,19 @@ class Catalogue(Catalogue_Base):
         kron_kwargs: Dict[str, Any] = {},
         n_cutout_rows: int = 2,
         overwrite: bool = False,
-        fig_axs: Optional[Tuple[plt.Figure, NDArray[plt.Axes]]] = None,
+        #fig_axs: Optional[Tuple[plt.Figure, NDArray[plt.Axes]]] = None,
     ):
         self.load_sextractor_params()
 
-        if fig_axs is None:
-            fig_axs = figs.make_phot_diagnostic_fig(len(self.data))
+        # if fig_axs is None:
+        #     fig, fig_axs = figs.make_phot_diagnostic_fig(len(self.data))
 
         # loop over galaxies and make photometry diagnostic plots for each one
         out_paths = [
             gal.plot_phot_diagnostic(
                 self.data,
-                ax = fig_axs,
+                #fig = fig,
+                #ax = fig_axs,
                 aper_diam = aper_diam,
                 SED_arr = SED_arr,
                 zPDF_arr = zPDF_arr,
@@ -1633,7 +1807,7 @@ class Catalogue(Catalogue_Base):
         self: Self,
         out_paths: List[str],
         collate_dir: str,
-        overwrite: bool = True
+        overwrite: bool = True,
     ):
         # make a folder to store symlinked photometric diagnostic plots for selected galaxies
         if self.crops != []:
@@ -1668,7 +1842,7 @@ class Catalogue(Catalogue_Base):
     ) -> NDArray[float]:
         assert hasattr(self, "data"), \
             galfind_logger.critical(
-                f"{self.cat_name} does not have data loaded!"
+                f"{repr(self)} does not have data loaded!"
             )
         return self._calc_Vmax(
             self.data,
@@ -1703,7 +1877,12 @@ class Catalogue(Catalogue_Base):
         # scatter each set of fluxes once by the calculated errors
         [
             gal.aper_phot[aper_diam].scatter_fluxes(update = True) 
-            for gal in tqdm(self, desc = "Scattering catalogue fluxes", total = len(self), disable = galfind_logger.getEffectiveLevel() > logging.INFO)
+            for gal in tqdm(
+                self,
+                desc = "Scattering catalogue fluxes",
+                total = len(self),
+                disable = galfind_logger.getEffectiveLevel() > logging.INFO
+            )
         ]
         if update_errs:
             self._update_errs_from_depths(aper_diam)
@@ -1757,9 +1936,10 @@ class Catalogue(Catalogue_Base):
         mode: str,
         region_selector: Optional[Region_Selector] = None,
         invert_region: bool = False,
-    ) -> NoReturn:
+        update_ecsv: bool = False,
+    ) -> None:
         if region_selector is None:
-            return self.data._load_depths(
+            self.data._load_depths(
                 aper_diam,
                 mode,
             )
@@ -1776,7 +1956,10 @@ class Catalogue(Catalogue_Base):
                 for filt_name in self.data.filterset.filt_names
             }
             med_depths = {filt_name: np.nanmedian(gal_band_depths) for filt_name, gal_band_depths in gal_depths.items()}
+            depths_16 = {filt_name: np.nanpercentile(gal_band_depths, 16.) for filt_name, gal_band_depths in gal_depths.items()}
+            depths_84 = {filt_name: np.nanpercentile(gal_band_depths, 84.) for filt_name, gal_band_depths in gal_depths.items()}
             mean_depths = {filt_name: np.nanmean(gal_band_depths) for filt_name, gal_band_depths in gal_depths.items()}
+            
             # pass to data objects for storage
             for band_data in self.data:
                 band_data._update_depths(
@@ -1786,3 +1969,85 @@ class Catalogue(Catalogue_Base):
                     region_selector.name if not invert_region
                     else region_selector.fail_name
                 )
+        
+        if update_ecsv:
+            if region_selector is None:
+                gal_depths = {filt_name: [
+                        gal.aper_phot[aper_diam].depths[np.where(np.array(gal.aper_phot[aper_diam].filterset.filt_names) == filt_name)[0][0]].value
+                        for gal in self if filt_name in gal.aper_phot[aper_diam].filterset.filt_names 
+                    ]
+                    for filt_name in self.data.filterset.filt_names
+                }
+                med_depths = {filt_name: np.nanmedian(gal_band_depths) for filt_name, gal_band_depths in gal_depths.items()}
+                depths_16 = {filt_name: np.nanpercentile(gal_band_depths, 16.) for filt_name, gal_band_depths in gal_depths.items()}
+                depths_84 = {filt_name: np.nanpercentile(gal_band_depths, 84.) for filt_name, gal_band_depths in gal_depths.items()}
+                mean_depths = {filt_name: np.nanmean(gal_band_depths) for filt_name, gal_band_depths in gal_depths.items()}
+            
+            tab = self.open_cat(cropped = False, hdu = "OBJECTS")
+            if len(self) == len(tab): # and region_selector is not None:
+                # save depths to fits
+                depth_dir = Depths.get_depth_tab_dir(self.data)
+                gal_reg_depth_path = f"{depth_dir}/reg_depths/{self.survey}_{aper_diam.to(u.arcsec).value:.2f}as.ecsv"
+                append_data = {"reg_name": [], "filt_name": [], "depth_50": [], "depth_16": [], "depth_84": [], "mean_depth": []}
+                append_data_types = {"reg_name": str, "filt_name": str, "depth_50": float, "depth_16": float, "depth_84": float, "mean_depth": float}
+                if not Path(gal_reg_depth_path).is_file():
+                    orig_tab = Table(append_data, dtype = [append_data_types[key] for key in append_data])
+                else:
+                    orig_tab = Table.read(gal_reg_depth_path, format = "ascii.ecsv")
+                if region_selector is not None:
+                    reg_name = region_selector.name if not invert_region else region_selector.fail_name
+                else:
+                    reg_name = "all"
+                for band_data in self.data:
+                    filt_name = band_data.filt_name
+                    if not any(
+                        row["reg_name"] == reg_name and row["filt_name"] == filt_name 
+                        for row in orig_tab
+                    ):
+                        append_data["reg_name"].append(reg_name)
+                        append_data["filt_name"].append(filt_name)
+                        append_data["depth_50"].append(med_depths[filt_name])
+                        append_data["depth_16"].append(depths_16[filt_name])
+                        append_data["depth_84"].append(depths_84[filt_name])
+                        append_data["mean_depth"].append(mean_depths[filt_name])
+                # combine append data with original table
+                if len(append_data) > 0:
+                    append_tab = Table(append_data, dtype = [append_data_types[key] for key in append_data])
+                    out_tab = vstack([orig_tab, append_tab])
+                    funcs.make_dirs(gal_reg_depth_path)
+                    out_tab.write(gal_reg_depth_path, format = "ascii.ecsv", overwrite = True)
+                    funcs.change_file_permissions(gal_reg_depth_path)
+                    galfind_logger.info(f"Saved {reg_name} depths to {gal_reg_depth_path}!")
+    
+    def make_readme(
+        self: Self,
+        update: bool = False,
+        hdu_divider: str = "------------------",
+    ) -> None:
+        out_path = f"{self.fits_path.replace('.fits', '')}_README.txt"
+        if not Path(out_path).is_file() or update:
+            out_str = ""
+            if Path(out_path).is_file():
+                with open(out_path, "r") as f:
+                    out_str = f.read()
+                # split by hdu_divider
+                out_str = out_str.split(hdu_divider)
+
+            readme_info = self._readme_info_from_fits_tab(self.fits_path)
+        for origin, columns in readme_info.items():
+            pass
+
+    @staticmethod
+    def _readme_info_from_fits_tab(
+        fits_path: str
+    ) -> Dict[str, Dict[str, str]]:
+        hdul = fits.open(fits_path)
+        hdu_names = [hdu.name for hdu in hdul]
+        readme_info = {}
+        for i, hdu_name in enumerate(hdu_names):
+            tab = hdul[i]
+            if hdu_name == "OBJECTS":
+                # check for SExtractor columns
+                pass
+        return readme_info
+

@@ -37,9 +37,12 @@ def get_code() -> str:
 def get_segmentation_path(
     self: Type[Band_Data_Base],
     err_map_type: str,
-) -> str:
+) -> str: 
     seg_dir = f"{config['SExtractor']['SEX_DIR']}/{self.instr_name}/{self.version}/{self.survey}/{err_map_type}/segmentation"
-    seg_path = f"{seg_dir}/{self.survey}_{self.filt_name}_{self.filt_name}_sel_cat_{self.version}_seg.fits"
+    seg_name = f"{self.survey}_{self.filt_name}_{self.filt_name}_sel_cat_{self.version}"
+    if self.is_native:
+        seg_name += "_native"
+    seg_path = f"{seg_dir}/{seg_name}_seg.fits"
     funcs.make_dirs(seg_path)
     return seg_path
 
@@ -138,6 +141,7 @@ def segment(
             sex_config_path,
             params_path,
             pix_aper_diams,
+            str(self.is_native).lower(),
         ]
         # SExtractor bash script python wrapper
         galfind_logger.debug(input)

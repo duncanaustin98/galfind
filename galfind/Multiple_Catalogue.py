@@ -292,6 +292,7 @@ class Combined_Catalogue(Catalogue_Base):
         z_step: float = 0.01,
         unmasked_area: Union[str, u.Quantity] = "selection",
         Vmax_method: str = "uniform_depth",
+        n_jobs: int = 1,
     ) -> None:
         # # calculate Vmax for galaxy selection in their origin field
         # [
@@ -309,6 +310,8 @@ class Combined_Catalogue(Catalogue_Base):
                     SED_fit_code, 
                     z_step,
                     unmasked_area = unmasked_area,
+                    Vmax_method = Vmax_method,
+                    n_jobs = n_jobs,
                 ) for data_cat in self.cat_arr
             ] for cat in self.cat_arr
         ]
@@ -329,34 +332,45 @@ class Combined_Catalogue(Catalogue_Base):
         save_path = self.get_Vmax_ecsv_path(self, Vmax_method = Vmax_method)
         if not Path(save_path).is_file():
             # make Vmax table
-            try:
-                Vmax_arr = np.array(
+            #try:
+            Vmax_arr = np.array(
+                [
                     [
-                        [
-                            gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
-                            V_max[self.crop_name.split("/")[-1]][cat.data.full_name]. \
-                            to(u.Mpc**3).value for cat in self.cat_arr
-                        ] for gal in self
-                    ]
-                )
-            except:
-                breakpoint()
+                        gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
+                        Vmax[cat.data.survey][region] for cat in self.cat_arr \
+                        for region in cat.data.regions
+                    ] for gal in self
+                ]
+            )
+            # except:
+            #     breakpoint()
             Vmax_arr = np.where(Vmax_arr == -1.0, 0.0, Vmax_arr)
             Vmax_arr = np.sum(Vmax_arr, axis = 1)
             Vmax_arr = np.where(Vmax_arr == 0.0, -1.0, Vmax_arr)
             data = {
                 "ID": np.array([gal.ID for gal in self]),
+                "aper_diam": np.array([aper_diam.to(u.arcsec).value] * len(self)),
+                "SED_fit_code": np.array([SED_fit_code.label] * len(self)),
+                "region": np.array(["combined"] * len(self)),
                 "survey": np.array([gal.survey for gal in self]),
-                "Vmax": Vmax_arr * u.Mpc ** 3,
+                "Vmax_total": Vmax_arr * u.Mpc ** 3,
             }
-            new_tab = Table(data, dtype=[int, str, float])
+            new_tab = Table(data, dtype=[int, float, str, str, str, float])
             new_tab.meta = {"Vmax_invalid_val": -1.0}
             self._save_ecsv(save_path, new_tab)
-        breakpoint()
         full_survey_name = funcs.get_full_survey_name(self.survey, self.version, self.filterset)
         tab = Table.read(save_path)
-        self._load_Vmax_from_ecsv(tab, aper_diam, SED_fit_code, full_survey_name)
-        
+        self._load_Vmax_from_ecsv(tab, self.survey, aper_diam, SED_fit_code, full_survey_name)
+
+    
+    def plot_phot_diagnostics(self, *args, **kwargs):
+        for cat in self.cat_arr:
+            cat.plot_phot_diagnostics(*args, **kwargs)
+    
+    # def hist(self, *args, **kwargs):
+    #     for cat in self.cat_arr:
+    #         cat.hist(*args, **kwargs)
+
     def plot_combined_area_depth(
         self,
         save_path,

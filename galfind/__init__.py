@@ -118,6 +118,7 @@ astropy_cosmo = FlatLambdaCDM(H0=70, Om0=0.3, Ob0=0.05, Tcmb0=2.725)
 wav_lyman_lim = 911.8  # * u.AA
 
 from . import useful_funcs_austind
+from . import utils
 from . import figs
 from . import decorators
 from . import SExtractor, Masking, Depths
@@ -137,7 +138,7 @@ config.set("Other", "ALL_BANDS", json.dumps(all_filt_names))
 
 from .PDF import PDF, SED_fit_PDF, Redshift_PDF, PDF_nD
 
-from .Data import Band_Data_Base, Band_Data, Stacked_Band_Data, Data
+from .Data import Band_Data_Base, Band_Data, Stacked_Band_Data, Multiple_Band_Data_Base, Data
 from .Cutout import Cutout_Base, Band_Cutout, Band_Cutout_Base, Stacked_Band_Cutout, RGB, Stacked_RGB, Multiple_Band_Cutout, Multiple_RGB, Catalogue_Cutouts
 
 from .Photometry import Photometry, Multiple_Photometry, Mock_Photometry
@@ -164,6 +165,7 @@ from .Catalogue_Base import Catalogue_Base
 from .Multiple_Catalogue import Combined_Catalogue
 #from .Multiple_Data import Multiple_Data
 from .Catalogue import Catalogue, Catalogue_Creator
+from .Galaxy_Creator import Galaxy_Creator
 from .SED import (
     SED,
     SED_rest,
@@ -228,6 +230,7 @@ from .Selector import (
     Hainline24_TY_Brown_Dwarf_Selector_2,
     Redshift_Selector,
     Stacked_Blue_Lya_Non_Detect_Selector,
+    Compactness_Selector,
 )
 
 from .Emission_lines import Emission_line, wav_lyman_alpha, line_diagnostics

@@ -384,12 +384,12 @@ class TestBandDataDepths:
         )
 
 # @pytest.fixture(scope="session")
-# def data_from_survey_version(
+# def data_from_survey_version_psfs(
 #     survey: str,
 #     version: str,
 #     instrument_names: List[str],
 # ):
-#     return Data.from_survey_version(
+#     return Data.from_survey_version_psfs(
 #         survey = survey,
 #         version = version,
 #         instrument_names = instrument_names,

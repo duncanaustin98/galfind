@@ -300,6 +300,7 @@ class Photometry:
             "marker": "o",
             "ms": 4.0,
             "zorder": 100.0,
+            "elinewidth": 1.5,
             "path_effects": [pe.withStroke(linewidth=2.0, foreground="white")],
         },
         filled: bool = True,
@@ -498,7 +499,6 @@ class Photometry:
             plot_limits = {"uplims": uplims}
 
         # TODO: make nans very large and exclude from autoscaling
-
         plot = ax.errorbar(
             wavs_to_plot,
             mags_to_plot,

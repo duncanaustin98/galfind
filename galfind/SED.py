@@ -388,24 +388,6 @@ class SED_rest(SED):
             wav_range=[0, 10_000] * u.AA,
         )
 
-    def crop_to_Calzetti94_filters(self, update=False):
-        wavs = self.wavs.to(u.AA)
-        Calzetti94_filter_indices = np.logical_or.reduce(
-            [
-                (wavs.value > low_lim) & (wavs.value < up_lim)
-                for low_lim, up_lim in zip(
-                    funcs.lower_Calzetti_filt, funcs.upper_Calzetti_filt
-                )
-            ]
-        )
-        wavs = self.wavs[Calzetti94_filter_indices]
-        mags = self.mags[Calzetti94_filter_indices]
-        if update:
-            self.wavs = wavs
-            self.wav_units = u.AA  # should improve this functionality
-            self.mags = mags
-        return wavs, mags
-
 
 class SED_obs(SED):
     # should include mag errors here
@@ -745,7 +727,7 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
     def calc_UV_slope(self, output_errs=False, method="Calzetti+94"):
         if method == "Calzetti+94":
             # crop to Calzetti+94 filters
-            wavs, mags = self.crop_to_Calzetti94_filters()
+            wavs, mags = funcs.crop_to_Calzetti94_filters(self.wavs, self.mags)
             # convert self.mags to f_λ if needed
             if mags.unit == u.ABmag:
                 mags = funcs.convert_mag_units(
@@ -861,10 +843,10 @@ class Mock_SED_obs(SED_obs):
     ):
         lum_distance = astropy_cosmo.luminosity_distance(z).to(u.pc)
         m_UV = (
-            M_UV
+            M_UV.to(u.ABmag).value
             - 2.5 * np.log10(1 + z)
             + 5 * np.log10(lum_distance.value / 10)
-        )
+        ) * u.ABmag
         mock_SED_rest = Mock_SED_rest.power_law_from_beta_m_UV(
             beta, m_UV, template_name=template_name
         )
