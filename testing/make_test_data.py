@@ -1,18 +1,31 @@
+import os
+from typing import List, Type, Union
 
 import astropy.units as u
-import os
-from typing import List, Union, Type
-from galfind import Data, Catalogue, Band_Data_Base, galfind_logger
-from galfind.Data import morgan_version_to_dir
 
-from ..conftest import test_galfind_data_dir, test_survey, test_version, test_bands_
+from galfind import galfind_logger
+from galfind.catalogues import Catalogue
+from galfind.imaging import Data
+from galfind.imaging.Data import Band_Data_Base, morgan_version_to_dir
+
+from ..conftest import (
+    test_bands_,
+    test_galfind_data_dir,
+    test_survey,
+    test_version,
+)
+
 
 def main(
     survey: str,
     version: str,
     instrument_names: List[str],
     aper_diams: u.Quantity = [0.32] * u.arcsec,
-    forced_phot_band: Union[str, List[str], Type[Band_Data_Base]] = ["F277W", "F356W", "F444W"],
+    forced_phot_band: Union[str, List[str], Type[Band_Data_Base]] = [
+        "F277W",
+        "F356W",
+        "F444W",
+    ],
     cutout_size: u.Quantity = 15.0 * u.arcsec,
 ):
     # load in data
@@ -20,9 +33,9 @@ def main(
         survey,
         version,
         instrument_names,
-        version_to_dir_dict = morgan_version_to_dir,
-        aper_diams = aper_diams,
-        forced_phot_band = forced_phot_band,
+        version_to_dir_dict=morgan_version_to_dir,
+        aper_diams=aper_diams,
+        forced_phot_band=forced_phot_band,
     )
     # load in catalogue
     cat = Catalogue.from_data(data)
@@ -35,14 +48,20 @@ def main(
             output_dir = Data._get_data_dir(
                 test_survey,
                 test_version,
-                pix_scale = 0.03 * u.arcsec,
-                instrument = cutout.band_data.filt.instrument,
-                data_dir = test_galfind_data_dir,
+                pix_scale=0.03 * u.arcsec,
+                instrument=cutout.band_data.filt.instrument,
+                data_dir=test_galfind_data_dir,
             )
-            output_path = f"{output_dir}/{cutout.band_data.filt.filt_name}_{test_survey}.fits"
+            output_path = (
+                f"{output_dir}/"
+                f"{cutout.band_data.filt.filt_name}_{test_survey}.fits"
+            )
             # copy cutout to new location
             os.system(f"cp {cutout.cutout_path} {output_path}")
-            galfind_logger.info(f"Copied {cutout.cutout_path} to {output_path}")
+            galfind_logger.info(
+                f"Copied {cutout.cutout_path} to {output_path}"
+            )
+
 
 if __name__ == "__main__":
     survey = "JADES-DR3-GS-East"

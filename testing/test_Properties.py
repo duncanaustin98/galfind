@@ -1,19 +1,18 @@
-
-import pytest
-from pytest_lazy_fixtures import lf
+import inspect
 import os
 import sys
-import inspect
-import numpy as np
-from copy import copy, deepcopy
+from copy import copy
+
 import astropy.units as u
+import pytest
+from pytest_lazy_fixtures import lf
 
 os.environ["GALFIND_CONFIG_DIR"] = f"{os.getcwd()}/testing"
 os.environ["GALFIND_CONFIG_NAME"] = "test_galfind_config.ini"
 
-import galfind
-from galfind import MUV_Calculator, Catalogue, Galaxy
-from galfind.Property_calculator import MUV_SED_Property_Calculator
+from galfind.catalogues import Catalogue
+from galfind.properties import MUV_Calculator
+from galfind.properties.Property_calculator import MUV_SED_Property_Calculator
 
 # @pytest.fixture(
 #     scope = "module",
@@ -33,23 +32,26 @@ from galfind.Property_calculator import MUV_SED_Property_Calculator
 # def fail_MUV_phot_calculator(request):
 #     return MUV_Calculator, *request.param
 
+
 @pytest.fixture(
-    scope = "module",
-    params = [
+    scope="module",
+    params=[
         (
             {
                 "aper_diam": 0.32 * u.arcsec,
                 "SED_fitter": "eazy_fsps_larson_sed_fitter",
-            }, True
+            },
+            True,
         ),
         (
             {
                 "aper_diam": 0.32 * u.arcsec,
                 "SED_fitter": "eazy_fsps_larson_sed_fitter",
                 "ext_src_corrs": None,
-            }, True
+            },
+            True,
         ),
-    ]
+    ],
 )
 def call_MUV_SED_property_calculator(request):
     inputs, outcome = request.param
@@ -58,46 +60,52 @@ def call_MUV_SED_property_calculator(request):
 
 
 @pytest.fixture(
-    scope = "module",
-    params = [
+    scope="module",
+    params=[
         (
             {
                 "aper_diam": 0.32 * u.arcsec,
                 "SED_fit_label": "eazy_fsps_larson_sed_fitter",
-            }, True
+            },
+            True,
         ),
         (
             {
                 "aper_diam": 0.32 * u.arcsec,
                 "SED_fit_label": "eazy_fsps_larson_sed_fitter",
                 "ext_src_corrs": None,
-            }, True
+            },
+            True,
         ),
-    ]
+    ],
 )
 def call_MUV_phot_property_calculator(request):
     inputs, outcome = request.param
-    inputs["SED_fit_label"] = request.getfixturevalue(inputs["SED_fit_label"]).label
+    inputs["SED_fit_label"] = request.getfixturevalue(
+        inputs["SED_fit_label"]
+    ).label
     return MUV_Calculator, inputs, outcome
 
 
 ##################################################
 
+
 def get_call_property_calculator_fixtures():
     module = sys.modules[__name__]
     return [
-        lf(name) for name, obj in inspect.getmembers(module)
+        lf(name)
+        for name, obj in inspect.getmembers(module)
         if name.endswith("_property_calculator") and name.startswith("call_")
     ]
 
-@pytest.fixture(
-    scope = "module",
-    params = get_call_property_calculator_fixtures()
-)
+
+@pytest.fixture(scope="module", params=get_call_property_calculator_fixtures())
 def call_property_calculator(request):
     return request.param
 
+
 #################################################
+
 
 def test_pass_property_calculator_init(call_property_calculator):
     property_calculator_cls, inputs, _ = call_property_calculator
@@ -105,13 +113,14 @@ def test_pass_property_calculator_init(call_property_calculator):
     property_calculator_inst = property_calculator_cls(**inputs)
     assert isinstance(property_calculator_inst, property_calculator_cls)
 
+
 # def test_fail_selector_init(fail_selector):
 #     selector_cls, inputs, outcome = fail_selector
 #     # instantiate selector_cls with inputs
 #     with pytest.raises(outcome):
 #         selector_cls(**inputs)
 
-# TODO: Determine expected __call__ failures due to 
+# TODO: Determine expected __call__ failures due to
 # objects not containing required information
 
 # @pytest.mark.requires_data
@@ -131,12 +140,14 @@ def test_pass_property_calculator_init(call_property_calculator):
 
 
 @pytest.mark.requires_data
-def test_property_calculator_call_cat(call_property_calculator, cat_eazy_loaded):
+def test_property_calculator_call_cat(
+    call_property_calculator, cat_eazy_loaded
+):
     property_calculator_cls, inputs, outcome = call_property_calculator
     outcome_ = copy(outcome)
     if isinstance(outcome_, dict):
         outcome_ = outcome_["cat"]
-    if outcome_ != True:
+    if outcome_ is not True:
         with pytest.raises(outcome_):
             property_calculator_inst = property_calculator_cls(**inputs)
             property_calculator_inst(cat_eazy_loaded)

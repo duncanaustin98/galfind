@@ -1,25 +1,45 @@
 """Base class for galaxy catalogue containers.
 
-Provides abstract base class wrapping Galaxy lists with catalogue-level operations
+Provides abstract base class wrapping Galaxy lists with
+catalogue-level operations
 including cropping, cross-matching, and concatenation.
 """
 
 from __future__ import annotations
 
+import logging
+import os
 from copy import deepcopy
-import matplotlib.pyplot as plt
-import astropy.units as u
-import numpy as np
 from pathlib import Path
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    List,
+    NoReturn,
+    Optional,
+    Tuple,
+    Union,
+)
+
+import astropy.units as u
+import matplotlib.pyplot as plt
+import numpy as np
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.table import Table, join, vstack
-from tqdm import tqdm
-import logging
 from numpy.typing import NDArray
-from typing import TYPE_CHECKING, Any, List, Dict, Union, Optional, NoReturn, Tuple
+from tqdm import tqdm
+
 if TYPE_CHECKING:
-    from . import Galaxy, Catalogue_Creator, Data, Selector, Property_Calculator_Base, Mask_Selector
+    from . import (
+        Catalogue_Creator,
+        Data,
+        Galaxy,
+        Mask_Selector,
+        Property_Calculator_Base,
+        Selector,
+    )
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -59,29 +79,35 @@ class Catalogue_Base:
         catalogue and tracking applied crops.
     """
 
-    # later on, the gal_arr should be calculated from the Instrument and sex_cat path, with SED codes already given
+    # later on, the gal_arr should be calculated from the Instrument
+    # and sex_cat path, with SED codes already given
     def __init__(
         self,
         gals: List[Galaxy],
         cat_creator: Catalogue_Creator,
-        #SED_rest_properties: Dict[str, Union[u.Quantity, u.Magnitude, u.Dex]] = {},
+        # SED_rest_properties: Dict[
+        #     str, Union[u.Quantity, u.Magnitude, u.Dex]
+        # ] = {},
     ):
         self.gals = gals
         self.cat_creator = cat_creator
-        #self.SED_rest_properties = SED_rest_properties
+        # self.SED_rest_properties = SED_rest_properties
         # concat is commutative for catalogues
         self.__radd__ = self.__add__
-        # cross-match is commutative for catalogues - not if they are of different classes
+        # cross-match is commutative for catalogues - not if they
+        # are of different classes
         # self.__rmul__ = self.__mul__
 
     # %% Overloaded operators
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__.upper()}({self.survey}," + \
-            f"{self.version},{self.filterset.instrument_name})"
+        return (
+            f"{self.__class__.__name__.upper()}({self.survey},"
+            + f"{self.version},{self.filterset.instrument_name})"
+        )
 
     def __str__(self: Self) -> str:
-        #display_selections = ["EPOCHS", "BROWN_DWARF"]
+        # display_selections = ["EPOCHS", "BROWN_DWARF"]
         output_str = funcs.line_sep
         output_str += f"{repr(self)}:\n"
         output_str += funcs.band_sep
@@ -93,12 +119,16 @@ class Catalogue_Base:
         output_str += f"DEC RANGE = {self.dec_range}\n"
         output_str += funcs.band_sep
         output_str += str(self.filterset)
-        # display what other things have previously been calculated for this catalogue
+        # display what other things have previously been calculated
+        # for this catalogue
         if hasattr(self, "SED_results"):
             output_str += "SED FITTING RESULTS:\n"
             for aper_diam, SED_results in self.SED_results.items():
                 output_str += funcs.band_sep
-                output_str += f"{aper_diam}: {','.join([repr(SED_result) for SED_result in SED_results])}\n"
+                SED_results_str = ",".join(
+                    [repr(SED_result) for SED_result in SED_results]
+                )
+                output_str += f"{aper_diam}: {SED_results_str}\n"
             output_str += funcs.line_sep
         # breakpoint()
         # output_str += "CAT STATUS = SEXTRACTOR, "
@@ -112,11 +142,15 @@ class Catalogue_Base:
         #     if sel_criteria in cat.colnames:
         #         output_str += f"{sel_criteria} SELECTION, "
         # output_str += "\n"
-        # # display total number of galaxies that satisfy the selection criteria previously performed
+        # # display total number of galaxies that satisfy the
+        # # selection criteria previously performed
         # if print_sel_criteria:
         #     for sel_criteria in display_selections:
         #         if sel_criteria in cat.colnames:
-        #             output_str += f"N_GALS_{sel_criteria} = {len(cat[cat[sel_criteria]])}\n"
+        #             output_str += (
+        #                 f"N_GALS_{sel_criteria} = "
+        #                 f"{len(cat[cat[sel_criteria]])}\n"
+        #             )
         # output_str += funcs.band_sep
         # # display crops that have been performed on this specific object
         # if self.crops != []:
@@ -152,22 +186,34 @@ class Catalogue_Base:
     def __getitem__(self, index: Any) -> Optional[Union[Galaxy, List[Galaxy]]]:
         if len(self) == 0:
             raise IndexError("No galaxies in catalogue!")
-        from . import Selector
+        from ..selection.Selector import Selector
+
         if isinstance(index, int):
             return self.gals[index]
         elif isinstance(index, (list, np.ndarray)):
-            if len(index) == 1 and all(isinstance(index_, int) for index_ in index):
+            if len(index) == 1 and all(
+                isinstance(index_, int) for index_ in index
+            ):
                 return self.gals[index[0]]
-            elif all(isinstance(index_, tuple(Selector.__subclasses__())) for index_ in index):
+            elif all(
+                isinstance(index_, tuple(Selector.__subclasses__()))
+                for index_ in index
+            ):
                 keep_arr = []
                 for i, index_ in enumerate(index):
                     # run selection if not already done
-                    if not all(index_.name in gal.selection_flags for gal in self):
-                        [index_(gal, return_copy = False) for gal in self]
+                    if not all(
+                        index_.name in gal.selection_flags for gal in self
+                    ):
+                        [index_(gal, return_copy=False) for gal in self]
                     else:
                         pass
-                    keep_arr.append([gal.selection_flags[index_.name] for gal in self])
-                return list(np.array(self.gals)[np.logical_and.reduce(keep_arr)])
+                    keep_arr.append(
+                        [gal.selection_flags[index_.name] for gal in self]
+                    )
+                return list(
+                    np.array(self.gals)[np.logical_and.reduce(keep_arr)]
+                )
         if isinstance(index, (slice, np.ndarray)):
             return list(np.array(self.gals)[index])
         elif isinstance(index, list):
@@ -183,9 +229,9 @@ class Catalogue_Base:
         #             keep_arr.extend(
         #                 [np.array(
         #                     [
-        #                         True if getattr(gal, key) in values else False
+        #                         True if getattr(gal, key) in values
+        #                         else False
         #                         for i, gal in enumerate(self)
-                                
         #                     ]
         #                 )]
         #             )
@@ -199,10 +245,10 @@ class Catalogue_Base:
         elif isinstance(index, tuple(Selector.__subclasses__())):
             # run selection if not already done
             if not all(index.name in gal.selection_flags for gal in self):
-                [index(gal, return_copy = False) for gal in self]
+                [index(gal, return_copy=False) for gal in self]
             keep_arr = [gal.selection_flags[index.name] for gal in self]
             return list(np.array(self.gals)[np.array(keep_arr)])
-    
+
     def crop(
         self: Self,
         selector: Type[Selector],
@@ -224,11 +270,12 @@ class Catalogue_Base:
         `Self`
             This catalogue, cropped in place.
         """
-        if not any(crops._selection_name == selector._selection_name for crops in self.crops):
+        if not any(
+            crops._selection_name == selector._selection_name
+            for crops in self.crops
+        ):
             if len(self) == 0:
-                galfind_logger.warning(
-                    f"No galaxies in {repr(self)} to crop!"
-                )
+                galfind_logger.warning(f"No galaxies in {repr(self)} to crop!")
             else:
                 self.gals = np.array(self[selector])
             self.cat_creator.crops.append(selector)
@@ -237,22 +284,25 @@ class Catalogue_Base:
     # only acts on attributes that don't already exist in Catalogue
     def __getattr__(
         self: Self,
-        property_name: str #, origin: Union[str, dict] = "gal"
+        property_name: str,  # , origin: Union[str, dict] = "gal"
     ) -> np.ndarray:
         if property_name in self.cat_creator.__dict__.keys():
             return getattr(self.cat_creator, property_name)
-        elif all(hasattr(gal, property_name) for gal in self) and len(self) > 0:
+        elif (
+            all(hasattr(gal, property_name) for gal in self) and len(self) > 0
+        ):
             attr_arr = [getattr(gal, property_name) for gal in self]
-            #attr_arr = [gal.__getattr__(property_name, origin) for gal in self]
+            # attr_arr = [gal.__getattr__(property_name, origin)
+            # for gal in self]
             # ensure all units are the same
             if all(
                 isinstance(attr, (u.Quantity, u.Magnitude, u.Dex))
                 for attr in attr_arr
             ):
-                assert all(
-                    attr.unit == attr_arr[0].unit for attr in attr_arr
+                assert all(attr.unit == attr_arr[0].unit for attr in attr_arr)
+                attr_arr = [attr.value for attr in attr_arr] * u.Unit(
+                    attr_arr[0].unit
                 )
-                attr_arr = [attr.value for attr in attr_arr] * u.Unit(attr_arr[0].unit)
             return attr_arr
         else:
             raise AttributeError
@@ -279,7 +329,7 @@ class Catalogue_Base:
         for key, value in self.__dict__.items():
             try:
                 setattr(result, key, deepcopy(value, memo))
-            except:
+            except Exception:
                 galfind_logger.critical(
                     f"deepcopy({self.__class__.__name__}) {key}: {value} FAIL!"
                 )
@@ -289,11 +339,12 @@ class Catalogue_Base:
     def __add__(self, cat, out_survey=None):
         if not cat.__class__.__name__ == "Spectral_Catalogue":
             from .Multiple_Catalogue import Combined_Catalogue
+
             # concat catalogues
-            if out_survey == None:
+            if out_survey is None:
                 out_survey = "+".join([self.survey, cat.survey])
             return Combined_Catalogue([self, cat], survey=out_survey)
-    
+
     def __sub__(self):
         pass
 
@@ -305,7 +356,8 @@ class Catalogue_Base:
         match_type="compare_within_radius",
     ):
         """
-        'Multiply' two catalogues by performing a cross-match and filtering the best matching galaxies.
+        'Multiply' two catalogues by performing a cross-match and
+        filtering the best matching galaxies.
         Ensures no duplicate galaxies are present in the output catalogue.
 
         Parameters:
@@ -314,22 +366,26 @@ class Catalogue_Base:
         - out_survey: str, optional
             The name of the output survey. Default is None.
         - max_sep: Quantity, optional
-            The maximum separation allowed for matching galaxies. Default is 1.0 arcsec.
+            The maximum separation allowed for matching galaxies.
+            Default is 1.0 arcsec.
         - match_type: str, optional
-            The type of matching to perform. Options are 'nearest' and 'compare_within_radius'.
+            The type of matching to perform. Options are 'nearest'
+            and 'compare_within_radius'.
             Default is 'compare_within_radius'.
 
         Returns:
         - Combined_Catalogue
-            The resulting Combined_Catalogue after performing the multiplication, with duplicates removed.
+            The resulting Combined_Catalogue after performing the
+            multiplication, with duplicates removed.
 
         """
         from .Multiple_Catalogue import Combined_Catalogue
+
         # cross-match catalogues
         # update .fits tables with cross-matched version
         # open tables
         self_copy = deepcopy(self)
-        
+
         if isinstance(other, Combined_Catalogue):
             other_copy_gals = other.cat_arr
         else:
@@ -350,23 +406,38 @@ class Catalogue_Base:
             )
             """
             band = self_copy.data.forced_phot_band
-            wcs_self = WCS(fits.getheader(self_copy.data.im_paths[band], ext=self_copy.data.im_exts[band]))
-            wcs_other = WCS(fits.getheader(other_copy.data.im_paths[band], ext=other_copy.data.im_exts[band]))
-            if not (any(sky_coords_cat.contained_by(wcs_self)) and any(other_sky_coords.contained_by(wcs_other))):
+            wcs_self = WCS(
+                fits.getheader(
+                    self_copy.data.im_paths[band],
+                    ext=self_copy.data.im_exts[band],
+                )
+            )
+            wcs_other = WCS(
+                fits.getheader(
+                    other_copy.data.im_paths[band],
+                    ext=other_copy.data.im_exts[band],
+                )
+            )
+            if not (
+                any(sky_coords_cat.contained_by(wcs_self))
+                and any(other_sky_coords.contained_by(wcs_other))
+            ):
                 cat_matches = []
                 other_cat_matches = []
                 print('Skipping')
                 continue
 
             # Check if likely to have any matches
-            idx, _, _, _ = sky_coords_cat.search_around_sky(other_sky_coords, 5*u.arcsec)
+            idx, _, _, _ = sky_coords_cat.search_around_sky(
+                other_sky_coords, 5 * u.arcsec
+            )
 
-        
+
             if len(idx) == 0:
                 print('Skipping')
                 cat_matches = []
                 other_cat_matches = []
-                
+
                 continue
             """
             if match_type == "nearest":
@@ -374,21 +445,23 @@ class Catalogue_Base:
                 idx, d2d, d3d = sky_coords_cat.match_to_catalog_sky(
                     other_sky_coords
                 )
-                # Also check mask - don't keep masked galaxies where there is an unmasked match
+                # Also check mask - don't keep masked galaxies where
+                # there is an unmasked match
                 sep_constraint = d2d < max_sep
                 # Get indexes of matches
                 cat_matches = np.arange(len(sky_coords_cat))[sep_constraint]
                 other_cat_matches = idx[sep_constraint]
 
             elif match_type == "compare_within_radius":
-                # This finds all matches within a certain radius and compares the photometry of the galaxies
+                # This finds all matches within a certain radius and
+                # compares the photometry of the galaxies
                 cat_matches = []
                 other_cat_matches = []
 
                 for pos, coord in tqdm(
                     enumerate(self_copy.sky_coord),
                     desc="Cross-matching galaxies",
-                    disable = galfind_logger.getEffectiveLevel() > logging.INFO
+                    disable=galfind_logger.getEffectiveLevel() > logging.INFO,
                 ):
                     # Need to save index of match in other_sky_coords
 
@@ -412,7 +485,9 @@ class Catalogue_Base:
                             other_copy.gals[indexes]
                         )
                         # Save indexes of other_gals in other_sky_coords
-                        other_gals_indexes = np.arange(len(other_sky_coords))[indexes]
+                        other_gals_indexes = np.arange(len(other_sky_coords))[
+                            indexes
+                        ]
 
                         bands_gal1 = np.array(
                             coord_gal.phot.instrument.filt_names
@@ -433,13 +508,17 @@ class Catalogue_Base:
                             indexes_bands = np.argwhere(
                                 [
                                     band in matched_bands
-                                    for band in coord_gal.phot.instrument.filt_names
+                                    for band in (
+                                        coord_gal.phot.instrument.filt_names
+                                    )
                                 ]
                             )
                             indexes_other_bands = np.argwhere(
                                 [
                                     band in matched_bands
-                                    for band in other_gal.phot.instrument.filt_names
+                                    for band in (
+                                        other_gal.phot.instrument.filt_names
+                                    )
                                 ]
                             )
                             coord_gal_fluxes = coord_gal.phot.flux[
@@ -504,7 +583,8 @@ class Catalogue_Base:
                             zip(gal_matched_cat, gal_matched_other),
                             total=len(gal_matched_cat),
                             desc="Appending spectra to catalogue!",
-                            disable = galfind_logger.getEffectiveLevel() > logging.INFO
+                            disable=galfind_logger.getEffectiveLevel()
+                            > logging.INFO,
                         )
                     ]
                     return self_copy
@@ -532,9 +612,13 @@ class Catalogue_Base:
                             other_copy.remove_gal(id=gal2.ID)
                         else:
                             # If same bands, choose galaxy with deeper depth
-                            # Get matching bands between the two galaxies - only use if not masked
-                            # logical comparison of depth in each band, keeping the galaxy with the deeper depth in more bands
-                            # gal1.phot.depths is just an array. Need to slice by position
+                            # Get matching bands between the two
+                            # galaxies - only use if not masked
+                            # logical comparison of depth in each
+                            # band, keeping the galaxy with the
+                            # deeper depth in more bands
+                            # gal1.phot.depths is just an array.
+                            # Need to slice by position
                             indexes_gal1 = np.argwhere(
                                 [
                                     band in filt_names_union
@@ -569,7 +653,8 @@ class Catalogue_Base:
 
     @property
     def crop_name(self) -> List[str]:
-        """`list` of `str`: Names of the crops applied to this catalogue, delegated to `cat_creator.crop_name`."""
+        """`list` of `str`: Names of the crops applied to this
+        catalogue, delegated to `cat_creator.crop_name`."""
         return self.cat_creator.crop_name
 
     # # Need to save the cross-match distances
@@ -601,25 +686,35 @@ class Catalogue_Base:
 
     @property
     def ra_range(self):
-        """`astropy.units.Quantity`: [min, max] right ascension of the galaxies in this catalogue, cached after first access."""
+        """`astropy.units.Quantity`: [min, max] right ascension of
+        the galaxies in this catalogue, cached after first access."""
         try:
             return self._ra_range
-        except:
-            self._ra_range = [np.min(self.RA.value), np.max(self.RA.value)] * self.RA.unit
+        except Exception:
+            self._ra_range = [
+                np.min(self.RA.value),
+                np.max(self.RA.value),
+            ] * self.RA.unit
             return self._ra_range
 
     @property
     def dec_range(self):
-        """`astropy.units.Quantity`: [min, max] declination of the galaxies in this catalogue, cached after first access."""
+        """`astropy.units.Quantity`: [min, max] declination of the
+        galaxies in this catalogue, cached after first access."""
         try:
             return self._dec_range
-        except:
-            self._dec_range = [np.min(self.DEC.value), np.max(self.DEC.value)] * self.DEC.unit
+        except Exception:
+            self._dec_range = [
+                np.min(self.DEC.value),
+                np.max(self.DEC.value),
+            ] * self.DEC.unit
             return self._dec_range
 
     @property
     def select_colnames(self) -> List[str]:
-        """`list` of `str`: Column names of the boolean selection flags stored in the ``"SELECTION"`` HDU, or `[]` if that HDU does not exist."""
+        """`list` of `str`: Column names of the boolean selection
+        flags stored in the ``"SELECTION"`` HDU, or `[]` if that HDU
+        does not exist."""
         tab = self.cat_creator._open_tab("SELECTION")
         if tab is None:
             return []
@@ -632,7 +727,8 @@ class Catalogue_Base:
         other: Type[Catalogue_Base],
         max_sep: u.Quantity,
     ) -> Dict[Galaxy, List[Tuple[float, Galaxy]]]:
-        """Cross-match the galaxies in this catalogue against another catalogue.
+        """Cross-match the galaxies in this catalogue against another
+        catalogue.
 
         Finds all pairs of galaxies (one from this catalogue, one from
         `other`) separated on sky by less than `max_sep`.
@@ -657,10 +753,9 @@ class Catalogue_Base:
         AssertionError
             If `max_sep` is `None`.
         """
-        assert max_sep is not None, \
-            galfind_logger.critical(
-                "No max_sep provided for cross-match!"
-            )
+        assert max_sep is not None, galfind_logger.critical(
+            "No max_sep provided for cross-match!"
+        )
         galfind_logger.info(
             f"Cross-matching {repr(self)} with {repr(other)} within {max_sep}!"
         )
@@ -669,7 +764,9 @@ class Catalogue_Base:
         self_coords = SkyCoord(self.RA, self.DEC, frame="icrs")
         other_coords = SkyCoord(other.RA, other.DEC, frame="icrs")
         # match and populate dict
-        idx_self, idx_other, sep2d, _ = self_coords.search_around_sky(other_coords, max_sep)
+        idx_self, idx_other, sep2d, _ = self_coords.search_around_sky(
+            other_coords, max_sep
+        )
         matches = {}
         self_gals_copy = deepcopy(self.gals)
         other_gals_copy = deepcopy(other.gals)
@@ -678,11 +775,11 @@ class Catalogue_Base:
             try:
                 key = self_gals_copy[i_match]
                 item = (sep, other_gals_copy[i_src])
-                if not key in matches.keys():
+                if key not in matches.keys():
                     matches[key] = [item]
                 else:
                     matches[key].extend([item])
-            except:
+            except Exception:
                 breakpoint()
 
         return matches
@@ -715,18 +812,29 @@ class Catalogue_Base:
     #     SED_fit_label: Union[str, SED_code],
     #     origin: str,
     # ) -> Self:
-        
+
     #     assert origin in ["phot_rest", "SED_result"]
     #     if isinstance(SED_fit_label, tuple(SED_code.__subclasses__())):
     #         SED_fit_label = SED_fit_label.label
 
     #     # extract appropriate properties
     #     if origin == "phot_rest":
-    #         property_arr = [gal.aper_phot[aper_diam].SED_results[SED_fit_label].phot_rest.properties[crop_property] for gal in self]
+    #         property_arr = [
+    #             gal.aper_phot[aper_diam].SED_results[SED_fit_label]
+    #             .phot_rest.properties[crop_property] for gal in self
+    #         ]
     #     elif origin == "SED_result":
-    #         property_arr = [gal.aper_phot[aper_diam].SED_results[SED_fit_label].properties[crop_property] for gal in self]
-    #     assert all(prop.unit == property_arr[0].unit for prop in property_arr)
-    #     property_arr = np.array([prop.value for prop in property_arr]) * property_arr[0].unit
+    #         property_arr = [
+    #             gal.aper_phot[aper_diam].SED_results[SED_fit_label]
+    #             .properties[crop_property] for gal in self
+    #         ]
+    #     assert all(
+    #         prop.unit == property_arr[0].unit for prop in property_arr
+    #     )
+    #     property_arr = (
+    #         np.array([prop.value for prop in property_arr])
+    #         * property_arr[0].unit
+    #     )
 
     #     cat_copy = deepcopy(self)
     #     if isinstance(crop_limits, (int, float, bool)):
@@ -736,10 +844,15 @@ class Catalogue_Base:
     #         # if crop_limits:
     #         #     cat_copy.cat_creator.crops.append(crop_property)
     #         # else:
-    #         #     cat_copy.cat_creator.crops.append(f"{crop_property}={crop_limits}")
+    #         #     cat_copy.cat_creator.crops.append(
+    #         #         f"{crop_property}={crop_limits}"
+    #         #     )
     #     elif isinstance(crop_limits, (list, np.array)):
     #         cat_copy.gals = cat_copy[
-    #             ((property_arr >= crop_limits[0]) & (property_arr <= crop_limits[1]))
+    #             (
+    #                 (property_arr >= crop_limits[0])
+    #                 & (property_arr <= crop_limits[1])
+    #             )
     #         ]
     #         # cat_copy.cat_creator.crops.append(
     #         #     f"{crop_limits[0]}<{crop_property}<{crop_limits[1]}"
@@ -754,7 +867,7 @@ class Catalogue_Base:
     def open_cat(
         self: Self,
         cropped: bool = False,
-        hdu: Optional[str, Type[SED_code]] = None
+        hdu: Optional[str, Type[SED_code]] = None,
     ) -> Optional[Table]:
         """Read the FITS catalogue table for this catalogue.
 
@@ -811,14 +924,19 @@ class Catalogue_Base:
         if cropped:
             if len(self) == 0:
                 galfind_logger.debug(
-                    f"No galaxies in {repr(self)} to crop the catalogue with! " + \
-                    "Cropping from .fits table!"
+                    f"No galaxies in {repr(self)} to crop the catalogue with! "
+                    + "Cropping from .fits table!"
                 )
                 # load selection table
-                select_cat = self.open_cat(cropped = False, hdu = "SELECTION")
-                if any(crop.name not in select_cat.colnames for crop in self.crops):
-                    err_message = f"Not all crops in {self.crops} have been performed on {repr(self)}! " + \
-                        "Cropping from .fits table not possible!"
+                select_cat = self.open_cat(cropped=False, hdu="SELECTION")
+                if any(
+                    crop.name not in select_cat.colnames for crop in self.crops
+                ):
+                    err_message = (
+                        f"Not all crops in {self.crops} have been "
+                        f"performed on {repr(self)}! "
+                        + "Cropping from .fits table not possible!"
+                    )
                     galfind_logger.critical(err_message)
                     breakpoint()
                     raise Exception(err_message)
@@ -827,13 +945,18 @@ class Catalogue_Base:
                         [select_cat[crop.name] for crop in self.crops]
                     )
                 )
-                IDs_temp = np.array(select_cat[self.cat_creator.ID_label])[crop_mask]
+                IDs_temp = np.array(select_cat[self.cat_creator.ID_label])[
+                    crop_mask
+                ]
             else:
                 IDs_temp = self.ID
             ID_tab = Table({"IDs_temp": IDs_temp}, dtype=[int])
             if hdu is None:
                 keys_left = self.cat_creator.ID_label
-            elif hdu_name.upper() in ["OBJECTS", "SELECTION"]:  # , "GALFIND_CAT"]:
+            elif hdu_name.upper() in [
+                "OBJECTS",
+                "SELECTION",
+            ]:  # , "GALFIND_CAT"]:
                 keys_left = self.cat_creator.ID_label
             elif "PROPERTIES" in hdu_name.upper():
                 keys_left = "ID"
@@ -844,8 +967,10 @@ class Catalogue_Base:
                 for subcls in funcs.all_subclasses(SED_code)
             ]:
                 keys_left = [
-                    subcls for subcls in funcs.all_subclasses(SED_code)
-                    if subcls.__name__.upper() == hdu_name.split("_")[0].upper()
+                    subcls
+                    for subcls in funcs.all_subclasses(SED_code)
+                    if subcls.__name__.upper()
+                    == hdu_name.split("_")[0].upper()
                 ][0].ID_label
             elif any(
                 hdu_name_.upper() == subcls.__name__.upper()
@@ -853,17 +978,20 @@ class Catalogue_Base:
                 for hdu_name_ in hdu_name.split("_")
             ):
                 keys_left = [
-                    subcls for subcls in funcs.all_subclasses(SED_code)
+                    subcls
+                    for subcls in funcs.all_subclasses(SED_code)
                     if any(
                         hdu_name_.upper() == subcls.__name__.upper()
                         for hdu_name_ in hdu_name.split("_")
                     )
                 ][0].ID_label
             elif hdu_name in [
-                subcls.__name__.upper() for subcls in funcs.all_subclasses(SED_code)
+                subcls.__name__.upper()
+                for subcls in funcs.all_subclasses(SED_code)
             ]:
                 keys_left = [
-                    subcls for subcls in funcs.all_subclasses(SED_code)
+                    subcls
+                    for subcls in funcs.all_subclasses(SED_code)
                     if subcls.__name__.upper() == hdu_name.upper()
                 ][0].ID_label
             else:
@@ -930,7 +1058,7 @@ class Catalogue_Base:
         """
         self._write_cat(tab_arr, tab_names, cat_path)
         # Update cache with written tables
-        if hasattr(self, 'cat_creator'):
+        if hasattr(self, "cat_creator"):
             for tab, name in zip(tab_arr, tab_names):
                 self.cat_creator._tab_cache[name] = tab
 
@@ -945,9 +1073,9 @@ class Catalogue_Base:
             [
                 hdu_list.append(
                     fits.BinTableHDU(
-                        data = tab.as_array(),
-                        header = fits.Header(tab.meta),
-                        name = name,
+                        data=tab.as_array(),
+                        header=fits.Header(tab.meta),
+                        name=name,
                     )
                 )
                 for (tab, name) in zip(tab_arr, tab_names)
@@ -984,7 +1112,7 @@ class Catalogue_Base:
             Name of the extension to update.
         """
         # retain any pre-existing column and meta names
-        orig_tab = Table.read(cat_path, hdu = hdu_name)
+        orig_tab = Table.read(cat_path, hdu=hdu_name)
         # update original table with new master table columns
         for col in new_tab.colnames:
             out_colname = funcs.truncate_colname(col)
@@ -997,15 +1125,14 @@ class Catalogue_Base:
         # retain all fits extensions
         hdul = fits.open(cat_path, memmap=False)
         non_objects_hdul = [
-            hdul[i] for i in range(len(hdul))
+            hdul[i]
+            for i in range(len(hdul))
             if hdul[i].name not in ["PRIMARY", hdu_name]
         ]
         # write the fits table atomically to prevent truncation if interrupted
         out_hdul = fits.HDUList(
-            [
-                fits.PrimaryHDU(),
-                fits.BinTableHDU(orig_tab, name=hdu_name)
-            ] + non_objects_hdul
+            [fits.PrimaryHDU(), fits.BinTableHDU(orig_tab, name=hdu_name)]
+            + non_objects_hdul
         )
         tmp_path = f"{cat_path}.tmp.fits"
         try:
@@ -1017,7 +1144,8 @@ class Catalogue_Base:
             error_msg = (
                 f"Failed to write FITS catalogue to {cat_path}. "
                 f"Error: {e}. "
-                f"If a temporary file exists at {tmp_path}, it can be safely deleted. "
+                f"If a temporary file exists at {tmp_path}, it can "
+                f"be safely deleted. "
                 f"You may need to re-run the catalogue loading process."
             )
             galfind_logger.error(error_msg)
@@ -1026,7 +1154,7 @@ class Catalogue_Base:
         galfind_logger.info(
             f"Updated {hdu_name} in {cat_path} with new table!"
         )
-    
+
     def write_hdu(self: Self, tab: Table, hdu: str) -> None:
         """Write (or overwrite) a single HDU extension in the FITS catalogue.
 
@@ -1088,21 +1216,25 @@ class Catalogue_Base:
             ]
             self.write_cat(tab_arr, tab_names, self.cat_path)
             # Remove deleted HDU from cache
-            if hasattr(self, 'cat_creator') and hdu.upper() in self.cat_creator._tab_cache:
+            if (
+                hasattr(self, "cat_creator")
+                and hdu.upper() in self.cat_creator._tab_cache
+            ):
                 del self.cat_creator._tab_cache[hdu.upper()]
             galfind_logger.info(
                 f"Deleted {hdu.upper()=} from {self.cat_path=}!"
             )
         else:
             galfind_logger.info(
-                f"{hdu.upper()=} does not exist in {self.cat_path=}, could not delete!"
+                f"{hdu.upper()=} does not exist in "
+                f"{self.cat_path=}, could not delete!"
             )
 
     def del_cols_hdrs_from_fits(
         self: Self,
         col_names: List[str] = [],
         hdr_names: List[str] = [],
-        hdu: Optional[str] = None
+        hdu: Optional[str] = None,
     ) -> NoReturn:
         """Delete columns and/or header keywords from a FITS extension.
 
@@ -1150,7 +1282,7 @@ class Catalogue_Base:
         fig: Optional[plt.Figure] = None,
         ax: Optional[plt.Axes] = None,
         log: bool = False,
-        #n_bins: int = 50, 
+        # n_bins: int = 50,
         save: bool = True,
         show: bool = False,
         overwrite: bool = True,
@@ -1198,39 +1330,54 @@ class Catalogue_Base:
             If `x_calculator` is not a `Property_Calculator_Base`
             subclass instance.
         """
-        save_path = f"{config['DEFAULT']['GALFIND_WORK']}/Plots/{self.version}/" + \
-            f"{self.filterset.instrument_name}/{self.survey}/hist/" + \
-            f"{self.crop_name}/{x_calculator.name}.png"
+        save_path = (
+            f"{config['DEFAULT']['GALFIND_WORK']}/Plots/{self.version}/"
+            + f"{self.filterset.instrument_name}/{self.survey}/hist/"
+            + f"{self.crop_name}/{x_calculator.name}.png"
+        )
         if not Path(save_path).is_file() or overwrite:
             galfind_logger.info(
-                f"Making histogram for {x_calculator.name}{' from PDFs' if from_pdf else ''}!"
+                f"Making histogram for {x_calculator.name}"
+                f"{' from PDFs' if from_pdf else ''}!"
             )
             if any(fig_ax is None for fig_ax in [fig, ax]):
                 fig, ax = plt.subplots()
             from . import Property_Calculator_Base
-            if isinstance(x_calculator, tuple(Property_Calculator_Base.__subclasses__())):
+
+            if isinstance(
+                x_calculator, tuple(Property_Calculator_Base.__subclasses__())
+            ):
                 if from_pdf:
                     # sample x values from PDFs
-                    #unit = x_calculator.extract_vals(self).unit
-                    x = np.array([x_.input_arr for x_ in x_calculator.extract_PDFs(self)]).flatten() #* unit
+                    # unit = x_calculator.extract_vals(self).unit
+                    x = np.array(
+                        [
+                            x_.input_arr
+                            for x_ in x_calculator.extract_PDFs(self)
+                        ]
+                    ).flatten()  # * unit
                     # remove nans
-                    x = np.array([x_ for x_ in x if not np.isnan(x_)]) # .value
+                    x = np.array(
+                        [x_ for x_ in x if not np.isnan(x_)]
+                    )  # .value
                     x_label = f"{x_calculator.name} PDF samples"
                     n_bins = 50
                 else:
                     x = x_calculator.extract_vals(self).value
-                    x = np.array([x_ for x_ in x if not np.isnan(x_)]) #.value * x.unit
+                    x = np.array(
+                        [x_ for x_ in x if not np.isnan(x_)]
+                    )  # .value * x.unit
                     x_label = x_calculator.name
                     n_bins = int(np.sqrt(len(x)))
             else:
                 raise NotImplementedError
             if log:
                 x = np.log10(x)
-                #x_name = f"log({x_name})"
+                # x_name = f"log({x_name})"
                 x_label = f"log({x_label})"
-            ax.hist(x, bins = n_bins, label = x_label, **plot_kwargs)
-            #ax.set_ylabel("Number of Galaxies")
-            #ax.set_title(f"{x_label} histogram")
+            ax.hist(x, bins=n_bins, label=x_label, **plot_kwargs)
+            # ax.set_ylabel("Number of Galaxies")
+            # ax.set_title(f"{x_label} histogram")
             if save:
                 ax.legend()
                 ax.set_xlabel(x_calculator.plot_name)
@@ -1242,7 +1389,8 @@ class Catalogue_Base:
                 plt.show()
         else:
             galfind_logger.info(
-                f"{x_calculator.name} histogram already exists and {overwrite=}, skipping!"
+                f"{x_calculator.name} histogram already exists and "
+                f"{overwrite=}, skipping!"
             )
 
     def plot(
@@ -1269,7 +1417,7 @@ class Catalogue_Base:
         plot_type: str = "individual",
         n_samples: int = 100_000,
         n_bins: int = 25,
-        contour_levels: List[float] = [68., 95., 100.],
+        contour_levels: List[float] = [68.0, 95.0, 100.0],
         x_hist_ax: Optional[plt.Axes] = None,
         y_hist_ax: Optional[plt.Axes] = None,
         hist_kwargs: Dict[str, Any] = {},
@@ -1279,7 +1427,8 @@ class Catalogue_Base:
         xlims: Optional[List[float]] = None,
         ylims: Optional[List[float]] = None,
     ) -> Optional[plt.Axes]:
-        """Scatter, contour, or stacked plot of one galaxy property against another.
+        """Scatter,
+        contour, or stacked plot of one galaxy property against another.
 
         Extracts `x_calculator` and `y_calculator` values (and
         optionally `c_calculator` for colouring) for every galaxy in
@@ -1401,15 +1550,22 @@ class Catalogue_Base:
             or ``"stacked"``.
         """
         from . import Property_Calculator_Base
+
         x_name = x_calculator.full_name
         y_name = y_calculator.full_name
         x_label = x_calculator.plot_name
         y_label = y_calculator.plot_name
-        colour_name = c_calculator.full_name if c_calculator is not None else ""
-        colour_label = c_calculator.plot_name if c_calculator is not None else None
+        colour_name = (
+            c_calculator.full_name if c_calculator is not None else ""
+        )
+        colour_label = (
+            c_calculator.plot_name if c_calculator is not None else None
+        )
 
         if plot_type.lower() == "individual":
-            if isinstance(x_calculator, tuple(Property_Calculator_Base.__subclasses__())):
+            if isinstance(
+                x_calculator, tuple(Property_Calculator_Base.__subclasses__())
+            ):
                 x = x_calculator.extract_vals(self)
                 if incl_x_errs:
                     x_err = x_calculator.extract_errs(self)
@@ -1423,7 +1579,7 @@ class Catalogue_Base:
                     x_err = np.array(x_err)
                     if x_err.shape[1] == 2:
                         x_err = x_err.T
-                    #try:
+                    # try:
                     x, x_err, _ = funcs.errs_to_log(x.flatten().value, x_err)
                     # except:
                     #     breakpoint()
@@ -1433,8 +1589,10 @@ class Catalogue_Base:
                     x = np.log10(x.value) * u.dimensionless_unscaled
                 x_name = f"log({x_name})"
                 x_label = f"log({x_label})"
-            
-            if isinstance(y_calculator, tuple(Property_Calculator_Base.__subclasses__())):
+
+            if isinstance(
+                y_calculator, tuple(Property_Calculator_Base.__subclasses__())
+            ):
                 y = y_calculator.extract_vals(self)
                 if incl_y_errs:
                     y_err = y_calculator.extract_errs(self)
@@ -1450,9 +1608,19 @@ class Catalogue_Base:
                     unit = y.unit
                     y_err = np.array(y_err)
                     try:
-                        y_, y_err_, y_uplims_1 = funcs.errs_to_log(y.flatten().value, y_err.T, uplim_sigma = None, inf_val = inf_val)
-                    except:
-                        y_, y_err_, y_uplims_1 = funcs.errs_to_log(y.flatten().value, y_err, uplim_sigma = None, inf_val = inf_val)
+                        y_, y_err_, y_uplims_1 = funcs.errs_to_log(
+                            y.flatten().value,
+                            y_err.T,
+                            uplim_sigma=None,
+                            inf_val=inf_val,
+                        )
+                    except Exception:
+                        y_, y_err_, y_uplims_1 = funcs.errs_to_log(
+                            y.flatten().value,
+                            y_err,
+                            uplim_sigma=None,
+                            inf_val=inf_val,
+                        )
                     y_ *= unit
                     y_err_ *= unit
                 else:
@@ -1461,7 +1629,10 @@ class Catalogue_Base:
                 y_label = f"log({y_label})"
 
             if c_calculator is not None:
-                if isinstance(c_calculator, tuple(Property_Calculator_Base.__subclasses__())):
+                if isinstance(
+                    c_calculator,
+                    tuple(Property_Calculator_Base.__subclasses__()),
+                ):
                     c = c_calculator.extract_vals(self).value.flatten()
                 else:
                     raise NotImplementedError
@@ -1471,7 +1642,6 @@ class Catalogue_Base:
                     colour_label = f"log({colour_label})"
 
         elif plot_type.lower() == "contour":
-
             assert c_calculator is None, galfind_logger.critical(
                 "Cannot contour galaxies and colour by another property!"
             )
@@ -1497,7 +1667,6 @@ class Catalogue_Base:
                 y_label = f"log({y_label})"
 
         elif plot_type.lower() == "stacked":
-
             assert c_calculator is None, galfind_logger.critical(
                 "Cannot stack galaxies and colour by another property!"
             )
@@ -1515,7 +1684,7 @@ class Catalogue_Base:
                     else:
                         x_PDF += x_PDF_
                         y_PDF += y_PDF_
-            
+
             x = x_PDF.median.value
             y = y_PDF.median.value
             if incl_x_errs:
@@ -1536,22 +1705,29 @@ class Catalogue_Base:
         if fig is None or ax is None:
             fig, ax = plt.subplots()
 
-        if "label" not in plot_kwargs.keys() and plot_type.lower() != "contour":
+        if (
+            "label" not in plot_kwargs.keys()
+            and plot_type.lower() != "contour"
+        ):
             plot_kwargs["label"] = self.crop_name
 
         if c_calculator is not None:
             plot_kwargs["c"] = c
             if "cmap" not in plot_kwargs.keys():
                 plot_kwargs["cmap"] = cmap
-        
+
         if plot_type.lower() == "contour":
             nan_mask = np.logical_and(~np.isnan(x), ~np.isnan(y))
             x = np.array(x)[nan_mask]
             y = np.array(y)[nan_mask]
             x_interval = (np.max(x) - np.min(x)) / (n_bins + 1)
             y_interval = (np.max(y) - np.min(y)) / (n_bins + 1)
-            x_edges = np.linspace(np.min(x) - x_interval, np.max(x) + x_interval, n_bins)
-            y_edges = np.linspace(np.min(y) - y_interval, np.max(y) + y_interval, n_bins)
+            x_edges = np.linspace(
+                np.min(x) - x_interval, np.max(x) + x_interval, n_bins
+            )
+            y_edges = np.linspace(
+                np.min(y) - y_interval, np.max(y) + y_interval, n_bins
+            )
             N, x_edges, y_edges = np.histogram2d(x, y, bins=(x_edges, y_edges))
             x_mid_bins = (x_edges[:-1] + x_edges[1:]) / 2
             y_mid_bins = (y_edges[:-1] + y_edges[1:]) / 2
@@ -1559,16 +1735,38 @@ class Catalogue_Base:
             levels = np.percentile(N, contour_levels)
             # n_bins = int(len(x) / (25 * n_samples))
             for i in range(len(levels) - 1):
-                ax.contourf(x_mesh, y_mesh, N.T, levels = [levels[i], levels[i + 1]], alpha = (i + 1) / len(levels), colors = [cmap], **plot_kwargs) # , norm = norm, cmap = cmap, norm = norm, cmap = cm.get_cmap(cmap).resampled(len(plot_kwargs["levels"]) - 1)
+                ax.contourf(
+                    x_mesh,
+                    y_mesh,
+                    N.T,
+                    levels=[levels[i], levels[i + 1]],
+                    alpha=(i + 1) / len(levels),
+                    colors=[cmap],
+                    **plot_kwargs,
+                )
+                # , norm = norm, cmap = cmap, norm = norm,
+                # cmap = cm.get_cmap(cmap).resampled(
+                #     len(plot_kwargs["levels"]) - 1
+                # )
             for level in levels:
-                ax.contour(x_mesh, y_mesh, N.T, levels = (level,), colors = cmap, linewidths = 1.0, **plot_kwargs)
+                ax.contour(
+                    x_mesh,
+                    y_mesh,
+                    N.T,
+                    levels=(level,),
+                    colors=cmap,
+                    linewidths=1.0,
+                    **plot_kwargs,
+                )
             ax.set_xlim([x_edges[0], x_edges[-1]])
             ax.set_ylim([y_edges[0], y_edges[-1]])
         else:
             if incl_x_errs or incl_y_errs and not mean_err:
                 # if "ls" not in plot_kwargs.keys():
                 #     plot_kwargs["ls"] = ""
-                # old_to_new_names = {"s": "ms", "edgecolor": "mec", "facecolor": "mfc"}
+                # old_to_new_names = {
+                #     "s": "ms", "edgecolor": "mec", "facecolor": "mfc"
+                # }
                 # for old_name, new_name in old_to_new_names.items():
                 #     if old_name in plot_kwargs.keys():
                 #         plot_kwargs[new_name] = plot_kwargs.pop(old_name)
@@ -1578,10 +1776,14 @@ class Catalogue_Base:
                     colour = plot_kwargs["edgecolor"]
                 elif "c" in plot_kwargs.keys():
                     colour = plot_kwargs["c"]
-                if incl_x_errs and isinstance(x_err, (u.Quantity, u.Magnitude, u.Dex)):
+                if incl_x_errs and isinstance(
+                    x_err, (u.Quantity, u.Magnitude, u.Dex)
+                ):
                     x_err = x_err.T.value
-                if incl_y_errs and isinstance(y_err, (u.Quantity, u.Magnitude, u.Dex)):
-                    y_err_ = y_err_.value # .T
+                if incl_y_errs and isinstance(
+                    y_err, (u.Quantity, u.Magnitude, u.Dex)
+                ):
+                    y_err_ = y_err_.value  # .T
                 if isinstance(x, (u.Quantity, u.Magnitude, u.Dex)):
                     x = x.value
                 if isinstance(y_, (u.Quantity, u.Magnitude, u.Dex)):
@@ -1595,15 +1797,59 @@ class Catalogue_Base:
                 else:
                     errorbar_colour = colour
                 try:
-                    plot = ax.errorbar(x, y_, xerr=x_err, yerr=y_err_, uplims = y_uplims_1, marker = 'none', color = errorbar_colour, ls = "", capsize = 0.0, alpha = 0.5,)#, **errorbar_kwargs) # **plot_kwargs)
-                except:
+                    plot = ax.errorbar(
+                        x,
+                        y_,
+                        xerr=x_err,
+                        yerr=y_err_,
+                        uplims=y_uplims_1,
+                        marker="none",
+                        color=errorbar_colour,
+                        ls="",
+                        capsize=0.0,
+                        alpha=0.5,
+                    )  # , **errorbar_kwargs) # **plot_kwargs)
+                except Exception:
                     try:
-                        plot = ax.errorbar(x, y_, xerr=x_err, yerr=y_err_.T, uplims = y_uplims_1, marker = 'none', color = errorbar_colour, ls = "", capsize = 0.0, alpha = 0.5,)#, **errorbar_kwargs) # **plot_kwargs)
-                    except:
+                        plot = ax.errorbar(
+                            x,
+                            y_,
+                            xerr=x_err,
+                            yerr=y_err_.T,
+                            uplims=y_uplims_1,
+                            marker="none",
+                            color=errorbar_colour,
+                            ls="",
+                            capsize=0.0,
+                            alpha=0.5,
+                        )  # , **errorbar_kwargs) # **plot_kwargs)
+                    except Exception:
                         try:
-                            plot = ax.errorbar(x, y_, xerr=x_err.T, yerr=y_err_, uplims = y_uplims_1, marker = 'none', color = errorbar_colour, ls = "", capsize = 0.0, alpha = 0.5,)#, **errorbar_kwargs) # **plot_kwargs)
-                        except:
-                            plot = ax.errorbar(x, y_, xerr=x_err.T, yerr=y_err_.T, uplims = y_uplims_1, marker = 'none', color = errorbar_colour, ls = "", capsize = 0.0, alpha = 0.5,)
+                            plot = ax.errorbar(
+                                x,
+                                y_,
+                                xerr=x_err.T,
+                                yerr=y_err_,
+                                uplims=y_uplims_1,
+                                marker="none",
+                                color=errorbar_colour,
+                                ls="",
+                                capsize=0.0,
+                                alpha=0.5,
+                            )  # , **errorbar_kwargs) # **plot_kwargs)
+                        except Exception:
+                            plot = ax.errorbar(
+                                x,
+                                y_,
+                                xerr=x_err.T,
+                                yerr=y_err_.T,
+                                uplims=y_uplims_1,
+                                marker="none",
+                                color=errorbar_colour,
+                                ls="",
+                                capsize=0.0,
+                                alpha=0.5,
+                            )
             if "zorder" not in plot_kwargs.keys():
                 plot_kwargs["zorder"] = plot.lines[0].zorder + 1
             plot = ax.scatter(x, y_, **plot_kwargs)
@@ -1620,33 +1866,36 @@ class Catalogue_Base:
                 x = x.value
             if isinstance(y, u.Magnitude):
                 y = y.value
-            #divider = make_axes_locatable(ax)
+            # divider = make_axes_locatable(ax)
         if x_hist_ax is not None:
             assert isinstance(x_hist_ax, plt.Axes)
-            #ax_hist_top = divider.append_axes("top", size="20%", pad=0.1, sharex=ax)
+            # ax_hist_top = divider.append_axes(
+            #     "top", size="20%", pad=0.1, sharex=ax
+            # )
             x_hist_ax.hist(x, **hist_kwargs)
         if y_hist_ax is not None:
             assert isinstance(y_hist_ax, plt.Axes)
             # Right histogram
-            #ax_hist_right = divider.append_axes("right", size="20%", pad=0.1, sharey=ax)
-            y_hist_ax.hist(y, orientation='horizontal', **hist_kwargs)
+            # ax_hist_right = divider.append_axes(
+            #     "right", size="20%", pad=0.1, sharey=ax
+            # )
+            y_hist_ax.hist(y, orientation="horizontal", **hist_kwargs)
 
         # sort plot aesthetics - automatically annotate if coloured
         if annotate or c_calculator is not None:
             if plot_label == "default":
                 plot_label = (
-                    f"{self.version}, {self.filterset.instrument_name}, {self.survey}"
+                    f"{self.version}, "
+                    f"{self.filterset.instrument_name}, {self.survey}"
                 )
             if plot_label is not None:
                 ax.set_title(plot_label)
             ax.set_xlabel(x_label)
             ax.set_ylabel(y_label)
             if c_calculator is not None and plot_cbar:
-               fig.colorbar(plot, label = colour_label)
+                fig.colorbar(plot, label=colour_label)
             if plot_legend:
-                default_legend_kwargs = {
-                    "loc": "best"
-                }
+                default_legend_kwargs = {"loc": "best"}
                 for key, value in legend_kwargs.items():
                     default_legend_kwargs[key] = value
                 ax.legend(**default_legend_kwargs)
@@ -1660,10 +1909,14 @@ class Catalogue_Base:
         if save:
             # determine appropriate save path
             if save_path is None:
-                save_colour_name = f"_c={colour_name}" if c_calculator is not None else ""
-                save_path = f"{config['Other']['PLOT_DIR']}/{self.version}/" + \
-                    f"{self.filterset.instrument_name}/{self.survey}/" + \
+                save_colour_name = (
+                    f"_c={colour_name}" if c_calculator is not None else ""
+                )
+                save_path = (
+                    f"{config['Other']['PLOT_DIR']}/{self.version}/"
+                    + f"{self.filterset.instrument_name}/{self.survey}/"
                     f"{y_name}_vs_{x_name}/{self.crop_name}{save_colour_name}.png"
+                )
             funcs.make_dirs(save_path)
             plt.savefig(save_path)
             funcs.change_file_permissions(save_path)
@@ -1671,7 +1924,7 @@ class Catalogue_Base:
 
         if show:
             plt.show()
-    
+
         if plot_type.lower() != "contour":
             return plot
 
@@ -1697,10 +1950,15 @@ class Catalogue_Base:
             `Vmax_method`. The containing directory is created if it
             does not already exist.
         """
-        full_data_name = funcs.get_full_survey_name(data.survey, data.version, data.filterset)
-        save_path = f"{config['NumberDensityFunctions']['VMAX_DIR']}/" + \
-            f"{self.version}/{self.filterset.instrument_name}/" + \
-            f"{self.survey}/{self.crop_name}/{Vmax_method}/Vmax_field={full_data_name}.ecsv"
+        full_data_name = funcs.get_full_survey_name(
+            data.survey, data.version, data.filterset
+        )
+        save_path = (
+            f"{config['NumberDensityFunctions']['VMAX_DIR']}/"
+            + f"{self.version}/{self.filterset.instrument_name}/"
+            + f"{self.survey}/{self.crop_name}/{Vmax_method}/"
+            f"Vmax_field={full_data_name}.ecsv"
+        )
         funcs.make_dirs(save_path)
         return save_path
 
@@ -1711,41 +1969,59 @@ class Catalogue_Base:
         aper_diam: u.Quantity,
         SED_fit_code: SED_code,
         z_step: float = 0.01,
-        unmasked_area: Union[str, List[str], u.Quantity, Type[Mask_Selector]] = "selection",
+        unmasked_area: Union[
+            str, List[str], u.Quantity, Type[Mask_Selector]
+        ] = "selection",
         Vmax_method: str = "uniform_depth",
         n_jobs: int = 1,
     ) -> Dict[str, NDArray[float]]:
-
         assert len(z_bin) == 2
         assert z_bin[0] < z_bin[1]
         assert isinstance(SED_fit_code, tuple(SED_code.__subclasses__()))
-        assert all(SED_fit_code.label in gal.aper_phot[aper_diam].SED_results.keys() for gal in self)
+        assert all(
+            SED_fit_code.label in gal.aper_phot[aper_diam].SED_results.keys()
+            for gal in self
+        )
         assert isinstance(n_jobs, int) and n_jobs >= 1
 
-        save_path = self.get_Vmax_ecsv_path(data, Vmax_method = Vmax_method)
+        save_path = self.get_Vmax_ecsv_path(data, Vmax_method=Vmax_method)
         # if this file already exists
         if Path(save_path).is_file():
             # open file
             old_tab = Table.read(save_path)
             update_gals = np.array(
-                [gal for gal in self if gal.ID not in old_tab[old_tab["survey"] == gal.survey]["ID"]]
+                [
+                    gal
+                    for gal in self
+                    if gal.ID
+                    not in old_tab[old_tab["survey"] == gal.survey]["ID"]
+                ]
             )
         else:
             update_gals = self.gals
         # HACK: remove update gals from self
         # update_gals_ids = np.array([gal.ID for gal in update_gals])
-        # self.gals = np.array([gal for gal in self if gal.ID not in update_gals_ids])
+        # self.gals = np.array(
+        #     [gal for gal in self if gal.ID not in update_gals_ids]
+        # )
         # update_gals = []
         if len(update_gals) > 0:
-            full_survey_name = funcs.get_full_survey_name(self.survey, self.version, self.filterset)
-            full_data_name = funcs.get_full_survey_name(data.survey, data.version, data.filterset)
+            full_survey_name = funcs.get_full_survey_name(
+                self.survey, self.version, self.filterset
+            )
+            full_data_name = funcs.get_full_survey_name(
+                data.survey, data.version, data.filterset
+            )
 
             # load in area-depth curves before parallelization
-            #if Vmax_method.lower() == "area_depth_scaled_split_region":
+            # if Vmax_method.lower() == "area_depth_scaled_split_region":
             z_arr = np.arange(z_bin[0], z_bin[1] + z_step, z_step)
             if hasattr(data, "region_selector"):
                 region_selector = data.region_selector
-                invert_region = [True, False] #region != self.data.region_selector.name
+                invert_region = [
+                    True,
+                    False,
+                ]  # region != self.data.region_selector.name
             else:
                 region_selector = None
                 invert_region = [False]
@@ -1754,13 +2030,13 @@ class Catalogue_Base:
                 for z in z_arr:
                     # compute area depth for all relevant redshift bin areas
                     data.calc_area_depth(
-                        aper_diam = aper_diam,
-                        mask_selector = unmasked_area,
-                        #mask_type = mask_type,
-                        region_selector = region_selector,
-                        invert_region = invert_region_,
-                        z = z,
-                        plot = True,
+                        aper_diam=aper_diam,
+                        mask_selector=unmasked_area,
+                        # mask_type = mask_type,
+                        region_selector=region_selector,
+                        invert_region=invert_region_,
+                        z=z,
+                        plot=True,
                     )
 
             # calculate Vmax's and append them to Vmax ecsv
@@ -1773,14 +2049,16 @@ class Catalogue_Base:
                         SED_fit_code,
                         self.cat_creator.crops,
                         z_step,
-                        unmasked_area = unmasked_area,
-                        Vmax_method = Vmax_method,
+                        unmasked_area=unmasked_area,
+                        Vmax_method=Vmax_method,
                     )
                     for gal in tqdm(
-                        update_gals, 
+                        update_gals,
                         total=len(update_gals),
-                        desc=f"Calculating {full_survey_name} Vmax's in {full_data_name}",
-                        disable = galfind_logger.getEffectiveLevel() > logging.INFO,
+                        desc=f"Calculating {full_survey_name} Vmax's "
+                        f"in {full_data_name}",
+                        disable=galfind_logger.getEffectiveLevel()
+                        > logging.INFO,
                     )
                 ]
             else:
@@ -1795,56 +2073,79 @@ class Catalogue_Base:
                         z_step,
                         unmasked_area,
                         Vmax_method,
-                    ) 
+                    )
                     for gal in update_gals
                 ]
                 from joblib import Parallel, delayed, parallel_config
-                with funcs.tqdm_joblib(tqdm(
-                        desc = f"Calculating {full_survey_name} Vmax's in {full_data_name}",
-                        total = len(update_gals),
-                        disable = galfind_logger.getEffectiveLevel() > logging.INFO,
+
+                with funcs.tqdm_joblib(
+                    tqdm(
+                        desc=f"Calculating {full_survey_name} Vmax's "
+                        f"in {full_data_name}",
+                        total=len(update_gals),
+                        disable=galfind_logger.getEffectiveLevel()
+                        > logging.INFO,
                     )
-                ) as progress_bar:
-                    with parallel_config(backend='loky', n_jobs=n_jobs):
-                        Vmax_outputs = Parallel()(delayed( \
-                            self._calc_Vmax_multi_process)(params) \
+                ):
+                    with parallel_config(backend="loky", n_jobs=n_jobs):
+                        Vmax_outputs = Parallel()(
+                            delayed(self._calc_Vmax_multi_process)(params)
                             for params in params_arr
                         )
 
             # prepare ecsv data
             region_keys = [key for key in Vmax_outputs[0][0].keys()]
-            assert region_keys == data.regions, \
-                galfind_logger.critical(
-                    f"{region_keys=} from Vmax calculation does not match {data.regions}!"
-                )
-            assert all(len(Vmax_output[0]) == len(data.regions) for Vmax_output in Vmax_outputs), \
-                galfind_logger.critical(
-                    f"{len(Vmax_output[0])=} != {len(data.regions)=}"
-                )
-            zbin_keys = [key for key in Vmax_outputs[0][1][region_keys[0]].keys()]
-            # assert all([Vmax_output[1][region_keys[0]].keys() == zbin_keys for Vmax_output in Vmax_outputs]), \
+            assert region_keys == data.regions, galfind_logger.critical(
+                f"{region_keys=} from Vmax calculation does not "
+                f"match {data.regions}!"
+            )
+            assert all(
+                len(Vmax_output[0]) == len(data.regions)
+                for Vmax_output in Vmax_outputs
+            ), galfind_logger.critical(
+                f"{[len(Vmax_output[0]) for Vmax_output in Vmax_outputs]=} "
+                f"!= {len(data.regions)=}"
+            )
+            zbin_keys = [
+                key for key in Vmax_outputs[0][1][region_keys[0]].keys()
+            ]
+            # assert all([
+            #     Vmax_output[1][region_keys[0]].keys() == zbin_keys
+            #     for Vmax_output in Vmax_outputs
+            # ]), \
             #     galfind_logger.critical(
-            #         "z_bin keys from Vmax calculation do not match across galaxies!"
+            #         "z_bin keys from Vmax calculation do not "
+            #         "match across galaxies!"
             #     )
             meta = Vmax_outputs[0][2]
             # TODO: check meta data consistency across galaxies
             # tricky due to dict element assertion requirements
-            # assert all(Vmax_output[2] == meta for Vmax_output in Vmax_outputs), \
+            # assert all(
+            #     Vmax_output[2] == meta for Vmax_output in Vmax_outputs
+            # ), \
             #     galfind_logger.critical(
-            #         "meta data from Vmax calculation do not match across galaxies!"
+            #         "meta data from Vmax calculation do not "
+            #         "match across galaxies!"
             #     )
-            Vmax = np.zeros((len(update_gals), len(region_keys), len(zbin_keys)))
+            Vmax = np.zeros(
+                (len(update_gals), len(region_keys), len(zbin_keys))
+            )
             kwargs = {}
             for i, Vmax_output in enumerate(Vmax_outputs):
                 for j, region in enumerate(region_keys):
                     for k, zbin in enumerate(zbin_keys):
                         try:
                             Vmax[i, j, k] = Vmax_output[0][region][zbin]
-                            if isinstance(Vmax_output[1][region][zbin], (list, np.ndarray)):
-                                for h, kwarg in enumerate(Vmax_output[1][region][zbin]):
+                            if isinstance(
+                                Vmax_output[1][region][zbin],
+                                (list, np.ndarray),
+                            ):
+                                for h, kwarg in enumerate(
+                                    Vmax_output[1][region][zbin]
+                                ):
                                     if isinstance(kwarg, dict):
                                         for key, value in kwarg.items():
-                                            key = f"{key}_{str(h+1)}"
+                                            key = f"{key}_{str(h + 1)}"
                                             if key not in kwargs.keys():
                                                 kwargs[key] = [value]
                                             else:
@@ -1853,26 +2154,43 @@ class Catalogue_Base:
                                         raise NotImplementedError(
                                             "Vmax output kwarg is not dict!"
                                         )
-                            elif isinstance(Vmax_output[1][region][zbin], dict):
-                                for key, value in Vmax_output[1][region][zbin].items():
+                            elif isinstance(
+                                Vmax_output[1][region][zbin], dict
+                            ):
+                                for key, value in Vmax_output[1][region][
+                                    zbin
+                                ].items():
                                     if key not in kwargs.keys():
                                         kwargs[key] = [value]
                                     else:
                                         kwargs[key].extend([value])
                             else:
                                 raise NotImplementedError(
-                                    "Vmax output kwarg is not list, ndarray or dict!"
+                                    "Vmax output kwarg is not list, "
+                                    "ndarray or dict!"
                                 )
                         except Exception as e:
                             galfind_logger.critical(
-                                f"Error when assigning Vmax for galaxy ID {update_gals[i].ID}! Error={e}"
+                                f"Error when assigning Vmax for "
+                                f"galaxy ID {update_gals[i].ID}! "
+                                f"Error={e}"
                             )
                             breakpoint()
                             raise e
-            IDs = np.repeat(np.array([gal.ID for gal in update_gals]), len(zbin_keys) * len(region_keys))
-            regions = np.tile(np.repeat(data.regions, len(zbin_keys)), len(update_gals))
-            zbin_labels = np.tile(zbin_keys, len(region_keys) * len(update_gals))
-            surveys = np.repeat(np.array([gal.survey for gal in update_gals]), len(zbin_keys) * len(region_keys))
+            IDs = np.repeat(
+                np.array([gal.ID for gal in update_gals]),
+                len(zbin_keys) * len(region_keys),
+            )
+            regions = np.tile(
+                np.repeat(data.regions, len(zbin_keys)), len(update_gals)
+            )
+            zbin_labels = np.tile(
+                zbin_keys, len(region_keys) * len(update_gals)
+            )
+            surveys = np.repeat(
+                np.array([gal.survey for gal in update_gals]),
+                len(zbin_keys) * len(region_keys),
+            )
             aper_diams = np.full(len(IDs), aper_diam.value)
             SED_fit_codes = np.full(len(IDs), SED_fit_code.label)
             ecsv_data = {
@@ -1886,7 +2204,11 @@ class Catalogue_Base:
                 **kwargs,
             }
             try:
-                new_tab = Table(ecsv_data, dtype = [int, str, str, float, str, str, float] + [str] * len(kwargs))
+                new_tab = Table(
+                    ecsv_data,
+                    dtype=[int, str, str, float, str, str, float]
+                    + [str] * len(kwargs),
+                )
             except Exception as e:
                 galfind_logger.critical(
                     f"Error when creating Vmax ecsv table! Error={e}"
@@ -1895,17 +2217,35 @@ class Catalogue_Base:
                 raise e
             new_tab.meta = {"Vmax_invalid_val": -1.0, **meta}
             out_tab = self._save_ecsv(save_path, new_tab)
-            self._load_Vmax_from_ecsv(out_tab, data.survey, aper_diam, SED_fit_code, data.full_name)
+            self._load_Vmax_from_ecsv(
+                out_tab, data.survey, aper_diam, SED_fit_code, data.full_name
+            )
         else:
             if len(self) != 0:
                 old_tab = Table.read(save_path)
-                self._load_Vmax_from_ecsv(old_tab, data.survey, aper_diam, SED_fit_code, data.full_name)
-    
+                self._load_Vmax_from_ecsv(
+                    old_tab,
+                    data.survey,
+                    aper_diam,
+                    SED_fit_code,
+                    data.full_name,
+                )
+
     @staticmethod
     def _calc_Vmax_multi_process(
-        params: Dict[str, Any]
+        params: Dict[str, Any],
     ) -> Tuple[Dict[str, float], Dict[str, Any], Dict[str, Any]]:
-        gal, data, z_bin, aper_diam, SED_fit_code, crops, z_step, unmasked_area, Vmax_method = params
+        (
+            gal,
+            data,
+            z_bin,
+            aper_diam,
+            SED_fit_code,
+            crops,
+            z_step,
+            unmasked_area,
+            Vmax_method,
+        ) = params
         return gal.calc_Vmax(
             data,
             z_bin,
@@ -1913,24 +2253,20 @@ class Catalogue_Base:
             SED_fit_code,
             crops,
             z_step,
-            unmasked_area = unmasked_area,
-            Vmax_method = Vmax_method,
+            unmasked_area=unmasked_area,
+            Vmax_method=Vmax_method,
         )
 
-    def _save_ecsv(
-        self: Self,
-        save_path: str,
-        tab: Table
-    ) -> Table:
-        if Path(save_path).is_file(): # update and save table
+    def _save_ecsv(self: Self, save_path: str, tab: Table) -> Table:
+        if Path(save_path).is_file():  # update and save table
             old_tab = Table.read(save_path)
             out_tab = vstack([old_tab, tab])
             out_tab.meta = {**old_tab.meta, **tab.meta}
-        else: # save table
+        else:  # save table
             out_tab = tab
         out_tab.write(save_path, overwrite=True)
         return out_tab
-    
+
     def _load_Vmax_from_ecsv(
         self: Self,
         tab: Table,
@@ -1940,11 +2276,19 @@ class Catalogue_Base:
         full_survey_name: str,
     ) -> None:
         if any(gal.survey == full_survey_name.split("_")[0] for gal in self):
-            load_gals_arr = [gal for gal in self if gal.survey == full_survey_name.split("_")[0]]
+            load_gals_arr = [
+                gal
+                for gal in self
+                if gal.survey == full_survey_name.split("_")[0]
+            ]
         else:
             load_gals_arr = self.gals
         # save appropriate Vmax properties
-        #Vmax_arr = np.zeros(len(load_gals_arr))
+        # Vmax_arr = np.zeros(len(load_gals_arr))
         for i, gal in enumerate(load_gals_arr):
-            Vmax_rows = tab[np.logical_and((tab["ID"] == gal.ID), (tab["survey"] == gal.survey))]
-            gal.set_Vmax(Vmax_rows, data_survey = data_survey)
+            Vmax_rows = tab[
+                np.logical_and(
+                    (tab["ID"] == gal.ID), (tab["survey"] == gal.survey)
+                )
+            ]
+            gal.set_Vmax(Vmax_rows, data_survey=data_survey)

@@ -6,26 +6,30 @@ Wraps external BDFit.StarFit fitter for fitting SEDs against template grids
 
 from __future__ import annotations
 
-import numpy as np
+import itertools
+from pathlib import Path
+from typing import TYPE_CHECKING, Dict, List, NoReturn, Optional, Tuple, Union
+
 import astropy.units as u
 import h5py
-from pathlib import Path
-import itertools
-from typing import TYPE_CHECKING, Dict, List, NoReturn, Union, Optional, Tuple
+import numpy as np
+
 if TYPE_CHECKING:
-    from . import Catalogue, Spectral_Catalogue
+    from . import PDF, Catalogue, Spectral_Catalogue
 try:
-    from typing import Self, Type, Any  # python 3.11+
+    from typing import Any, Self, Type  # python 3.11+
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from ..utils import useful_funcs_austind as funcs
 from .. import config, galfind_logger
-from .SED_codes import SED_code
 from ..spectra.SED import SED_obs
+from ..utils import useful_funcs_austind as funcs
+from .SED_codes import SED_code
+
 
 class Template_Fitter(SED_code):
-    """`SED_code` wrapper around external stellar/brown-dwarf template fitting (`BDFit.StarFit`).
+    """`SED_code` wrapper around external stellar/brown-dwarf template
+    fitting (`BDFit.StarFit`).
 
     Fits observed photometry against pre-computed template grids (e.g.
     Sonora atmosphere models) using the external ``BDFit`` package's
@@ -93,7 +97,8 @@ class Template_Fitter(SED_code):
 
     @property
     def label(self) -> str:
-        """`str`: Unique label for this fitting run, implementing the `SED_code.label` interface.
+        """`str`: Unique label for this fitting run, implementing the
+        `SED_code.label` interface.
 
         Combines the class name with `tab_suffix`.
         """
@@ -101,7 +106,8 @@ class Template_Fitter(SED_code):
 
     @property
     def hdu_name(self) -> str:
-        """`str`: Name of the FITS HDU/extension this code's output is stored under.
+        """`str`: Name of the FITS HDU/extension this code's output is
+        stored under.
 
         Implements the `SED_code.hdu_name` interface. Combines the class
         name with `tab_suffix`.
@@ -110,7 +116,8 @@ class Template_Fitter(SED_code):
 
     @property
     def tab_suffix(self) -> str:
-        """`str`: Column-name suffix used to distinguish this run's output columns.
+        """`str`: Column-name suffix used to distinguish this run's
+        output columns.
 
         Implements the `SED_code.tab_suffix` interface. A ``"+"``-joined
         string of the requested template library names
@@ -124,7 +131,8 @@ class Template_Fitter(SED_code):
 
     @property
     def required_SED_fit_params(self) -> List[str]:
-        """`list` of `str`: Names of the `SED_fit_params` keys required by `Template_Fitter`.
+        """`list` of `str`: Names of the `SED_fit_params` keys required
+        by `Template_Fitter`.
 
         Implements the `SED_code.required_SED_fit_params` interface.
         """
@@ -132,15 +140,16 @@ class Template_Fitter(SED_code):
 
     @property
     def are_errs_percentiles(self) -> bool:
-        """`bool`: Whether output property errors are stored as percentiles rather than 1-sigma values.
+        """`bool`: Whether output property errors are stored as
+        percentiles rather than 1-sigma values.
 
         Implements the `SED_code.are_errs_percentiles` interface.
         """
-        return False # not sure here
+        return False  # not sure here
 
     # BELOW TWO METHODS SHOULD BE HADNLED BETTER IN SED_code
 
-    #@abstractmethod
+    # @abstractmethod
     def _load_gal_property_labels(self) -> NoReturn:
         """Load mappings from internal property names to output column names.
 
@@ -152,13 +161,13 @@ class Template_Fitter(SED_code):
             "temp": "temp",
             "log_g": "log_g",
             "kzz": "kzz",
-            #"met": "met",
-            #"co": "co",
-            #"f": "f",
+            # "met": "met",
+            # "co": "co",
+            # "f": "f",
         }
-        #super()._load_gal_property_labels(gal_property_labels)
+        # super()._load_gal_property_labels(gal_property_labels)
 
-    #@abstractmethod
+    # @abstractmethod
     def _load_gal_property_err_labels(self) -> NoReturn:
         """Load mappings for property error column names.
 
@@ -173,7 +182,10 @@ class Template_Fitter(SED_code):
         Implements the `SED_code._load_gal_property_units` interface.
         """
         self.gal_property_units = {
-            **{gal_property: u.dimensionless_unscaled for gal_property in ["chi_sq", "red_chi_sq"]},
+            **{
+                gal_property: u.dimensionless_unscaled
+                for gal_property in ["chi_sq", "red_chi_sq"]
+            },
             "temp": u.K,
             "log_g": u.dimensionless_unscaled,
             "kzz": u.dimensionless_unscaled,
@@ -252,7 +264,8 @@ class Template_Fitter(SED_code):
         save_name: Optional[str] = None,
         **kwargs: Dict[str, Any],
     ) -> NoReturn:
-        """Fit a catalogue's photometry against template libraries using `BDFit.StarFit`.
+        """Fit a catalogue's photometry against template libraries
+        using `BDFit.StarFit`.
 
         Implements the `SED_code.fit` interface. Selects the bands
         belonging to `self.fit_instrument`, builds a `StarFit` fitter for
@@ -281,7 +294,7 @@ class Template_Fitter(SED_code):
             Whether `StarFit` should print verbose fitting output. Default
             is `True`.
         save_name : `str`, optional
-            Name of the file to save the output table to. Default is ``None`` 
+            Name of the file to save the output table to. Default is ``None``
             (output file name is automatically generated).
         **kwargs : `dict`
             Additional keyword arguments. Currently unused.
@@ -293,35 +306,45 @@ class Template_Fitter(SED_code):
             ``instrument_name == self.fit_instrument``.
         """
         from BDFit import StarFit
-        out_path = self._get_out_paths(cat, aper_diam, save_name = save_name)[1]
+
+        out_path = self._get_out_paths(cat, aper_diam, save_name=save_name)[1]
         if not Path(out_path).is_file() or overwrite:
             # convert cat.filterset to bands used in StarFit
-            fit_instrument_indices = np.array([i for i, filt in enumerate(cat.filterset) if filt.instrument_name == self.fit_instrument])
+            fit_instrument_indices = np.array(
+                [
+                    i
+                    for i, filt in enumerate(cat.filterset)
+                    if filt.instrument_name == self.fit_instrument
+                ]
+            )
             fit_instrument_filterset = cat.filterset[fit_instrument_indices]
-            assert len(fit_instrument_filterset) > 0, \
-                galfind_logger.critical(
-                    f"No filters in cat.filterset with instrument_name = {self.fit_instrument=}"
-                )
+            assert len(fit_instrument_filterset) > 0, galfind_logger.critical(
+                "No filters in cat.filterset with instrument_name = "
+                f"{self.fit_instrument=}"
+            )
             facilities_to_search = {}
             for filt in fit_instrument_filterset:
                 if filt.facility_name not in facilities_to_search.keys():
                     facilities_to_search[filt.facility_name] = []
-                facilities_to_search[filt.facility_name].append(filt.instrument.SVO_name)
+                facilities_to_search[filt.facility_name].append(
+                    filt.instrument.SVO_name
+                )
             bands = [
-                f"{filt.instrument_name}.{filt.filt_name}" 
-                if filt.instrument_name != "NIRCam" else filt.filt_name 
+                f"{filt.instrument_name}.{filt.filt_name}"
+                if filt.instrument_name != "NIRCam"
+                else filt.filt_name
                 for filt in fit_instrument_filterset
             ]
             starfit = StarFit(
-                facilities_to_search = facilities_to_search,
-                libraries = self.SED_fit_params["templates"],
-                compile_bands = bands,
-                verbose = verbose,
+                facilities_to_search=facilities_to_search,
+                libraries=self.SED_fit_params["templates"],
+                compile_bands=bands,
+                verbose=verbose,
             )
             starfit.fit_catalog(
-                photometry_function = self._load_phot,
-                bands = bands,
-                photometry_function_kwargs = {
+                photometry_function=self._load_phot,
+                bands=bands,
+                photometry_function_kwargs={
                     "cat": cat,
                     "aper_diam": aper_diam,
                     "out_units": u.nJy,
@@ -329,22 +352,24 @@ class Template_Fitter(SED_code):
                     "incl_units": True,
                     "input_filterset": fit_instrument_filterset,
                 },
-                sys_err = None,
-                filter_mask = None,
-                subset = None,
+                sys_err=None,
+                filter_mask=None,
+                subset=None,
             )
-            #self.starfit = starfit
+            # self.starfit = starfit
             tab = starfit.make_cat()
             tab["ID"] = np.array(cat.ID)
             # save as a .fits file
             funcs.make_dirs(out_path)
-            tab.write(out_path, overwrite = overwrite)
+            tab.write(out_path, overwrite=overwrite)
             galfind_logger.info(f"Saved {self.tab_suffix} fits to {out_path}")
             # save the best fitting SEDs
             if save_SEDs:
                 SED_save_path = out_path.replace(".fits", "_SEDs.h5")
-                starfit.make_best_fit_SEDs(SED_save_path, IDs = cat.ID)
-                galfind_logger.info(f"Saved {self.tab_suffix} SEDs to {SED_save_path}")
+                starfit.make_best_fit_SEDs(SED_save_path, IDs=cat.ID)
+                galfind_logger.info(
+                    f"Saved {self.tab_suffix} SEDs to {SED_save_path}"
+                )
 
     def make_fits_from_out(
         self: Self,
@@ -390,12 +415,17 @@ class Template_Fitter(SED_code):
         -------
         `tuple`
             ``(None, out_path, out_path, None, SED_path)`` where ``out_path``
-            is the FITS catalogue output file and ``SED_path`` is the HDF5 SED file.
+            is the FITS catalogue output file and ``SED_path`` is the HDF5
+            SED file.
         """
-        aper_diams_str = funcs.aper_diams_to_str(np.array([aper_diam.to(u.arcsec).value]) * u.arcsec)
-        out_path = f"{config['TemplateFitting']['BROWN_DWARF_OUT_DIR']}/{cat.version}/" + \
-            f"{cat.filterset.instrument_name}/{cat.survey}/{aper_diams_str}/" + \
-            f"{self.hdu_name}_{self.fit_instrument}.fits"
+        aper_diams_str = funcs.aper_diams_to_str(
+            np.array([aper_diam.to(u.arcsec).value]) * u.arcsec
+        )
+        out_path = (
+            f"{config['TemplateFitting']['BROWN_DWARF_OUT_DIR']}/{cat.version}/"
+            + f"{cat.filterset.instrument_name}/{cat.survey}/{aper_diams_str}/"
+            + f"{self.hdu_name}_{self.fit_instrument}.fits"
+        )
         if save_name is not None:
             out_path = out_path.replace(".fits", f"_{save_name}.fits")
         SED_path = out_path.replace(".fits", "_SEDs.h5")
@@ -444,10 +474,15 @@ class Template_Fitter(SED_code):
             fluxes_arr = SED_h5[library]["fluxes"][:]
             wav_unit = u.Unit(SED_h5[library].attrs["wav_unit"])
             flux_unit = u.Unit(SED_h5[library].attrs["flux_unit"])
-            sed_obs_arr_ = {ID: SED_obs(0.0, wavs, fluxes, wav_unit, flux_unit)
-                for ID, fluxes in zip(lib_IDs, fluxes_arr) if ID in IDs}
+            sed_obs_arr_ = {
+                ID: SED_obs(0.0, wavs, fluxes, wav_unit, flux_unit)
+                for ID, fluxes in zip(lib_IDs, fluxes_arr)
+                if ID in IDs
+            }
             sed_obs_arr.update(sed_obs_arr_)
-        return [sed_obs_arr[ID] if ID in sed_obs_arr.keys() else None for ID in IDs]
+        return [
+            sed_obs_arr[ID] if ID in sed_obs_arr.keys() else None for ID in IDs
+        ]
 
     def extract_PDFs(
         self: Self,
@@ -480,7 +515,7 @@ class Template_Fitter(SED_code):
     def load_cat_property_PDFs(
         self: Self,
         PDF_paths: Union[List[str], List[Dict[str, str]]],
-        IDs: List[int]
+        IDs: List[int],
     ) -> List[Dict[str, Optional[Type[PDF]]]]:
         """Load per-galaxy property PDFs.
 
@@ -500,9 +535,7 @@ class Template_Fitter(SED_code):
         `numpy.ndarray`
             Array of `None`, one per galaxy in `IDs`.
         """
-        return np.array(
-            list(itertools.repeat(None, len(IDs)))
-        )
+        return np.array(list(itertools.repeat(None, len(IDs))))
 
     def _assert_SED_fit_params(self) -> NoReturn:
         """Validate that required SED fitting parameters are present.
@@ -513,14 +546,16 @@ class Template_Fitter(SED_code):
         """
         for key in self.required_SED_fit_params:
             assert key in self.SED_fit_params.keys(), galfind_logger.critical(
-                f"'{key}' not in SED_fit_params keys = {list(self.SED_fit_params.keys())}"
+                f"'{key}' not in SED_fit_params keys = "
+                f"{list(self.SED_fit_params.keys())}"
             )
         if "excl_bands" not in self.SED_fit_params.keys():
             self.SED_fit_params["excl_bands"] = []
 
 
 class Brown_Dwarf_Fitter(Template_Fitter):
-    """`Template_Fitter` preconfigured to fit the Sonora brown-dwarf template grids.
+    """`Template_Fitter` preconfigured to fit the Sonora brown-dwarf
+    template grids.
 
     Fixes ``SED_fit_params["templates"]`` to the full set of Sonora
     atmosphere model libraries (``sonora_bobcat``, ``sonora_cholla``,
@@ -541,10 +576,7 @@ class Brown_Dwarf_Fitter(Template_Fitter):
         template libraries.
     """
 
-    def __init__(
-        self: Self,
-        fit_instrument: str = "NIRCam"
-    ):
+    def __init__(self: Self, fit_instrument: str = "NIRCam"):
         """Initialize a Brown_Dwarf_Fitter with Sonora template libraries.
 
         Parameters
@@ -553,21 +585,31 @@ class Brown_Dwarf_Fitter(Template_Fitter):
             Name of the instrument whose bands are used for fitting.
             Default is ``"NIRCam"``.
         """
-        SED_fit_params = {"templates": ["sonora_bobcat", "sonora_cholla", "sonora_elf_owl", "sonora_diamondback", "low-z"]}
+        SED_fit_params = {
+            "templates": [
+                "sonora_bobcat",
+                "sonora_cholla",
+                "sonora_elf_owl",
+                "sonora_diamondback",
+                "low-z",
+            ]
+        }
         super().__init__(SED_fit_params, fit_instrument)
 
     @property
     def label(self) -> str:
-        """`str`: Unique label for this fitting run, implementing the `SED_code.label` interface.
+        """`str`: Unique label for this fitting run, implementing the
+        `SED_code.label` interface.
 
         Overrides `Template_Fitter.label`, always returning ``"bd"``.
         """
         return "bd"
-        #return self.__class__.__name__
+        # return self.__class__.__name__
 
     @property
     def hdu_name(self) -> str:
-        """`str`: Name of the FITS HDU/extension this code's output is stored under.
+        """`str`: Name of the FITS HDU/extension this code's output is
+        stored under.
 
         Implements the `SED_code.hdu_name` interface. Overrides
         `Template_Fitter.hdu_name`, returning the class name alone.
@@ -576,7 +618,8 @@ class Brown_Dwarf_Fitter(Template_Fitter):
 
     @property
     def tab_suffix(self) -> str:
-        """`str`: Column-name suffix used to distinguish this run's output columns.
+        """`str`: Column-name suffix used to distinguish this run's
+        output columns.
 
         Implements the `SED_code.tab_suffix` interface. Overrides
         `Template_Fitter.tab_suffix`, always returning an empty string.

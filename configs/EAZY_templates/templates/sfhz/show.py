@@ -2,11 +2,11 @@
 Show the redshift dependence of the corr_sfhz_13 template set
 """
 
-import eazy
 import glob
 
-import numpy as np
+import eazy
 import matplotlib.pyplot as plt
+import numpy as np
 
 files = glob.glob('*[0-9].fits')
 files.sort()
@@ -20,27 +20,27 @@ vband = res[161]
 fig, axes = plt.subplots(3,1, sharex=True, sharey=True, figsize=(8, 8))
 
 for i, z in enumerate([0.1, 3., 8.]):
-    
+
     vz = eazy.filters.FilterDefinition(wave=vband.wave*(1+z), throughput=vband.throughput)
-    
+
     for t in templ:
         tnorm = t.integrate_filter(vz, z=z, flam=True)
         igm = t.igm_absorption(z=z)
         axes[i].plot(t.wave/1.e4, t.flux_flam(z=z)/tnorm*igm, alpha=0.5)
-        
+
     axes[i].set_xlim(0.1, 2)
     axes[i].set_ylim(0.008, 60)
     axes[i].grid()
     axes[i].loglog()
     axes[i].set_ylabel(f'flam, z = {z:.1f}')
-    
+
 fig.tight_layout(pad=1)
 
 fig.savefig('corr_sfhz_zdependence.png')
 
 # Parameter variation with redshift
-from grizli import utils
 from astropy.cosmology import WMAP9
+from grizli import utils
 
 templ = utils.read_catalog('corr_sfhz_13_bin0_av0.01.fits')
 zstep = []
@@ -62,13 +62,13 @@ fig, axes = plt.subplots(len(keys),1,figsize=(8,8), sharex=True)
 for i, k in enumerate(keys):
     axes[i].set_ylabel(k)
     axes[i].grid()
-    
+
     for j in range(len(par)-1):
         axes[i].plot(np.log(1+np.array(zstep)), par[k][j], marker='.', alpha=0.5)
 
 for i in [0, 3, 4]:
     axes[i].semilogy()
-        
+
 axes[i].set_xlabel('z')
 xt = np.arange(0,12.1,2)
 

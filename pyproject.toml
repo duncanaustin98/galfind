@@ -115,6 +115,7 @@ dev = [
 # Testing
 test = [
     "pytest",
+    "pytest-lazy-fixtures",
     "mypy",
     "ruff",
     "nbmake"
@@ -204,7 +205,10 @@ exclude = [
     "node_modules",
     "site-packages",
     "venv",
-    "*__init__.py"  # ignore all init files
+    "*__init__.py",  # ignore all init files
+    "NIRCam_pipeline",
+    "docs",
+    "configs",
 ]
 
 # PEP-8 line length

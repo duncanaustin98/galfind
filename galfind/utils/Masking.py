@@ -6,23 +6,41 @@ both automatic and manual masking methods with configuration parameters.
 
 from __future__ import annotations
 
+import glob
+import os
+from pathlib import Path
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    List,
+    NoReturn,
+    Optional,
+    Tuple,
+    Union,
+)
+
 import astropy.units as u
 import numpy as np
 from astropy.io import fits
-from tqdm import tqdm
 from astropy.table import Column
-from pathlib import Path
-import os
-import glob
 from numpy.typing import NDArray
-from typing import List, Dict, Tuple, Union, Optional, NoReturn, TYPE_CHECKING
+from tqdm import tqdm
 
 try:
-    from typing import Self, Type  # python 3.11+
+    from typing import Type  # python 3.11+
 except ImportError:
     from typing_extensions import Type  # python > 3.7 AND python < 3.11
 if TYPE_CHECKING:
-    from . import Band_Data_Base, Stacked_Band_Data, Filter, Mask_Selector, Region_Selector
+    from . import (
+        Band_Data,
+        Band_Data_Base,
+        Data,
+        Filter,
+        Mask_Selector,
+        Region_Selector,
+        Stacked_Band_Data,
+    )
 
 from .. import config, galfind_logger
 from ..utils import useful_funcs_austind as funcs
@@ -43,6 +61,7 @@ auto_mask_keys = [
     "ELEMENT",
     "GAIA_ROW_LIM",
 ]
+
 
 def get_mask_args(
     fits_mask_path: str,
@@ -66,8 +85,10 @@ def get_mask_args(
     -------
     `tuple` of (`dict` or `None`, `dict`)
         A tuple containing:
-        - Mask parameters dictionary with keys including "method", "star_mask_params",
-          "edge_mask_distance", "scale_extra", "exclude_gaia_galaxies", "angle",
+        - Mask parameters dictionary with keys including "method",
+        "star_mask_params",
+          "edge_mask_distance", "scale_extra", "exclude_gaia_galaxies",
+          "angle",
           "edge_value", "element", and "gaia_row_lim", or `None` if the file
           is not found or is not a valid `.fits` file.
         - Additional configuration dictionary (if required by caller).
@@ -82,13 +103,11 @@ def get_mask_args(
     else:
         # open fits mask
         mask_hdr = fits.open(fits_mask_path, mode="readonly")[1].header
-        if all(
-            key in mask_hdr.keys()
-            for key in auto_mask_keys
-        ):
+        if all(key in mask_hdr.keys() for key in auto_mask_keys):
             mask_method = str(mask_hdr["METHOD"]).lower()
             assert mask_method.lower() == "auto", galfind_logger.critical(
-                f"Mask method in {fits_mask_path} is {mask_method.lower()} not 'auto'"
+                f"Mask method in {fits_mask_path} is "
+                f"{mask_method.lower()} not 'auto'"
             )
             # re-create star_mask_params dict
             star_mask_params = {
@@ -116,6 +135,7 @@ def get_mask_args(
             mask_args = {"method": "manual"}
         return mask_args
 
+
 def get_mask_method(fits_mask_path: str) -> str:
     """Determine the masking method from a FITS mask file.
 
@@ -128,13 +148,15 @@ def get_mask_method(fits_mask_path: str) -> str:
     -------
     `str`
         The masking method: either "auto" (if automatic masking parameters are
-        found in the FITS header) or "manual" (if not found or file is invalid).
+        found in the FITS header) or "manual" (if not found or file is
+        invalid).
     """
     mask_args = get_mask_args(fits_mask_path)
     if mask_args is not None:
         return mask_args["method"]
     else:
         return "manual"
+
 
 def manually_mask(
     self: Type[Band_Data_Base],
@@ -190,14 +212,14 @@ def manually_mask(
         else:
             raise (
                 Exception(
-                    f"Neither .fits at {fits_mask_path=} or" + \
-                    f".reg mask path in {reg_mask_dir=} found "
+                    f"Neither .fits at {fits_mask_path=} or"
+                    + f".reg mask path in {reg_mask_dir=} found "
                     + f"for {self.survey} {self.version} {self.filt_name}"
                 )
             )
         # clean region mask of any zero size regions
         # if not "clean" in the .reg filename
-        if not "_clean" in reg_mask_path:
+        if "_clean" not in reg_mask_path:
             # update reg_mask_path to cleaned version
             reg_mask_path = clean_reg_mask(reg_mask_path)
         # convert to fits mask
@@ -240,7 +262,10 @@ def clean_reg_mask(mask_path: str) -> str:
                     comma_split_line = line.split(",")
                     if (
                         (
-                            (line.startswith("ellipse") or line.startswith("box"))
+                            (
+                                line.startswith("ellipse")
+                                or line.startswith("box")
+                            )
                             and not (comma_split_line[2] == "0")
                             and not (comma_split_line[3] == "0")
                         )
@@ -251,7 +276,10 @@ def clean_reg_mask(mask_path: str) -> str:
     funcs.change_file_permissions(mask_path)
     funcs.change_file_permissions(clean_mask_path)
     # insert original mask ds9 region file into an unclean folder
-    unclean_path = f"{funcs.split_dir_name(mask_path,'dir')}/unclean/{funcs.split_dir_name(mask_path,'name')}"
+    unclean_path = (
+        f"{funcs.split_dir_name(mask_path, 'dir')}/unclean/"
+        f"{funcs.split_dir_name(mask_path, 'name')}"
+    )
     funcs.make_dirs(unclean_path)
     os.rename(mask_path, unclean_path)
     return clean_mask_path
@@ -302,12 +330,12 @@ def convert_mask_to_fits(
         im_data = self.load_im()[0]
         # open .reg mask file
         from regions import Regions
+
         mask_regions = Regions.read(mask_path)
-        assert len(mask_regions) > 0, \
-            galfind_logger.critical(
-                f"No regions found in {mask_path}! " + \
-                ".reg likely in 'physical' co-ordinates!"
-            )
+        assert len(mask_regions) > 0, galfind_logger.critical(
+            f"No regions found in {mask_path}! "
+            + ".reg likely in 'physical' co-ordinates!"
+        )
 
         wcs = self.load_wcs()
         pix_mask = np.zeros(im_data.shape, dtype=bool)
@@ -321,7 +349,7 @@ def convert_mask_to_fits(
                 pix_mask[idx_large] = np.logical_or(
                     region.to_mask().data[idx_little], pix_mask[idx_large]
                 )
-        if not out_path is None:
+        if out_path is not None:
             hdr = wcs.to_header()
             hdr["METHOD"] = "manual"
             # make .fits mask
@@ -332,7 +360,8 @@ def convert_mask_to_fits(
             hdu.writeto(out_path, overwrite=True)
             funcs.change_file_permissions(out_path)
             galfind_logger.info(
-                f"Created fits mask from manually created reg mask, saving as {out_path}"
+                f"Created fits mask from manually created reg mask, "
+                f"saving as {out_path}"
             )
         else:
             return pix_mask
@@ -415,7 +444,8 @@ def auto_mask(
         Additionally mask pixels with absolute value ≤ this threshold.
         Default is `None`.
     element : `str`, optional
-        Kernel shape for edge dilation: "RECT" or "ELLIPSE". Default is "ELLIPSE".
+        Kernel shape for edge dilation: "RECT" or "ELLIPSE". Default is
+        "ELLIPSE".
     gaia_row_lim : `int`, optional
         Maximum number of Gaia sources to retrieve per query. Default is 500.
     overwrite : `bool`, optional
@@ -427,9 +457,11 @@ def auto_mask(
         Tuple containing (path_to_mask_fits, mask_parameters_dict).
     """
     from astroquery.gaia import Gaia
-    
-    output_mask_path = f"{config['Masking']['MASK_DIR']}/{self.survey}" + \
-        f"/auto/{self.version}/{self.filt_name}_auto.fits"
+
+    output_mask_path = (
+        f"{config['Masking']['MASK_DIR']}/{self.survey}"
+        + f"/auto/{self.version}/{self.filt_name}_auto.fits"
+    )
     funcs.make_dirs(output_mask_path)
 
     if not Path(output_mask_path).is_file() or overwrite:
@@ -440,10 +472,13 @@ def auto_mask(
             star_mask_params = None
             # doesnt stop e.g. ACS_WFC+NIRCam from making star masks
             galfind_logger.warning(
-                f"Stellar mask wanted for {self.filt_name} only implemented for NIRCam data!"
+                f"Stellar mask wanted for {self.filt_name} only "
+                "implemented for NIRCam data!"
             )
             # raise (
-            #     Exception("Star mask making only implemented for NIRCam data!")
+            #     Exception(
+            #         "Star mask making only implemented for NIRCam data!"
+            #     )
             # )
 
         # Load data
@@ -451,7 +486,7 @@ def auto_mask(
         wcs = self.load_wcs()
 
         if angle is None:
-            # compute the angle from WCS
+            # compute the angle from WCS
             if all(
                 hdr_kwarg in im_hdr.keys()
                 for hdr_kwarg in ["CD1_1", "CD1_2", "CD2_1", "CD2_2", "V3PA"]
@@ -462,38 +497,53 @@ def auto_mask(
                         [im_hdr["CD2_1"], im_hdr["CD2_2"]],
                     ]
                 )
-                angle_east = np.arctan2(cd_matrix[0, 1], cd_matrix[0, 0]) * (180.0 / np.pi)
+                angle_east = np.arctan2(cd_matrix[0, 1], cd_matrix[0, 0]) * (
+                    180.0 / np.pi
+                )
                 angle = im_hdr["V3PA"] + angle_east
                 galfind_logger.info(
                     f"Computed {repr(self)} angle from WCS: {angle}"
                 )
                 galfind_logger.warning(
-                    f"Angle computation from WCS for {repr(self)} may be unreliable, please check!"
+                    f"Angle computation from WCS for {repr(self)} "
+                    "may be unreliable, please check!"
                 )
             else:
                 galfind_logger.debug(
-                    f"WCS CD matrix keywords not found in header for {repr(self)}, setting angle to 0.0"
+                    f"WCS CD matrix keywords not found in header "
+                    f"for {repr(self)}, setting angle to 0.0"
                 )
                 angle = 0.0
 
         # angle rotation is anti-clockwise for positive angles
-        composite = (
-            lambda x_coord,
-            y_coord,
-            central_scale,
-            spike_scale,
-            angle: f"""# Region file format: DS9 version 4.1
-            global color=green dashlist=8 3 width=1 font="helvetica 10 normal roman" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1
-            image
-            composite({x_coord},{y_coord},0.00) || composite=1
-                circle({x_coord},{y_coord},{163*central_scale}) ||
-                ellipse({x_coord},{y_coord},{29*spike_scale**(2/3)},{730*spike_scale},{str(np.round(300.15 + angle, 2))}) ||
-                ellipse({x_coord},{y_coord},{29*spike_scale**(2/3)},{730*spike_scale},{str(np.round(240. + angle, 2))}) ||
-                ellipse({x_coord},{y_coord},{29*spike_scale**(2/3)},{730*spike_scale},{str(np.round(360. + angle, 2))}) ||
-                ellipse({x_coord},{y_coord},{29*spike_scale**(2/3)},{300*spike_scale},{str(np.round(269.48 + angle, 2))}) ||"""
-        )
+        def composite(x_coord, y_coord, central_scale, spike_scale, angle):
+            return (
+                "# Region file format: DS9 version 4.1\n"
+                "                    global color=green dashlist=8 3 "
+                'width=1 font="helvetica 10 normal roman" select=1 '
+                "highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 "
+                "include=1 source=1\n"
+                "                    image\n"
+                f"                    composite({x_coord},{y_coord},"
+                "0.00) || composite=1\n"
+                f"                        circle({x_coord},{y_coord},"
+                f"{163 * central_scale}) ||\n"
+                f"                        ellipse({x_coord},{y_coord},"
+                f"{29 * spike_scale ** (2 / 3)},{730 * spike_scale},"
+                f"{str(np.round(300.15 + angle, 2))}) ||\n"
+                f"                        ellipse({x_coord},{y_coord},"
+                f"{29 * spike_scale ** (2 / 3)},{730 * spike_scale},"
+                f"{str(np.round(240.0 + angle, 2))}) ||\n"
+                f"                        ellipse({x_coord},{y_coord},"
+                f"{29 * spike_scale ** (2 / 3)},{730 * spike_scale},"
+                f"{str(np.round(360.0 + angle, 2))}) ||\n"
+                f"                        ellipse({x_coord},{y_coord},"
+                f"{29 * spike_scale ** (2 / 3)},{300 * spike_scale},"
+                f"{str(np.round(269.48 + angle, 2))}) ||"
+            )
 
-        # Scale up the image by boundary by scale_extra factor to include diffraction spikes from stars outside image footprint
+        # Scale up the image by boundary by scale_extra factor to
+        # include diffraction spikes from stars outside image footprint
         scale_factor = scale_extra * np.array(
             [im_data.shape[1], im_data.shape[0]]
         )
@@ -512,27 +562,34 @@ def auto_mask(
         reg_mask_dir = f"{config['Masking']['MASK_DIR']}/{self.survey}/reg"
         if star_mask_params is not None:
             galfind_logger.debug(
-                f"Making stellar mask for {self.survey} {self.version} {self.filt_name}"
+                f"Making stellar mask for {self.survey} "
+                + f"{self.version} {self.filt_name}"
             )
             # Get list of Gaia stars in the polygon region
             Gaia.ROW_LIMIT = gaia_row_lim
             # Construct the ADQL query string
             adql_query = f"""
-                SELECT source_id, ra, dec, phot_g_mean_mag, radius_sersic, classlabel_dsc_joint, vari_best_class_name
-                FROM gaiadr3.gaia_source 
-                LEFT OUTER JOIN gaiadr3.galaxy_candidates USING (source_id) 
+                SELECT source_id, ra, dec, phot_g_mean_mag,
+                    radius_sersic, classlabel_dsc_joint,
+                    vari_best_class_name
+                FROM gaiadr3.gaia_source
+                LEFT OUTER JOIN gaiadr3.galaxy_candidates USING (source_id)
                 WHERE 1 = CONTAINS(
-                    POINT('ICRS', ra, dec), 
-                    POLYGON('ICRS', 
-                        POINT('ICRS', {vertices_sky[0][0]}, {vertices_sky[0][1]}), 
-                        POINT('ICRS', {vertices_sky[1][0]}, {vertices_sky[1][1]}), 
-                        POINT('ICRS', {vertices_sky[2][0]}, {vertices_sky[2][1]}), 
-                        POINT('ICRS', {vertices_sky[3][0]}, {vertices_sky[3][1]})))"""
+                    POINT('ICRS', ra, dec),
+                    POLYGON('ICRS',
+                        POINT('ICRS', {vertices_sky[0][0]},
+                        {vertices_sky[0][1]}),
+                        POINT('ICRS', {vertices_sky[1][0]},
+                        {vertices_sky[1][1]}),
+                        POINT('ICRS', {vertices_sky[2][0]},
+                        {vertices_sky[2][1]}),
+                        POINT('ICRS',
+                        {vertices_sky[3][0]}, {vertices_sky[3][1]})))"""
 
             # Execute the query asynchronously
             job = Gaia.launch_job_async(adql_query)
             gaia_stars = job.get_results()
-            #print(f"Found {len(gaia_stars)} stars in the region.")
+            # print(f"Found {len(gaia_stars)} stars in the region.")
             if exclude_gaia_galaxies:
                 gaia_stars = gaia_stars[
                     gaia_stars["vari_best_class_name"] != "GALAXY"
@@ -579,7 +636,9 @@ def auto_mask(
             ):
                 # Plot circle
                 # if plot:
-                #     ax.add_patch(Circle((row['x_pix'], row['y_pix']), 2 * row['rmask_arcsec'] / pixel_scale, color = 'r', fill = False, lw = 2))
+                #     ax.add_patch(Circle((row['x_pix'], row['y_pix']),
+                #     2 * row['rmask_arcsec'] / pixel_scale,
+                #     color = 'r', fill = False, lw = 2))
                 sky_region = composite(
                     row["x_pix"],
                     row["y_pix"],
@@ -588,6 +647,7 @@ def auto_mask(
                     angle,
                 )
                 from regions import Regions
+
                 region_obj = Regions.parse(sky_region, format="ds9")
                 diffraction_regions.append(region_obj)
                 stellar_region_strings.append(
@@ -612,10 +672,10 @@ def auto_mask(
 
         edge_mask = make_edge_mask(
             self,
-            edge_value = edge_value,
-            edge_mask_distance = edge_mask_distance,
-            edge_threshold = edge_threshold,
-            element = element,
+            edge_value=edge_value,
+            edge_mask_distance=edge_mask_distance,
+            edge_threshold=edge_threshold,
+            element=element,
         )
 
         if star_mask_params is not None:
@@ -635,7 +695,8 @@ def auto_mask(
                 funcs.change_file_permissions(starmask_path)
             else:
                 galfind_logger.warning(
-                    f"Stellar reg mask at {starmask_path} already exists, skipping!"
+                    f"Stellar reg mask at {starmask_path} already "
+                    + "exists, skipping!"
                 )
         else:
             full_mask = edge_mask.astype(np.uint8)
@@ -668,7 +729,8 @@ def auto_mask(
         assert not any(
             key in ["MASK", "EDGE"] for key in artefact_mask_dir_names
         ), galfind_logger.critical(
-            f"{artefact_mask_dir_names=} cannot contain any of ['MASK', 'EDGE']"
+            f"{artefact_mask_dir_names=} cannot contain any of "
+            + "['MASK', 'EDGE']"
         )
         if star_mask_params is None:
             assert not any(
@@ -679,11 +741,12 @@ def auto_mask(
         # make pixel masks from the paths
         artefact_pix_masks = {}
         for ext_name, mask_paths in artefact_mask_dict.items():
-            #artefact_mask = np.zeros(im_data.shape, dtype=bool)
+            # artefact_mask = np.zeros(im_data.shape, dtype=bool)
             galfind_logger.debug(f"Found {len(mask_paths)} {ext_name} masks")
             for i, path in enumerate(mask_paths):
                 galfind_logger.debug(
-                    f"Adding mask {path} to {ext_name} for {self.survey} {self.version} {self.filt_name}"
+                    f"Adding mask {path} to {ext_name} for "
+                    + f"{self.survey} {self.version} {self.filt_name}"
                 )
                 # clean path if not already done so
                 if "_clean" not in path:
@@ -696,7 +759,12 @@ def auto_mask(
                     artefact_pix_masks[ext_name].extend([pix_mask])
             # combine masks for each extension
             artefact_pix_masks[ext_name] = np.logical_or.reduce(
-                tuple([mask.astype(np.uint8) for mask in artefact_pix_masks[ext_name]])
+                tuple(
+                    [
+                        mask.astype(np.uint8)
+                        for mask in artefact_pix_masks[ext_name]
+                    ]
+                )
             )
         # update full mask to include all artefacts
         full_mask = np.logical_or(
@@ -710,10 +778,10 @@ def auto_mask(
                 )
             ),
         )
-        # make header
+        # make header
         hdr = wcs.to_header()
         hdr_args = {
-            "METHOD": "auto", 
+            "METHOD": "auto",
             "EDGE_DIST": edge_mask_distance,
             "SCALE_EXTRA": scale_extra,
             "EXCLUDE_GAIA": exclude_gaia_galaxies,
@@ -725,7 +793,7 @@ def auto_mask(
         if star_mask_params is not None:
             # add star mask parameters to header arguments
             stellar_mask_hdr_args = {
-                "CENTRAL_A": star_mask_params["central"]["a"], 
+                "CENTRAL_A": star_mask_params["central"]["a"],
                 "CENTRAL_B": star_mask_params["central"]["b"],
                 "SPIKES_A": star_mask_params["spikes"]["a"],
                 "SPIKES_B": star_mask_params["spikes"]["b"],
@@ -733,9 +801,9 @@ def auto_mask(
             hdr_args = {**hdr_args, **stellar_mask_hdr_args}
         # else:
         #     stellar_mask_hdr_args = {
-        #         "CENTRAL_A": None, 
-        #         "CENTRAL_B": None, 
-        #         "SPIKES_A": None, 
+        #         "CENTRAL_A": None,
+        #         "CENTRAL_B": None,
+        #         "SPIKES_A": None,
         #         "SPIKES_B": None
         #     }
 
@@ -771,6 +839,7 @@ def auto_mask(
 
     return output_mask_path, get_mask_args(output_mask_path)
 
+
 def make_edge_mask(
     self: Type[Band_Data_Base],
     edge_value: float = 0.0,
@@ -778,7 +847,8 @@ def make_edge_mask(
     edge_threshold: Optional[float] = None,
     element: str = "ELLIPSE",
 ) -> NDArray[np.uint8]:
-    """Create a mask for image edges and regions with invalid or near-zero values.
+    """Create a mask for image edges and regions with invalid or
+    near-zero values.
 
     Identifies pixels at image boundaries, with NaN values, or close to a
     threshold value, then dilates the mask outward from edges by a specified
@@ -811,26 +881,21 @@ def make_edge_mask(
         If `element` is not "RECT" or "ELLIPSE".
     """
     import cv2
-    galfind_logger.info(
-        f"Making edge mask for {repr(self)}!"
-    )
+
+    galfind_logger.info(f"Making edge mask for {repr(self)}!")
     im_data = self.load_im()[0]
     # Mask image edges
     fill = np.logical_or(
-        (im_data == edge_value),
-        np.isnan(im_data)
+        (im_data == edge_value), np.isnan(im_data)
     )  # true false array of where 0's are
     if edge_threshold is not None:
         fill = np.logical_or(
-            fill,
-            (abs(im_data) <= edge_threshold)
-        ) # also mask any values with magnitude below the threshold
+            fill, (abs(im_data) <= edge_threshold)
+        )  # also mask any values with magnitude below the threshold
     # also fill in nans
     edges = fill * 1  # convert to 1 for true and 0 for false
     edges = edges.astype(np.uint8)  # dtype for cv2
-    galfind_logger.debug(
-        f"Masking edges for {self.survey} {self.filt_name}."
-    )
+    galfind_logger.debug(f"Masking edges for {self.survey} {self.filt_name}.")
     if element == "RECT":
         kernel = cv2.getStructuringElement(
             cv2.MORPH_RECT, (edge_mask_distance, edge_mask_distance)
@@ -840,15 +905,14 @@ def make_edge_mask(
             cv2.MORPH_ELLIPSE, (edge_mask_distance, edge_mask_distance)
         )
     else:
-        raise ValueError(
-            f"element = {element} must be 'RECT' or 'ELLIPSE'"
-        )
+        raise ValueError(f"element = {element} must be 'RECT' or 'ELLIPSE'")
 
     edge_mask = cv2.dilate(
         edges, kernel, iterations=1
     )  # dilate mask using the circle
 
-    # Mask up to 50 pixels from all edges - so edge is still masked if it as at edge of array
+    # Mask up to 50 pixels from all edges - so edge is still masked
+    # if it as at edge of array
     edge_mask[:edge_mask_distance, :] = edge_mask[
         -edge_mask_distance:, :
     ] = edge_mask[:, :edge_mask_distance] = edge_mask[
@@ -856,6 +920,7 @@ def make_edge_mask(
     ] = 1
 
     return edge_mask
+
 
 def check_star_mask_params(
     star_mask_params: Dict[u.Quantity, Dict[str, float]],
@@ -884,14 +949,19 @@ def check_star_mask_params(
         "central" in star_mask_params.keys()
         and "spikes" in star_mask_params.keys()
     )
-    assert type(star_mask_params["central"]) == dict, galfind_logger.warning(
-        f"Mask overridden, but {type(star_mask_params['central'])=} != dict"
+    assert isinstance(
+        star_mask_params["central"], dict
+    ), galfind_logger.warning(
+        "Mask overridden, but "
+        + f"{type(star_mask_params['central'])=} != dict"
     )
     assert (
         "a" in star_mask_params["central"].keys()
         and "b" in star_mask_params["central"].keys()
     )
-    assert type(star_mask_params["spikes"]) == dict, galfind_logger.warning(
+    assert isinstance(
+        star_mask_params["spikes"], dict
+    ), galfind_logger.warning(
         f"Mask overridden, but {type(star_mask_params['spikes'])=} != dict"
     )
     assert (
@@ -961,9 +1031,15 @@ def get_combined_path_name(self: Stacked_Band_Data) -> str:
         Path where the combined mask FITS file should be stored.
     """
     out_dir = f"{config['Masking']['MASK_DIR']}/{self.survey}/combined"
-    if all(band_data.mask_args["method"] == self.band_data_arr[0].mask_args["method"] for band_data in self.band_data_arr):
-        filt_name_mask_method = '+'.join([band_data.filt_name for band_data in self.band_data_arr]) + \
-            f"_{self.band_data_arr[0].mask_args['method']}"
+    if all(
+        band_data.mask_args["method"]
+        == self.band_data_arr[0].mask_args["method"]
+        for band_data in self.band_data_arr
+    ):
+        filt_name_mask_method = (
+            "+".join([band_data.filt_name for band_data in self.band_data_arr])
+            + f"_{self.band_data_arr[0].mask_args['method']}"
+        )
     else:
         filt_name_mask_method = "+".join(
             [
@@ -1016,18 +1092,20 @@ def combine_masks(
     out_path = get_combined_path_name(self)
     if not Path(out_path).is_file():
         assert all(
-            band_data.pix_scale == self[0].pix_scale
-            for band_data in self
+            band_data.pix_scale == self[0].pix_scale for band_data in self
         ), galfind_logger.critical("All bands must have the same pixel scale")
         assert all(
-            band_data.data_shape == self[0].data_shape
-            for band_data in self
+            band_data.data_shape == self[0].data_shape for band_data in self
         ), galfind_logger.critical("All bands must have the same data shape")
-        band_mask_exts = [
-            band_data.load_mask()[0] for band_data in self
-        ]
+        band_mask_exts = [band_data.load_mask()[0] for band_data in self]
         all_exts = list(
-            np.unique([ext for mask_ext in band_mask_exts for ext in list(mask_ext.keys())])
+            np.unique(
+                [
+                    ext
+                    for mask_ext in band_mask_exts
+                    for ext in list(mask_ext.keys())
+                ]
+            )
         )
         assert all(
             "MASK" in band_mask_ext.keys() for band_mask_ext in band_mask_exts
@@ -1037,7 +1115,10 @@ def combine_masks(
         for key in auto_mask_keys:
             if key in hdr.keys():
                 hdr.remove(key)
-        hdr_dict = {band_data.filt_name: band_data.load_mask()[1]["MASK"] for band_data in self.band_data_arr}
+        hdr_dict = {
+            band_data.filt_name: band_data.load_mask()[1]["MASK"]
+            for band_data in self.band_data_arr
+        }
         for filt_name, band_hdr in hdr_dict.items():
             for key, value in band_hdr.items():
                 if key in auto_mask_keys:
@@ -1045,10 +1126,10 @@ def combine_masks(
         print(list(dict(hdr).keys()))
         edge_mask = make_edge_mask(
             self,
-            edge_value = edge_value,
-            edge_mask_distance = edge_mask_distance,
-            edge_threshold = edge_threshold,
-            element = element,
+            edge_value=edge_value,
+            edge_mask_distance=edge_mask_distance,
+            edge_threshold=edge_threshold,
+            element=element,
         )
         # combine masks for each valid extension contained in all masks
         combined_mask_hdul = [fits.PrimaryHDU()]
@@ -1074,13 +1155,15 @@ def combine_masks(
                 mask.shape == band_masks[0].shape for mask in band_masks
             ), galfind_logger.critical("All masks must have the same shape")
             ext_mask = np.logical_or.reduce(tuple(band_masks))
-            combined_mask_hdul.extend([
-                fits.ImageHDU(
-                    ext_mask.astype(np.uint8),
-                    header=hdr,
-                    name=ext,
-                )
-            ])
+            combined_mask_hdul.extend(
+                [
+                    fits.ImageHDU(
+                        ext_mask.astype(np.uint8),
+                        header=hdr,
+                        name=ext,
+                    )
+                ]
+            )
         hdul = fits.HDUList(combined_mask_hdul)
         hdul.writeto(out_path, overwrite=True)
         funcs.change_file_permissions(out_path)
@@ -1095,11 +1178,12 @@ def combine_masks(
     }
     return out_path, mask_args
 
+
 def get_area_mask_path(
     self: Type[Data],
     mask_selector_name: str,
     mask_save_name: str,
-    reg_name: str
+    reg_name: str,
 ) -> str:
     """Generate the standard path for a saved area mask FITS file.
 
@@ -1122,16 +1206,21 @@ def get_area_mask_path(
     `str`
         Path where the area mask FITS file should be stored.
     """
-    mask_path = f"{config['Masking']['MASK_DIR']}/{self.survey}/area_masks/" + \
+    mask_path = (
+        f"{config['Masking']['MASK_DIR']}/{self.survey}/area_masks/"
         f"{mask_selector_name}_{mask_save_name}_{reg_name}_{self.version}.fits"
+    )
     funcs.make_dirs(mask_path)
     return mask_path
+
 
 def sort_area_mask_names(
     self: Type[Data],
     mask_selector: Union[str, List[str], Type[Mask_Selector]],
     mask_type: Union[str, List[str]],
-    region_selector: Optional[Union[Type[Region_Selector], List[Type[Region_Selector]]]] = None,
+    region_selector: Optional[
+        Union[Type[Region_Selector], List[Type[Region_Selector]]]
+    ] = None,
     invert_region: bool = False,
     zbin: Optional[Tuple[float, float]] = None,
 ) -> Tuple[str, str, str]:
@@ -1154,7 +1243,8 @@ def sort_area_mask_names(
     invert_region : `bool`, optional
         If `True`, use the region failure name instead. Default is `False`.
     zbin : `tuple` of (`float`, `float`), optional
-        Redshift bin (z_min, z_max) for additional specificity. Default is `None`.
+        Redshift bin (z_min, z_max) for additional specificity. Default is
+        `None`.
 
     Returns
     -------
@@ -1169,29 +1259,37 @@ def sort_area_mask_names(
         mask_selector = mask_selector.split("+")
     if isinstance(mask_type, str):
         mask_type = mask_type.split("+")
-    
+
     if region_selector is None:
         reg_name = "All"
     else:
         if not isinstance(region_selector, list):
             region_selector = [region_selector]
-        reg_name = "+".join([
-            region_selector_.name if not invert_region 
-            else region_selector_.fail_name 
-            for region_selector_ in region_selector
-        ])
+        reg_name = "+".join(
+            [
+                region_selector_.name
+                if not invert_region
+                else region_selector_.fail_name
+                for region_selector_ in region_selector
+            ]
+        )
 
     if isinstance(mask_selector, tuple(Mask_Selector.__subclasses__())):
         mask_selector_name = mask_selector.name
     else:
         mask_selector_name = f"{'+'.join(np.sort(mask_selector))}_{reg_name}"
-    
+
     mask_save_name = "+".join(np.sort(mask_type))
 
-    if isinstance(mask_selector, tuple(Mask_Selector.__subclasses__())) and zbin is not None:
+    if (
+        isinstance(mask_selector, tuple(Mask_Selector.__subclasses__()))
+        and zbin is not None
+    ):
         mask_selector_name += f"_{zbin[0]:.2f}<z<{zbin[1]:.2f}"
 
-    mask_save_path = get_area_mask_path(self, mask_selector_name, mask_save_name, reg_name)
+    mask_save_path = get_area_mask_path(
+        self, mask_selector_name, mask_save_name, reg_name
+    )
 
     return mask_selector_name, mask_save_name, reg_name, mask_save_path
 
@@ -1200,7 +1298,9 @@ def make_area_mask_from_data(
     self: Type[Data],
     mask_selector: Union[str, List[str], Type[Mask_Selector]],
     mask_type: Union[str, List[str]] = "MASK",
-    region_selector: Optional[Union[Type[Region_Selector], List[Type[Region_Selector]]]] = None,
+    region_selector: Optional[
+        Union[Type[Region_Selector], List[Type[Region_Selector]]]
+    ] = None,
     invert_region: bool = False,
     zbin: Optional[Tuple[float, float]] = None,
     overwrite: bool = False,
@@ -1237,9 +1337,10 @@ def make_area_mask_from_data(
         Tuple containing (combined_mask, mask_selector_name, mask_save_name,
         region_name).
     """
-    #try:
+    # try:
     from . import Mask_Selector
-    mask_selector_name, mask_save_name, reg_name, mask_save_path = \
+
+    mask_selector_name, mask_save_name, reg_name, mask_save_path = (
         sort_area_mask_names(
             self,
             mask_selector,
@@ -1248,49 +1349,73 @@ def make_area_mask_from_data(
             invert_region,
             zbin,
         )
+    )
     if not Path(mask_save_path).is_file() or overwrite:
         galfind_logger.info(
-            f"Creating area mask {mask_selector_name} with types {mask_type} at {mask_save_path}"
+            f"Creating area mask {mask_selector_name} with types "
+            + f"{mask_type} at {mask_save_path}"
         )
         if "z" not in kwargs.keys() and zbin is not None:
             kwargs["z"] = (zbin[0] + zbin[1]) / 2
         if isinstance(mask_selector, tuple(Mask_Selector.__subclasses__())):
-            masks = [mask_selector.load_mask(self, invert = False, **kwargs)]
+            masks = [mask_selector.load_mask(self, invert=False, **kwargs)]
             pix_scales = [band_data.pix_scale for band_data in self]
-            assert all(pix_scale == pix_scales[0] for pix_scale in pix_scales), \
-                galfind_logger.critical(
-                    "All pixel scales must be the same!"
-                )
+            assert all(
+                pix_scale == pix_scales[0] for pix_scale in pix_scales
+            ), galfind_logger.critical("All pixel scales must be the same!")
             pix_scale = pix_scales[0]
         else:
             masks = []
             for name in mask_selector:
                 if name in self.filterset.instrument_name.split("+"):
-                    pix_scales = [band_data.pix_scale for band_data in self \
-                        if band_data.instr_name == name]
-                    assert all(pix_scale == pix_scales[0] for pix_scale in pix_scales), \
-                        galfind_logger.critical(
-                            "All pixel scales for bands in the same instrument must be the same!"
-                        )
+                    pix_scales = [
+                        band_data.pix_scale
+                        for band_data in self
+                        if band_data.instr_name == name
+                    ]
+                    assert all(
+                        pix_scale == pix_scales[0] for pix_scale in pix_scales
+                    ), galfind_logger.critical(
+                        "All pixel scales for bands in the same "
+                        + "instrument must be the same!"
+                    )
                     pix_scale = pix_scales[0]
-                    masks.extend([band_data.load_mask(mask_type_, invert = True, **kwargs)[0] for band_data in self \
-                        for mask_type_ in mask_type if band_data.instr_name == name])
+                    masks.extend(
+                        [
+                            band_data.load_mask(
+                                mask_type_, invert=True, **kwargs
+                            )[0]
+                            for band_data in self
+                            for mask_type_ in mask_type
+                            if band_data.instr_name == name
+                        ]
+                    )
                 elif name in self.filterset.filt_names:
                     pix_scale = self[name].pix_scale
-                    masks.extend([self[name].load_mask(mask_type_, invert = True, **kwargs)[0] for mask_type_ in mask_type])
-                else:
-                    possible_names = self.filterset.instrument_name.split("+") + self.filterset.filt_names
-                    err_message = f"{name} not in {possible_names}"
-                    galfind_logger.critical(
-                        err_message
+                    masks.extend(
+                        [
+                            self[name].load_mask(
+                                mask_type_, invert=True, **kwargs
+                            )[0]
+                            for mask_type_ in mask_type
+                        ]
                     )
-                    raise(Exception(err_message))
+                else:
+                    possible_names = (
+                        self.filterset.instrument_name.split("+")
+                        + self.filterset.filt_names
+                    )
+                    err_message = f"{name} not in {possible_names}"
+                    galfind_logger.critical(err_message)
+                    raise (Exception(err_message))
 
         if region_selector is not None:
-            masks.extend([
-                region_selector_.load_mask(self, invert = invert_region)
-                for region_selector_ in region_selector
-            ])
+            masks.extend(
+                [
+                    region_selector_.load_mask(self, invert=invert_region)
+                    for region_selector_ in region_selector
+                ]
+            )
         if len(masks) == 0:
             galfind_logger.critical(
                 f"Could not find any masks for {mask_selector_name}"
@@ -1301,9 +1426,7 @@ def make_area_mask_from_data(
             mask = np.logical_and.reduce(tuple(masks))
 
         # save .fits mask
-        galfind_logger.info(
-            f"Saving mask to {mask_save_path.split('/')[-1]}"
-        )
+        galfind_logger.info(f"Saving mask to {mask_save_path.split('/')[-1]}")
         funcs.make_dirs(mask_save_path)
         # save boolean mask as .fits file
         hdu = fits.ImageHDU(mask.astype(np.uint8), name=mask_selector_name)
@@ -1316,17 +1439,18 @@ def make_area_mask_from_data(
         hdu = fits.open(mask_save_path)[mask_selector_name]
         mask = hdu.data.astype(bool)
         # TODO: Save pixel scale in mask header
-        #masks = [mask_selector.load_mask(self, invert = False, **kwargs)]
+        # masks = [mask_selector.load_mask(self, invert = False, **kwargs)]
         pix_scales = [band_data.pix_scale for band_data in self]
-        assert all(pix_scale == pix_scales[0] for pix_scale in pix_scales), \
-            galfind_logger.critical(
-                "All pixel scales must be the same!"
-            )
+        assert all(
+            pix_scale == pix_scales[0] for pix_scale in pix_scales
+        ), galfind_logger.critical("All pixel scales must be the same!")
         pix_scale = pix_scales[0]
 
     if isinstance(mask_selector, list) and len(mask_selector) == 1:
         self[mask_selector_name[0]]._calc_area_given_mask(mask_save_name, mask)
-        unmasked_area = self[mask_selector_name[0]].unmasked_area[mask_save_name]
+        unmasked_area = self[mask_selector_name[0]].unmasked_area[
+            mask_save_name
+        ]
     else:
         unmasked_area = funcs.calc_unmasked_area(mask, pix_scale)
     try:
@@ -1337,7 +1461,8 @@ def make_area_mask_from_data(
         self.unmasked_area[mask_selector_name][mask_save_name] = unmasked_area
     except Exception as e:
         galfind_logger.warning(
-            f"Could not save unmasked area for {mask_selector_name} {mask_save_name} in {repr(self)}: {e}"
+            f"Could not save unmasked area for {mask_selector_name} "
+            + f"{mask_save_name} in {repr(self)}: {e}"
         )
         breakpoint()
         raise e
@@ -1348,7 +1473,9 @@ def make_area_mask_from_band_data(
     self: Type[Band_Data],
     mask_selector: Union[str, List[str], Type[Mask_Selector]],
     mask_type: Union[str, List[str]] = "MASK",
-    region_selector: Optional[Union[Type[Region_Selector], List[Type[Region_Selector]]]] = None,
+    region_selector: Optional[
+        Union[Type[Region_Selector], List[Type[Region_Selector]]]
+    ] = None,
     invert_region: bool = False,
     zbin: Optional[Tuple[float, float]] = None,
     overwrite: bool = False,
@@ -1386,7 +1513,8 @@ def make_area_mask_from_band_data(
         region_name).
     """
     from . import Mask_Selector
-    mask_selector_name, mask_save_name, reg_name, mask_save_path = \
+
+    mask_selector_name, mask_save_name, reg_name, mask_save_path = (
         sort_area_mask_names(
             self,
             mask_selector,
@@ -1395,30 +1523,48 @@ def make_area_mask_from_band_data(
             invert_region,
             zbin,
         )
+    )
     if not Path(mask_save_path).is_file() or overwrite:
         galfind_logger.info(
-            f"Creating area mask {mask_selector_name} with types {mask_type} at {mask_save_path}"
+            f"Creating area mask {mask_selector_name} with types "
+            + f"{mask_type} at {mask_save_path}"
         )
         if isinstance(mask_selector, tuple(Mask_Selector.__subclasses__())):
-            masks = [mask_selector.load_mask(self, invert = False, **kwargs)]
+            masks = [mask_selector.load_mask(self, invert=False, **kwargs)]
         else:
             masks = []
             for name in mask_selector:
                 if name in self.filterset.instrument_name.split("+"):
-                    masks.extend([self.load_mask(mask_type_, invert = True, **kwargs)[0] \
-                        for mask_type_ in mask_type if self.instr_name == name])
+                    masks.extend(
+                        [
+                            self.load_mask(mask_type_, invert=True, **kwargs)[
+                                0
+                            ]
+                            for mask_type_ in mask_type
+                            if self.instr_name == name
+                        ]
+                    )
                 elif name in self.filterset.filt_names:
-                    masks.extend([self.load_mask(mask_type_, invert = True, **kwargs)[0] for mask_type_ in mask_type])
+                    masks.extend(
+                        [
+                            self.load_mask(mask_type_, invert=True, **kwargs)[
+                                0
+                            ]
+                            for mask_type_ in mask_type
+                        ]
+                    )
                 else:
                     err_message = f"{name} masking not valid for {repr(self)}"
                     galfind_logger.critical(err_message)
-                    raise(Exception(err_message))
+                    raise (Exception(err_message))
 
         if region_selector is not None:
-            masks.extend([
-                region_selector_.load_mask(self, invert = invert_region)
-                for region_selector_ in region_selector
-            ])
+            masks.extend(
+                [
+                    region_selector_.load_mask(self, invert=invert_region)
+                    for region_selector_ in region_selector
+                ]
+            )
         if len(masks) == 0:
             galfind_logger.critical(
                 f"Could not find any masks for {mask_selector_name}"
@@ -1429,9 +1575,7 @@ def make_area_mask_from_band_data(
             mask = np.logical_and.reduce(tuple(masks))
 
         # save .fits mask
-        galfind_logger.info(
-            f"Saving mask to {mask_save_path.split('/')[-1]}"
-        )
+        galfind_logger.info(f"Saving mask to {mask_save_path.split('/')[-1]}")
         funcs.make_dirs(mask_save_path)
         # save boolean mask as .fits file
         hdu = fits.ImageHDU(mask.astype(np.uint8), name=mask_selector_name)
@@ -1445,7 +1589,7 @@ def make_area_mask_from_band_data(
         mask = hdu.data.astype(bool)
 
     return mask, mask_selector_name, mask_save_name, reg_name
-    
+
 
 def get_rebin_mask_path(
     self: Type[Band_Data_Base],
@@ -1478,20 +1622,19 @@ def get_rebin_mask_path(
         Path for the rebinned mask FITS file.
     """
     re_binned_mask_path = get_area_mask_path(
-        self,
-        mask_selector_name,
-        mask_save_name,
-        reg_name
+        self, mask_selector_name, mask_save_name, reg_name
     ).replace("area_masks", "rebin_h5")
     if shape is not None:
-        re_binned_mask_path = re_binned_mask_path\
-            .replace(".fits", f"_{shape[0]}x{shape[1]}.fits")
+        re_binned_mask_path = re_binned_mask_path.replace(
+            ".fits", f"_{shape[0]}x{shape[1]}.fits"
+        )
     funcs.make_dirs(re_binned_mask_path)
     return re_binned_mask_path
 
+
 def rebin_mask_to_shape(
-    mask: NDArray[bool],
-    shape: Tuple[int, int]) -> NDArray[bool]:
+    mask: NDArray[bool], shape: Tuple[int, int]
+) -> NDArray[bool]:
     """Rebin a mask to a new shape by summing blocks of pixels.
 
     Parameters
@@ -1507,9 +1650,8 @@ def rebin_mask_to_shape(
         The rebinned mask.
     """
     from skimage.transform import resize
-    galfind_logger.info(
-        f"Rebinning mask from shape {mask.shape} to {shape}"
-    )
+
+    galfind_logger.info(f"Rebinning mask from shape {mask.shape} to {shape}")
     # Resize the mask using nearest neighbor interpolation
     rebinned_mask = resize(
         mask.astype(float),
@@ -1581,4 +1723,5 @@ def rebin_mask_to_shape(
 # if plot:
 #     # Save mask plot
 #     fig.savefig(f"{self.mask_dir}/{self.filt.filt_name}_mask.png", dpi=300)
-#     funcs.change_file_permissions(f"{self.mask_dir}/{self.filt.filt_name}_mask.png")
+#     funcs.change_file_permissions(
+#         f"{self.mask_dir}/{self.filt.filt_name}_mask.png")

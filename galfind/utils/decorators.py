@@ -18,7 +18,8 @@ from .. import galfind_logger
 
 
 def run_in_dir(path):
-    """Decorator factory that runs the wrapped function inside a given directory.
+    """Decorator factory that runs the wrapped function inside a given
+    directory.
 
     Changes the current working directory to `path` (creating it first if
     it does not already exist) before calling the wrapped function, and
@@ -35,6 +36,7 @@ def run_in_dir(path):
     `callable`
         Decorator that wraps a function to be run inside `path`.
     """
+
     def decorated(func):
         def wrapper(*args, **kwargs):
             """Internal wrapper function."""
@@ -42,16 +44,20 @@ def run_in_dir(path):
             if not os.path.exists(path):
                 os.makedirs(path)
             os.chdir(path)
-            #print(f"Changed directory to {path}")
+            # print(f"Changed directory to {path}")
             return_value = func(*args, **kwargs)
             os.chdir(cwd)
-            #print(f"Changed directory back to {cwd}")
+            # print(f"Changed directory back to {cwd}")
             return return_value
+
         return wrapper
+
     return decorated
 
+
 def run_in_self_dir(get_dir):
-    """Decorator factory that runs a bound method inside a `self`-dependent directory.
+    """Decorator factory that runs a bound method inside a
+    `self`-dependent directory.
 
     Like `run_in_dir`, but for instance methods: the directory to run
     inside is obtained by calling `get_dir(self)` at call time (rather than
@@ -70,6 +76,7 @@ def run_in_self_dir(get_dir):
         Decorator that wraps an instance method to be run inside the
         directory returned by `get_dir(self)`.
     """
+
     def decorator(func):
         def wrapper(self, *args, **kwargs):
             """Internal wrapper function."""
@@ -81,7 +88,9 @@ def run_in_self_dir(get_dir):
             return_value = func(self, *args, **kwargs)
             os.chdir(cwd)
             return return_value
+
         return wrapper
+
     return decorator
 
 
@@ -106,19 +115,19 @@ def log_time(logging_level, out_unit: u.Quantity = u.hour):
     `callable`
         Decorator that wraps a function to log its execution time.
     """
+
     def decorated(func):
         def wrapper(*args, **kwargs):
             """Internal wrapper function."""
-            galfind_logger.info(
-                f"Running {func.__name__}!"
-            )
+            galfind_logger.info(f"Running {func.__name__}!")
             start_time = time.time()
             return_value = func(*args, **kwargs)
             end_time = time.time()
-            # log at required level
+            # log at required level
             galfind_logger.log(
                 logging_level,
-                f"{func.__name__} executed in {((end_time - start_time) * u.s).to(out_unit):.1f}!"
+                f"{func.__name__} executed in "
+                f"{((end_time - start_time) * u.s).to(out_unit):.1f}!",
             )
             return return_value
 
@@ -128,7 +137,8 @@ def log_time(logging_level, out_unit: u.Quantity = u.hour):
 
 
 def hour_timer(func):
-    """Decorator that prints the execution time of the wrapped function, in hours.
+    """Decorator that prints the execution time of the wrapped function,
+    in hours.
 
     Parameters
     ----------
@@ -141,12 +151,15 @@ def hour_timer(func):
         Wrapped version of `func` that prints its execution time (converted
         to hours) to stdout after it returns.
     """
+
     def wrapper(*args, **kwargs):
         """Internal wrapper function."""
+        t1 = time.time()
         return_value = func(*args, **kwargs)
         t2 = time.time()
         print(
-            f"Function {func.__name__!r} executed in {((t2-t1) * u.s).to(u.h)}"
+            f"Function {func.__name__!r} executed in "
+            f"{((t2 - t1) * u.s).to(u.h)}"
         )
         return return_value
 
@@ -154,7 +167,8 @@ def hour_timer(func):
 
 
 def ignore_warnings(func):
-    """Decorator that suppresses all warnings raised while the wrapped function runs.
+    """Decorator that suppresses all warnings raised while the wrapped
+    function runs.
 
     Parameters
     ----------
@@ -167,11 +181,13 @@ def ignore_warnings(func):
         Wrapped version of `func` that runs inside a
         `warnings.catch_warnings()` context with all warnings ignored.
     """
+
     def wrapper(*args, **kwargs):
         """Internal wrapper function."""
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             return func(*args, **kwargs)
+
     return wrapper
 
 
@@ -208,6 +224,7 @@ def email_update(
     `callable`
         Decorator that wraps a function to send email status updates.
     """
+
     def decorated(func):
         def wrapper(*args, **kwargs):
             """Internal wrapper function."""
@@ -219,23 +236,26 @@ def email_update(
             # compose starting email
             setup.send(
                 to,
-                f"Morgan START: {time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime())}",
+                f"Morgan START: "
+                f"{time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime())}",
                 f"Starting {func.__name__}",
             )
             # try to run decorated function
             try:
                 return_value = func(*args, **kwargs)
-            except:
+            except Exception:
                 # compose failure email
                 setup.send(
-                    f"Morgan TERMINATE: {time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime())}",
+                    f"Morgan TERMINATE: "
+                    f"{time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime())}",
                     f"Terminating {func.__name__}",
                 )
                 raise (Exception(f"Terminating {func.__name__}"))
             # compose ending email
             setup.send(
                 to,
-                f"Morgan END: {time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime())}",
+                f"Morgan END: "
+                f"{time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime())}",
                 f"Ending {func.__name__}",
             )
             return return_value
@@ -247,7 +267,8 @@ def email_update(
 
 # Parallelization decorators
 def n_cores(n):
-    """Placeholder decorator factory intended to run the wrapped function using `n` cores.
+    """Placeholder decorator factory intended to run the wrapped
+    function using `n` cores.
 
     As currently implemented, the core/thread allocation logic is not yet
     filled in, so the wrapped function is simply called unchanged.
@@ -262,6 +283,7 @@ def n_cores(n):
     `callable`
         Decorator that wraps a function, currently calling it unmodified.
     """
+
     def decorated(func):
         def wrapper(*args, **kwargs):
             """Internal wrapper function."""

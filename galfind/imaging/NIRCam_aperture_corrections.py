@@ -21,6 +21,7 @@ from matplotlib.patches import Circle
 from scipy import optimize
 
 from .. import config
+from ..utils import useful_funcs_austind as funcs
 
 
 def log_transform(im):
@@ -46,7 +47,7 @@ def log_transform(im):
             return (np.log(im.clip(min, max)) - np.log(min)) / (
                 np.log(max) - np.log(min)
             )
-    except:
+    except Exception:
         pass
     return im
 
@@ -99,7 +100,7 @@ def open_PSF_model(
     # pixel_scale = PSFheader["PIXELSCL"] * u.arcsec
     try:
         pixel_scale = PSFheader["PIXELSCL"] * u.arcsec
-    except:
+    except Exception:
         raise (Exception("No PIXELSCL in header"))
         # pixel_scale = log.pix_to_as
     # print("pixel scale =", pixel_scale)
@@ -119,7 +120,8 @@ def calc_aper_corr(
     print_output=True,
     tot_aper_size=None,
 ):
-    """Compute the aperture correction for a PSF model at a given aperture diameter.
+    """Compute the aperture correction for a PSF model at a given
+    aperture diameter.
 
     Measures the flux within a circular aperture of diameter `aper_diam`
     centred at ``(x_cen, y_cen)``, divides it by the flux within a larger
@@ -196,7 +198,7 @@ def calc_aper_corr(
     # plot results
     if plot_PSF:
         fig, ax = plt.subplots()
-        im = ax.imshow(log_transform(PSFdata), origin="lower")
+        ax.imshow(log_transform(PSFdata), origin="lower")
         aper = Circle(xy=(x_cen, y_cen), radius=aper_diam / 2)
         aper_tot = Circle(xy=(x_cen, y_cen), radius=tot_aper_size / 2)
         aper.set_facecolor("none")
@@ -305,11 +307,20 @@ def plot_flux_curve(
 
 
 # def compare_aper_flux_to_full_radius():
-#    tot_flux = sep.sum_circle(PSFdata, [len(PSFdata[0]) / 2 - 0.5], [len(PSFdata[1]) / 2 - 0.5], len(PSFdata[0]) / 2)[0][0]
+#    tot_flux = sep.sum_circle(
+#        PSFdata,
+#        [len(PSFdata[0]) / 2 - 0.5],
+#        [len(PSFdata[1]) / 2 - 0.5],
+#        len(PSFdata[0]) / 2
+#    )[0][0]
 
 """
 def plot_additional_flux_curve(band):
-    df = pd.read_csv('/Users/user/Documents/PGR/JWST_PSFs_003as/Encircled_Energy_LW_ETCv2.txt', header = 1)
+    df = pd.read_csv(
+        '/Users/user/Documents/PGR/JWST_PSFs_003as/'
+        'Encircled_Energy_LW_ETCv2.txt',
+        header=1
+    )
     #print(df_init[0][0])
     #print(df_init[0][0])
     #df.columns = df_init[0]
@@ -337,6 +348,7 @@ def fit_2d_moffatt(PSFdata, maxfev=10000):
     `tuple`
         Fitted parameters (A, a, b, xcen, ycen) and covariance.
     """
+
     def moffatcurve(xdata_tuple, A, a, b, xcen, ycen):
         """2D Moffat function for curve fitting.
 

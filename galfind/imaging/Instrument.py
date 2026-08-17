@@ -1,27 +1,29 @@
 """Astronomical facility and instrument definitions.
 
-Defines Facility class representing observing facilities (HST, JWST, Spitzer, etc.)
-and Instrument subclasses for specific instruments (NIRCam, MIRI, ACS_WFC, etc.)
+Defines Facility class representing observing facilities (HST,
+JWST, Spitzer, etc.)
+and Instrument subclasses for specific instruments (NIRCam, MIRI, ACS_WFC,
+etc.)
 with their filter configurations and metadata.
 """
 
 from __future__ import annotations
 
-from typing import Dict, Any, Union, List, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 if TYPE_CHECKING:
-    from . import Band_Data, Band_Data_Base
-    from . import PSF_Base, PSF_Cutout
+    from . import Band_Data, Band_Data_Base, PSF_Base, PSF_Cutout
+
+from abc import ABC, abstractmethod
+from copy import deepcopy
+from pathlib import Path
+from typing import Tuple
 
 import astropy.units as u
-from astropy.io import ascii
 import h5py
-from astropy.table import Table
-from pathlib import Path
 import numpy as np
-from copy import deepcopy
-from abc import ABC, abstractmethod
-from typing import Tuple
+from astropy.io import ascii
+from astropy.table import Table
 
 try:
     from typing import Self, Type  # python 3.11+
@@ -82,31 +84,43 @@ class Facility(ABC):
 
 class HST(Facility, funcs.Singleton):
     """Singleton `Facility` representing the Hubble Space Telescope."""
+
     pass
 
 
 class JWST(Facility, funcs.Singleton):
     """Singleton `Facility` representing the James Webb Space Telescope."""
+
     pass
+
 
 class Paranal(Facility, funcs.Singleton):
     """Singleton `Facility` representing ESO's Paranal Observatory (VISTA)."""
+
     pass
+
 
 class Spitzer(Facility, funcs.Singleton):
     """Singleton `Facility` representing the Spitzer Space Telescope."""
+
     pass
+
 
 class Euclid(Facility, funcs.Singleton):
     """Singleton `Facility` representing the Euclid space telescope."""
+
     pass
+
 
 class CFHT(Facility, funcs.Singleton):
     """Singleton `Facility` representing the Canada-France-Hawaii Telescope."""
+
     pass
+
 
 class Subaru(Facility, funcs.Singleton):
     """Singleton `Facility` representing the Subaru Telescope."""
+
     pass
 
 
@@ -167,7 +181,7 @@ class Instrument(ABC):
                 output_str += f"{key}: {value}\n"
             output_str += funcs.band_sep
         if len(self.facility.__dict__) > 0:
-            output_str += f"FACILITY:\n"
+            output_str += "FACILITY:\n"
             output_str += funcs.band_sep
             for key, value in self.facility.__dict__.items():
                 output_str += f"{key}: {value}\n"
@@ -284,30 +298,33 @@ class Instrument(ABC):
             ``'EPOCHS'``.
         """
         method_types = ["default", "empirical", "EPOCHS"]
-        assert method in method_types, \
-            galfind_logger.critical(
-                f"{method=} not in {method_types}!"
-            )
+        assert method in method_types, galfind_logger.critical(
+            f"{method=} not in {method_types}!"
+        )
         if method == "default":
             return self.make_model_psf(
                 band_data,
-                size = size,
+                size=size,
             )
         elif method == "empirical":
             return PSF_Cutout.from_empirical_psf(band_data)
-        else: # method == "EPOCHS":
+        else:  # method == "EPOCHS":
             if isinstance(self, ACS_WFC):
                 return self.make_model_psf(
                     band_data,
-                    size = size,
+                    size=size,
                 )
             else:
-                epochs_path = f"{config['PSF']['PSF_WORK_DIR']}/EPOCHS_PSFs/{band_data.filt_name}/PSF_Resample_03_{band_data.filt_name}.fits"
+                base_path = f"{config['PSF']['PSF_WORK_DIR']}/EPOCHS_PSFs"
+                epochs_path = (
+                    f"{base_path}/{band_data.filt_name}/"
+                    f"PSF_Resample_03_{band_data.filt_name}.fits"
+                )
                 return PSF_Cutout.from_fits(
                     epochs_path,
                     band_data,
-                    size = size,
-                    origin = "webbpsf",
+                    size=size,
+                    origin="webbpsf",
                 )
 
     @abstractmethod
@@ -342,7 +359,8 @@ class Instrument(ABC):
     #     band_data: Band_Data,
     # ) -> Type[PSF_Base]:
     #     raise NotImplementedError(
-    #         f"Empirical PSF construction not yet implemented for {repr(self)}!"
+    #         f"Empirical PSF construction not yet implemented for "
+    #         f"{repr(self)}!"
     #     )
 
     def get_psf_norm(
@@ -408,8 +426,10 @@ class Instrument(ABC):
         `str`
             Path to the PSF working directory for this band.
         """
-        return f"{config['PSF']['PSF_WORK_DIR']}/{band_data.filt.instrument.__class__.__name__}" + \
-            f"/{band_data.version}/{band_data.survey}/{band_data.filt_name}"
+        return (
+            f"{config['PSF']['PSF_WORK_DIR']}/{band_data.filt.instrument.__class__.__name__}"
+            + f"/{band_data.version}/{band_data.survey}/{band_data.filt_name}"
+        )
 
     def get_eec_path(
         self: Self,
@@ -490,13 +510,12 @@ class NIRCam(Instrument, funcs.Singleton):
 
     @property
     def ZP_keys(self) -> List[str]:
-        """`list` of `str`: FITS header keywords required to calculate the zero-point (empty; NIRCam uses a fixed pixel-scale-based formula)."""
+        """`list` of `str`: FITS header keywords required to calculate
+        the zero-point (empty; NIRCam uses a fixed pixel-scale-based
+        formula)."""
         return []
 
-    def calc_ZP(
-        self: Self,
-        band_data: Type[Band_Data_Base]
-    ) -> u.Quantity:
+    def calc_ZP(self: Self, band_data: Type[Band_Data_Base]) -> u.Quantity:
         """Calculate the AB magnitude zero-point assuming MJy/sr flux units.
 
         Parameters
@@ -538,13 +557,14 @@ class NIRCam(Instrument, funcs.Singleton):
             The constructed model PSF cutout.
         """
         from . import PSF_Cutout
+
         # TODO: create PSF_Cutout from WebbPSF instead of loading from file
-        #psf_path = f"{psf_dir}/NIRCam/{band_data.filt.filt_name}.fits"
+        # psf_path = f"{psf_dir}/NIRCam/{band_data.filt.filt_name}.fits"
         psf = PSF_Cutout.from_stpsf(
             band_data,
-            #psf_path,
-            #band_data.filt,
-            #size = size,
+            # psf_path,
+            # band_data.filt,
+            # size = size,
         )
         return psf
 
@@ -576,23 +596,26 @@ class NIRCam(Instrument, funcs.Singleton):
             If the normalization file returned by `get_psf_norm_path`
             does not exist.
         """
-        norm_path = self.get_psf_norm_path(band_data = band_data)
+        norm_path = self.get_psf_norm_path(band_data=band_data)
         if norm_path is None:
             return None
         else:
-            assert Path(norm_path).is_file(), \
-                galfind_logger.critical(
-                    f"PSF normalization file {norm_path} not found!"
-                )
+            assert Path(norm_path).is_file(), galfind_logger.critical(
+                f"PSF normalization file {norm_path} not found!"
+            )
             energy_table = ascii.read(norm_path)
-            row = np.argmin(abs(size.to(u.arcsec).value / 2.0 - energy_table["aper_radius"]))
+            row = np.argmin(
+                abs(
+                    size.to(u.arcsec).value / 2.0 - energy_table["aper_radius"]
+                )
+            )
             encircled = energy_table[row][band_data.filt.filt_name]
             norm_fov = energy_table["aper_radius"][row] * 2
             galfind_logger.debug(
                 f"Normalizing PSF within {norm_fov} FOV to {encircled}"
             )
             return encircled, norm_fov
-    
+
     def get_psf_norm_path(
         self: Self,
         band_data: Band_Data,
@@ -617,18 +640,23 @@ class NIRCam(Instrument, funcs.Singleton):
             Path to the SW or LW encircled energy text file, or `None`
             if the filter is not found in either table.
         """
-        SW_norm_path = f"{config['PSF']['PSF_DIR']}/{self.__class__.__name__}/encircled_energy/Encircled_Energy_SW_ETCv2.txt"
-        LW_norm_path = f"{config['PSF']['PSF_DIR']}/{self.__class__.__name__}/encircled_energy/Encircled_Energy_LW_ETCv2.txt"
+        base_psf_dir = f"{config['PSF']['PSF_DIR']}/{self.__class__.__name__}"
+        ee_dir = f"{base_psf_dir}/encircled_energy"
+        SW_norm_path = f"{ee_dir}/Encircled_Energy_SW_ETCv2.txt"
+        LW_norm_path = f"{ee_dir}/Encircled_Energy_LW_ETCv2.txt"
         filters = {
-            "SW": Table.read(SW_norm_path, format = "ascii").colnames[1:],
-            "LW": Table.read(LW_norm_path, format = "ascii").colnames[1:],
+            "SW": Table.read(SW_norm_path, format="ascii").colnames[1:],
+            "LW": Table.read(LW_norm_path, format="ascii").colnames[1:],
         }
         if band_data.filt.filt_name in filters["SW"]:
             return SW_norm_path
         elif band_data.filt.filt_name in filters["LW"]:
             return LW_norm_path
         else:
-            galfind_logger.warning(f"Filter {band_data.filt.filt_name} not found in any PSF normalization table!")
+            galfind_logger.warning(
+                f"Filter {band_data.filt.filt_name} not found in any "
+                "PSF normalization table!"
+            )
             return None
 
 
@@ -665,7 +693,9 @@ class MIRI(Instrument, funcs.Singleton):
 
     @property
     def ZP_keys(self) -> List[str]:
-        """`list` of `str`: FITS header keywords required to calculate the zero-point (empty; MIRI uses a fixed pixel-scale-based formula)."""
+        """`list` of `str`: FITS header keywords required to calculate
+        the zero-point (empty; MIRI uses a fixed pixel-scale-based
+        formula)."""
         return []
 
     def calc_ZP(self: Self, band_data: Type[Band_Data_Base]) -> u.Quantity:
@@ -707,7 +737,9 @@ class MIRI(Instrument, funcs.Singleton):
         NotImplementedError
             Model PSF construction is not yet implemented for MIRI.
         """
-        raise NotImplementedError("Model PSF construction not yet implemented for MIRI!")
+        raise NotImplementedError(
+            "Model PSF construction not yet implemented for MIRI!"
+        )
 
 
 class ACS_SBC(Instrument, funcs.Singleton):
@@ -727,7 +759,8 @@ class ACS_SBC(Instrument, funcs.Singleton):
 
     @property
     def ZP_keys(self) -> List[str]:
-        """FITS header keywords required to calculate zero-point: PHOTFLAM, PHOTPLAM, or ZEROPNT."""
+        """FITS header keywords required to calculate zero-point:
+        PHOTFLAM, PHOTPLAM, or ZEROPNT."""
         return ["PHOTFLAM", "PHOTPLAM", "ZEROPNT"]
 
     def calc_ZP(self: Self, band_data: Type[Band_Data_Base]) -> u.Quantity:
@@ -742,20 +775,27 @@ class ACS_SBC(Instrument, funcs.Singleton):
         elif "ZEROPNT" in im_header:
             ZP = im_header["ZEROPNT"]
             galfind_logger.warning(
-                f"Using ZEROPNT from header for {band_data.filt_name} " + \
-                "instead of PHOTFLAM and PHOTPLAM! Potential ST mags used here!"
+                f"Using ZEROPNT from header for {band_data.filt_name} "
+                "instead of PHOTFLAM and PHOTPLAM! Potential ST mags "
+                "used here!"
             )
         else:
-            err_message = f"{self.__class__.__name__} data for {band_data.filt_name}" + \
-                " must contain either 'ZEROPNT' or 'PHOTFLAM' and 'PHOTPLAM' " + \
-                "in its header to calculate its ZP!" # or 'BUNIT'=MJy/sr 
+            err_message = (
+                f"{self.__class__.__name__} data for {band_data.filt_name}"
+                " must contain either 'ZEROPNT' or 'PHOTFLAM' and "
+                "'PHOTPLAM' in its header to calculate its ZP!"
+            )  # or 'BUNIT'=MJy/sr
             galfind_logger.critical(err_message)
             raise (Exception(err_message))
         return ZP
 
-    def make_model_psf(self: Self, band_data: Band_Data, size: u.Quantity = 0.96 * u.arcsec) -> Type[PSF_Base]:
+    def make_model_psf(
+        self: Self, band_data: Band_Data, size: u.Quantity = 0.96 * u.arcsec
+    ) -> Type[PSF_Base]:
         """Model PSF construction not supported for HST/ACS-SBC."""
-        raise NotImplementedError("Model PSF generation is not supported for HST/ACS-SBC")
+        raise NotImplementedError(
+            "Model PSF generation is not supported for HST/ACS-SBC"
+        )
 
     def make_empirical_PSF(self: Self, band_data: Band_Data) -> Type[PSF_Base]:
         pass
@@ -791,7 +831,7 @@ class ACS_WFC(Instrument, funcs.Singleton):
             "F502N",
             "FR505N",
             "F555W",
-            #"FR551N",
+            # "FR551N",
             "F550M",
             "F606W",
             "FR601N",
@@ -801,9 +841,9 @@ class ACS_WFC(Instrument, funcs.Singleton):
             "F658N",
             "F660N",
             "FR716N",
-            #"POL_UV",
+            # "POL_UV",
             "G800L",
-            #"POL_V",
+            # "POL_V",
             "F775W",
             "FR782N",
             "F814W",
@@ -825,8 +865,9 @@ class ACS_WFC(Instrument, funcs.Singleton):
 
     @property
     def ZP_keys(self) -> List[str]:
-        """`list` of `str`: FITS header keywords used to calculate the zero-point ('PHOTFLAM', 'PHOTPLAM', 'ZEROPNT')."""
-        return ["PHOTFLAM", "PHOTPLAM", "ZEROPNT"] # or 'BUNIT'=MJy/sr
+        """`list` of `str`: FITS header keywords used to calculate the
+        zero-point ('PHOTFLAM', 'PHOTPLAM', 'ZEROPNT')."""
+        return ["PHOTFLAM", "PHOTPLAM", "ZEROPNT"]  # or 'BUNIT'=MJy/sr
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
         """Calculate the AB magnitude zero-point from the image header.
@@ -862,8 +903,9 @@ class ACS_WFC(Instrument, funcs.Singleton):
         elif "ZEROPNT" in im_header:
             ZP = im_header["ZEROPNT"]
             galfind_logger.debug(
-                f"Using ZEROPNT from header for {band_data.filt_name} " + \
-                "instead of PHOTFLAM and PHOTPLAM! Potential ST mags used here!"
+                f"Using ZEROPNT from header for {band_data.filt_name} "
+                "instead of PHOTFLAM and PHOTPLAM! Potential ST mags "
+                "used here!"
             )
         # DO NOT UNCOMMENT! REGULARLY CAUSES ZP ERRORS
         # elif "BUNIT" in im_header:
@@ -873,9 +915,11 @@ class ACS_WFC(Instrument, funcs.Singleton):
         #         (band_data.pix_scale.to(u.rad).value ** 2) * u.MJy.to(u.Jy)
         #     ) + u.Jy.to(u.ABmag)
         else:
-            err_message = f"ACS_WFC data for {band_data.filt_name} " + \
-                "must contain either 'PHOTFLAM' and 'PHOTPLAM' or 'ZEROPNT'" + \
-                "in its header to calculate its ZP!" # or 'BUNIT'=MJy/sr 
+            err_message = (
+                f"ACS_WFC data for {band_data.filt_name} "
+                + "must contain either 'PHOTFLAM' and 'PHOTPLAM' or 'ZEROPNT'"
+                + "in its header to calculate its ZP!"
+            )  # or 'BUNIT'=MJy/sr
             galfind_logger.critical(err_message)
             raise (Exception(err_message))
         return ZP
@@ -896,7 +940,9 @@ class ACS_WFC(Instrument, funcs.Singleton):
         `str`
             Path to the ACS/WFC encircled energy text file.
         """
-        return f"{config['PSF']['PSF_DIR']}/{self.__class__.__name__}/encircled_energy/ACS_WFC_EE.txt"
+        psf_dir = config["PSF"]["PSF_DIR"]
+        class_name = self.__class__.__name__
+        return f"{psf_dir}/{class_name}/encircled_energy/ACS_WFC_EE.txt"
 
     def get_psf_norm(
         self: Self,
@@ -960,10 +1006,11 @@ class ACS_WFC(Instrument, funcs.Singleton):
             The constructed model PSF object.
         """
         from . import PSF_Base
+
         self._make_eec(band_data)
         return PSF_Base(
             self.get_eec_path(band_data),
-            name = f"{band_data.filt_name}_model",
+            name=f"{band_data.filt_name}_model",
             **kwargs,
         )
 
@@ -976,37 +1023,38 @@ class ACS_WFC(Instrument, funcs.Singleton):
             galfind_logger.info(
                 f"Creating EEC data for {repr(band_data.filt)} at {eec_path}"
             )
-            txt_filepath = self.get_psf_norm_path(band_data = band_data)
-            assert Path(txt_filepath).is_file(), \
-                galfind_logger.critical(
-                    f"EE data for {self.__class__.__name__} not found in {txt_filepath}!"
-                )
-            eec_tab = Table.read(txt_filepath, format = "ascii.commented_header")
+            txt_filepath = self.get_psf_norm_path(band_data=band_data)
+            assert Path(txt_filepath).is_file(), galfind_logger.critical(
+                f"EE data for {self.__class__.__name__} not found in "
+                f"{txt_filepath}!"
+            )
+            eec_tab = Table.read(txt_filepath, format="ascii.commented_header")
             eec_tab = eec_tab[eec_tab["band"] == band_data.filt.filt_name]
-            assert len(eec_tab) == 1, \
-                galfind_logger.critical(
-                    f"EE data for {repr(band_data.filt)} not found in {txt_filepath}!"
-                )
-            radii = np.zeros(len(eec_tab.colnames) - 1) # * u.arcsec
+            assert len(eec_tab) == 1, galfind_logger.critical(
+                f"EE data for {repr(band_data.filt)} not found in "
+                f"{txt_filepath}!"
+            )
+            radii = np.zeros(len(eec_tab.colnames) - 1)  # * u.arcsec
             eec = np.zeros(len(eec_tab.colnames) - 1)
             for i, col in enumerate(eec_tab.colnames):
                 if col != "band":
-                    radii[i - 1] = float(col) * 0.05 # * u.arcsec
+                    radii[i - 1] = float(col) * 0.05  # * u.arcsec
                     eec[i - 1] = eec_tab[col]
             radii = radii.astype(np.float32)
             eec = eec.astype(np.float32)
             # save eec data to h5 file
             funcs.make_dirs(eec_path)
             with h5py.File(eec_path, "w") as f:
-                f.create_dataset("radii", data = radii, compression = "gzip")
-                f.create_dataset("eec", data = eec, compression = "gzip")
+                f.create_dataset("radii", data=radii, compression="gzip")
+                f.create_dataset("eec", data=eec, compression="gzip")
                 galfind_logger.info(
                     f"Saved EEC data for {repr(band_data.filt)} to {eec_path}"
                 )
             funcs.change_file_permissions(eec_path)
         else:
             galfind_logger.debug(
-                f"EEC data for {repr(band_data.filt)} already exists at {eec_path}!"
+                f"EEC data for {repr(band_data.filt)} already exists at "
+                f"{eec_path}!"
             )
 
 
@@ -1051,11 +1099,14 @@ class WFC3_IR(Instrument, funcs.Singleton):
 
     @property
     def ZP_keys(self) -> List[str]:
-        """`list` of `str`: FITS header keywords required to calculate the zero-point (empty; WFC3-IR uses fixed per-filter zero-points)."""
+        """`list` of `str`: FITS header keywords required to calculate
+        the zero-point (empty; WFC3-IR uses fixed per-filter
+        zero-points)."""
         return []
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
-        """Calculate the AB magnitude zero-point from a fixed per-filter lookup table.
+        """Calculate the AB magnitude zero-point from a fixed
+        per-filter lookup table.
 
         Uses tabulated AB zero-points from Appendix A of WFC3 ISR
         2020-10, valid for the ``F098M``, ``F105W``, ``F110W``,
@@ -1148,7 +1199,8 @@ class VISTA(Instrument, funcs.Singleton):
 
     @property
     def ZP_keys(self) -> List[str]:
-        """`list` of `str`: FITS header keywords used to calculate the zero-point (``'PHOTZP'``)."""
+        """`list` of `str`: FITS header keywords used to calculate the
+        zero-point (``'PHOTZP'``)."""
         return ["PHOTZP"]
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
@@ -1216,14 +1268,15 @@ class MegaCam(Instrument, funcs.Singleton):
             "i_2",
             "z",
             "z_1",
-            #"gri",
+            # "gri",
         ]
         self.SVO_name = "MegaCam"
         super().__init__(CFHT(), Megacam_filt_names)
 
     @property
     def ZP_keys(self) -> List[str]:
-        """`list` of `str`: FITS header keywords used to calculate the zero-point (``'PHOTZP'``)."""
+        """`list` of `str`: FITS header keywords used to calculate the
+        zero-point (``'PHOTZP'``)."""
         return ["PHOTZP"]
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
@@ -1307,7 +1360,8 @@ class HSC(Instrument, funcs.Singleton):
 
     @property
     def ZP_keys(self) -> List[str]:
-        """`list` of `str`: FITS header keywords used to calculate the zero-point (``'PHOTZP'``)."""
+        """`list` of `str`: FITS header keywords used to calculate the
+        zero-point (``'PHOTZP'``)."""
         return ["PHOTZP"]
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
@@ -1363,15 +1417,14 @@ class VIS(Instrument, funcs.Singleton):
     """
 
     def __init__(self) -> None:
-        VIS_filt_names = [
-            "vis"
-        ]
+        VIS_filt_names = ["vis"]
         self.SVO_name = "VIS"
         super().__init__(Euclid(), VIS_filt_names)
 
     @property
     def ZP_keys(self) -> List[str]:
-        """`list` of `str`: FITS header keywords used to calculate the zero-point (``'PHOTZP'``)."""
+        """`list` of `str`: FITS header keywords used to calculate the
+        zero-point (``'PHOTZP'``)."""
         return ["PHOTZP"]
 
     def calc_ZP(self: Self, band_data: Type[Band_Data_Base]) -> u.Quantity:
@@ -1436,7 +1489,8 @@ class NISP(Instrument, funcs.Singleton):
 
     @property
     def ZP_keys(self) -> List[str]:
-        """`list` of `str`: FITS header keywords used to calculate the zero-point (``'PHOTZP'``)."""
+        """`list` of `str`: FITS header keywords used to calculate the
+        zero-point (``'PHOTZP'``)."""
         return ["PHOTZP"]
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
@@ -1502,7 +1556,8 @@ class IRAC(Instrument, funcs.Singleton):
 
     @property
     def ZP_keys(self) -> List[str]:
-        """`list` of `str`: FITS header keywords used to calculate the zero-point (``'PHOTZP'``)."""
+        """`list` of `str`: FITS header keywords used to calculate the
+        zero-point (``'PHOTZP'``)."""
         return ["PHOTZP"]
 
     def calc_ZP(self, band_data: Type[Band_Data_Base]) -> u.Quantity:
@@ -1543,7 +1598,7 @@ class IRAC(Instrument, funcs.Singleton):
 
 # Instrument attributes
 
-# TODO: Generalize this so the user does not 
+# TODO: Generalize this so the user does not
 # have to update upon the addition of a new instrument
 expected_instr_bands = {
     "ACS_WFC": ACS_WFC().filt_names,
@@ -1570,4 +1625,3 @@ expected_instr_facilities = {
     "NISP": "Euclid",
     "IRAC": "Spitzer",
 }
-

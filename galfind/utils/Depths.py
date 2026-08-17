@@ -6,32 +6,43 @@ identifying unmasked regions and calculating depth measurements.
 
 from __future__ import annotations
 
+import logging
+import os
+import time
+from copy import deepcopy
+from pathlib import Path
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    List,
+    NoReturn,
+    Optional,
+    Tuple,
+    Union,
+)
+
+import astropy.units as u
+
 # import automask as am
 import astropy.visualization as vis
+import h5py
 import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
 import numpy as np
-import h5py
-import time
-import astropy.units as u
 from astropy.coordinates import SkyCoord
-from copy import deepcopy
-from pathlib import Path
 from astropy.io import fits
 from astropy.table import Table, vstack
-import os
-import logging
 from astropy.visualization.mpl_normalize import ImageNormalize
 from matplotlib import cm
 from matplotlib.colors import LinearSegmentedColormap
 from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
 from numba import jit
+from numpy.typing import NDArray
 from photutils.aperture import CircularAperture
 from skimage import morphology
 from sklearn.cluster import KMeans
 from tqdm import tqdm
-from numpy.typing import NDArray
-from typing import Optional, Union, Tuple, Dict, List, Any, NoReturn, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from . import Band_Data_Base, Data, Mask_Selector, Region_Selector
@@ -42,8 +53,9 @@ except ImportError:
     from typing_extensions import Type  # python > 3.7 AND python < 3.11
 
 # install cv2, skimage, sklearn
-from . import useful_funcs_austind as funcs, Masking
 from .. import config, galfind_logger
+from . import Masking
+from . import useful_funcs_austind as funcs
 
 
 def do_photometry(image, xy_coords, radius_pixels):
@@ -67,8 +79,21 @@ def do_photometry(image, xy_coords, radius_pixels):
     aper_sums, _ = aper.do_photometry(image, error=None)
     return aper_sums
 
-def make_grid_force(data, mask, radius, scatter_size, pixel_scale=0.03, plot=False, ax=None, distance_to_mask=50, n_retry_box=5, grid_offset_times=4):
-    """Place a grid of non-overlapping circular apertures in unmasked regions of an image.
+
+def make_grid_force(
+    data,
+    mask,
+    radius,
+    scatter_size,
+    pixel_scale=0.03,
+    plot=False,
+    ax=None,
+    distance_to_mask=50,
+    n_retry_box=5,
+    grid_offset_times=4,
+):
+    """Place a grid of non-overlapping circular apertures in
+    unmasked regions of an image.
 
     Similar to `make_grid`, but retries placement of each candidate
     aperture position (perturbing it randomly within `scatter_size`) up
@@ -121,107 +146,180 @@ def make_grid_force(data, mask, radius, scatter_size, pixel_scale=0.03, plot=Fal
         apertures that were placed).
     """
     import cv2
+
     radius_pixels = radius / pixel_scale
     scatter_size_pixels = scatter_size / pixel_scale
-    
+
     mask = mask.astype(np.uint8)
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (distance_to_mask, distance_to_mask))
+    kernel = cv2.getStructuringElement(
+        cv2.MORPH_ELLIPSE, (distance_to_mask, distance_to_mask)
+    )
     mask = cv2.dilate(mask, kernel, iterations=1)
     mask = mask.astype(bool)
-    
+
     placed_apertures_mask = np.zeros_like(mask)
-    
-    shifts = [(0, 0), (0, scatter_size_pixels/2), (scatter_size_pixels/2, 0), (scatter_size_pixels/2, scatter_size_pixels/2)]
-    shift = lambda i: shifts[i % 4] if i < 4 else (shifts[i % 4][0] * (i // 4), shifts[i % 4][1] * (i // 4))
-    
+
+    shifts = [
+        (0, 0),
+        (0, scatter_size_pixels / 2),
+        (scatter_size_pixels / 2, 0),
+        (scatter_size_pixels / 2, scatter_size_pixels / 2),
+    ]
+
+    def shift(i):
+        return (
+            shifts[i % 4]
+            if i < 4
+            else (shifts[i % 4][0] * (i // 4), shifts[i % 4][1] * (i // 4))
+        )
+
     non_overlapping_xy = []
 
     for i in range(grid_offset_times):
         x_shift, y_shift = shift(i)
-        
-        xy = np.mgrid[radius_pixels + scatter_size_pixels+x_shift:data.shape[1]-(radius_pixels + scatter_size_pixels):2*(radius_pixels + scatter_size_pixels),
-                     radius_pixels + scatter_size_pixels:data.shape[0]-(radius_pixels + scatter_size_pixels)+y_shift:2*(radius_pixels+scatter_size_pixels)]
-        
+
+        xy = np.mgrid[
+            radius_pixels + scatter_size_pixels + x_shift : data.shape[1]
+            - (radius_pixels + scatter_size_pixels) : 2
+            * (radius_pixels + scatter_size_pixels),
+            radius_pixels + scatter_size_pixels : data.shape[0]
+            - (radius_pixels + scatter_size_pixels)
+            + y_shift : 2 * (radius_pixels + scatter_size_pixels),
+        ]
+
         xy = xy.reshape(2, -1).T
-        scatter = np.random.uniform(low=-scatter_size_pixels, high=scatter_size_pixels, size=(xy.shape[0], 2))
+        scatter = np.random.uniform(
+            low=-scatter_size_pixels,
+            high=scatter_size_pixels,
+            size=(xy.shape[0], 2),
+        )
         xy_scatter = xy + scatter
-        
-        for pos, (x, y) in tqdm(enumerate(xy_scatter), disable=galfind_logger.getEffectiveLevel() > logging.INFO):
+
+        for pos, (x, y) in tqdm(
+            enumerate(xy_scatter),
+            disable=galfind_logger.getEffectiveLevel() > logging.INFO,
+        ):
             count = 0
             done = False
-            
+
             while count < n_retry_box and not done:
-                y_min = int(np.floor(y-radius_pixels))
-                y_max = int(np.ceil(y+radius_pixels))
-                x_min = int(np.floor(x-radius_pixels))
-                x_max = int(np.ceil(x+radius_pixels))
-                
-                if y_min < 0 or x_min < 0 or y_max > mask.shape[0] or x_max > mask.shape[1]:
+                y_min = int(np.floor(y - radius_pixels))
+                y_max = int(np.ceil(y + radius_pixels))
+                x_min = int(np.floor(x - radius_pixels))
+                x_max = int(np.ceil(x + radius_pixels))
+
+                if (
+                    y_min < 0
+                    or x_min < 0
+                    or y_max > mask.shape[0]
+                    or x_max > mask.shape[1]
+                ):
                     break
-                    
+
                 mask_cutout = mask[y_min:y_max, x_min:x_max]
                 placed_cutout = placed_apertures_mask[y_min:y_max, x_min:x_max]
-                
+
                 y_center_internal = mask_cutout.shape[0] // 2
                 x_center_internal = mask_cutout.shape[1] // 2
-                
+
                 delta_shape = mask_cutout.shape[0] - mask_cutout.shape[1]
-                if delta_shape != 0 and abs(delta_shape) >= scatter_size_pixels:
+                if (
+                    delta_shape != 0
+                    and abs(delta_shape) >= scatter_size_pixels
+                ):
                     break
-                    
-                y_temp, x_temp = np.ogrid[-y_center_internal:mask_cutout.shape[0]-y_center_internal, 
-                                        -x_center_internal:mask_cutout.shape[1]-x_center_internal]
+
+                y_temp, x_temp = np.ogrid[
+                    -y_center_internal : mask_cutout.shape[0]
+                    - y_center_internal,
+                    -x_center_internal : mask_cutout.shape[1]
+                    - x_center_internal,
+                ]
                 inside_pixels = x_temp**2 + y_temp**2 <= radius_pixels**2
-                
-                if not np.any(mask_cutout[inside_pixels]) and not np.any(placed_cutout[inside_pixels]):
+
+                if not np.any(mask_cutout[inside_pixels]) and not np.any(
+                    placed_cutout[inside_pixels]
+                ):
                     non_overlapping_xy.append((x, y))
-                    
+
                     # Create circle mask with exact dimensions
-                    size = int(2 * radius_pixels + 1)
-                    y_grid, x_grid = np.ogrid[-radius_pixels:radius_pixels+1, -radius_pixels:radius_pixels+1]
+                    int(2 * radius_pixels + 1)
+                    y_grid, x_grid = np.ogrid[
+                        -radius_pixels : radius_pixels + 1,
+                        -radius_pixels : radius_pixels + 1,
+                    ]
                     circle_mask = x_grid**2 + y_grid**2 <= radius_pixels**2
-                    
+
                     # Calculate exact region to update
                     y_center, x_center = int(y), int(x)
                     y_start = max(0, y_center - int(radius_pixels))
-                    y_end = min(placed_apertures_mask.shape[0], y_center + int(radius_pixels) + 1)
+                    y_end = min(
+                        placed_apertures_mask.shape[0],
+                        y_center + int(radius_pixels) + 1,
+                    )
                     x_start = max(0, x_center - int(radius_pixels))
-                    x_end = min(placed_apertures_mask.shape[1], x_center + int(radius_pixels) + 1)
-                    
+                    x_end = min(
+                        placed_apertures_mask.shape[1],
+                        x_center + int(radius_pixels) + 1,
+                    )
+
                     # Extract the exact portion of circle_mask needed
                     mask_y_start = int(radius_pixels - (y_center - y_start))
                     mask_y_end = int(radius_pixels + (y_end - y_center))
                     mask_x_start = int(radius_pixels - (x_center - x_start))
                     mask_x_end = int(radius_pixels + (x_end - x_center))
-                    
-                    placed_apertures_mask[y_start:y_end, x_start:x_end] |= \
-                        circle_mask[mask_y_start:mask_y_end, mask_x_start:mask_x_end]
+
+                    placed_apertures_mask[y_start:y_end, x_start:x_end] |= (
+                        circle_mask[
+                            mask_y_start:mask_y_end, mask_x_start:mask_x_end
+                        ]
+                    )
                     done = True
                 else:
-                    x, y = xy_scatter[pos] + np.random.uniform(low=-scatter_size_pixels, high=scatter_size_pixels, size=2)
+                    x, y = xy_scatter[pos] + np.random.uniform(
+                        low=-scatter_size_pixels,
+                        high=scatter_size_pixels,
+                        size=2,
+                    )
                     count += 1
-    
+
     if plot:
         if ax is None:
             fig, ax = plt.subplots()
-            
-        stretch = vis.CompositeStretch(vis.LogStretch(), vis.ContrastBiasStretch(contrast=30, bias=0.08))    
+
+        stretch = vis.CompositeStretch(
+            vis.LogStretch(), vis.ContrastBiasStretch(contrast=30, bias=0.08)
+        )
         norm = ImageNormalize(stretch=stretch, vmin=0.001, vmax=10)
-        
-        ax.imshow(data, cmap='Greys', origin='lower', interpolation='None', norm=norm)
-        ax.imshow(mask, cmap='Reds', alpha=0.5, origin='lower', interpolation='None')
-        ax.imshow(placed_apertures_mask, cmap='Blues', alpha=0.5, origin='lower', interpolation='None')
-        
+
+        ax.imshow(
+            data, cmap="Greys", origin="lower", interpolation="None", norm=norm
+        )
+        ax.imshow(
+            mask, cmap="Reds", alpha=0.5, origin="lower", interpolation="None"
+        )
+        ax.imshow(
+            placed_apertures_mask,
+            cmap="Blues",
+            alpha=0.5,
+            origin="lower",
+            interpolation="None",
+        )
+
         for x, y in non_overlapping_xy:
-            circle = plt.Circle((x, y), radius_pixels, color='r', fill=False)
-            ax.add_artist(circle)   
-            
+            circle = plt.Circle((x, y), radius_pixels, color="r", fill=False)
+            ax.add_artist(circle)
+
         plt.show()
-        
-    possible_pos = ((data.shape[0] * data.shape[1]) - np.sum(mask)) / (np.pi * radius_pixels ** 2)
+
+    possible_pos = ((data.shape[0] * data.shape[1]) - np.sum(mask)) / (
+        np.pi * radius_pixels**2
+    )
     placing_efficiency = len(non_overlapping_xy) / possible_pos
-    galfind_logger.info(f"Placing efficiency = {100 * placing_efficiency:.2f}%")
-    
+    galfind_logger.info(
+        f"Placing efficiency = {100 * placing_efficiency:.2f}%"
+    )
+
     return non_overlapping_xy, placing_efficiency
 
 
@@ -242,6 +340,7 @@ def make_grid(
     pixel_scale: float in arcseconds/pixel
     """
     import cv2
+
     radius_pixels = radius / pixel_scale
     scatter_size_pixels = scatter_size / pixel_scale
 
@@ -267,13 +366,14 @@ def make_grid(
     )
 
     xy = xy + scatter
-    #print(xy.shape)
+    # print(xy.shape)
 
     mask = mask.astype(np.uint8)
 
     kernel = cv2.getStructuringElement(
         cv2.MORPH_ELLIPSE, (distance_to_mask, distance_to_mask)
-    )  # set up a circle of radius distance_to_mask pixels to mask around location of 0's
+    )  # set up a circle of radius distance_to_mask pixels to mask
+    # around location of 0's
     mask = cv2.dilate(
         mask, kernel, iterations=1
     )  # dilate mask using the circle
@@ -293,37 +393,43 @@ def make_grid(
             non_overlapping_xy.extend(
                 [(x, y)]
             )  # Add non-overlapping coordinates to the list
-    #print("Number of non-overlapping apertures:", len(non_overlapping_xy))
+    # print("Number of non-overlapping apertures:", len(non_overlapping_xy))
 
-    possible_pos = \
-        ((data.shape[0] * data.shape[1]) - np.sum(mask)) / \
-        (np.pi * radius_pixels ** 2)
+    possible_pos = ((data.shape[0] * data.shape[1]) - np.sum(mask)) / (
+        np.pi * radius_pixels**2
+    )
     placing_efficiency = len(non_overlapping_xy) / possible_pos
 
-    plot=True
+    plot = True
     # Plot the circles using matplotlib
     if plot:
-        if ax == None:
+        if ax is None:
             fig, ax = plt.subplots()
 
-        stretch = vis.CompositeStretch(vis.LogStretch(), vis.ContrastBiasStretch(contrast=30, bias=0.08))    
+        stretch = vis.CompositeStretch(
+            vis.LogStretch(), vis.ContrastBiasStretch(contrast=30, bias=0.08)
+        )
         norm = ImageNormalize(stretch=stretch, vmin=0.001, vmax=10)
 
-        ax.imshow(data, cmap='Greys', origin='lower', interpolation='None',
-        norm=norm)
+        ax.imshow(
+            data, cmap="Greys", origin="lower", interpolation="None", norm=norm
+        )
 
         # imshow mask
-        ax.imshow(mask, cmap='Reds', alpha=0.5, origin='lower', interpolation='None')
+        ax.imshow(
+            mask, cmap="Reds", alpha=0.5, origin="lower", interpolation="None"
+        )
 
         for x, y in non_overlapping_xy:
-            circle = plt.Circle((x, y), radius_pixels, color='r', fill=False)
-            ax.add_artist(circle)   
+            circle = plt.Circle((x, y), radius_pixels, color="r", fill=False)
+            ax.add_artist(circle)
 
         plt.show()
 
-
-    #print(scatter_size_pixels, distance_to_mask)
-    galfind_logger.info(f"Placing efficiency = {100 * placing_efficiency:.2f}%")
+    # print(scatter_size_pixels, distance_to_mask)
+    galfind_logger.info(
+        f"Placing efficiency = {100 * placing_efficiency:.2f}%"
+    )
     return non_overlapping_xy, placing_efficiency
 
 
@@ -359,17 +465,25 @@ def calc_depths(
     mode: str - 'rolling' or 'n_nearest'
     sigma_level: float - the number of sigmas to use for the depth calculation
     step_size: int - the number of pixels to subgrid the image
-    region_radius_used_pix: int - the radius of the window in pixels - only used if mode is 'rolling'
+    region_radius_used_pix: int - the radius of the window in pixels
+    - only used if mode is 'rolling'
     zero_point: float - the zero point for the depth calculation
-    min_number_of_values: int - the minimum number of values required to calculate the depth if the mode is 'rolling'
-    n_nearest: int - the number of nearest neighbors to use for the depth calculation - only used if mode is 'n_nearest'
-    n_split: int - the number of regions to split the depths into using KMeans clustering
+    min_number_of_values: int - the minimum number of values required
+    to calculate the depth if the mode is 'rolling'
+    n_nearest: int - the number of nearest neighbors to use for the
+    depth calculation - only used if mode is 'n_nearest'
+    n_split: int - the number of regions to split the depths into
+    using KMeans clustering
     split_depth_min_size: int - the minimum size of the regions
-    split_depths_factor - int - the factor to use for the binning of the weight map
-    wht_data: 2D numpy array - the weight data - only used if split_depths is True
+    split_depths_factor - int - the factor to use for the binning of the
+    weight map
+    wht_data: 2D numpy array - the weight data - only used if split_depths
+    is True
     coord_type: str - 'sky' or 'pixel'
-    wcs: WCS object - the wcs object to use for the conversion if coord_type is 'sky'
-    diagnostic_id: int - the position of a galaxy in the catalogue to show the diagnostic plot
+    wcs: WCS object - the wcs object to use for the conversion if
+    coord_type is 'sky'
+    diagnostic_id: int - the position of a galaxy in the catalogue
+    to show the diagnostic plot
     plot: bool - whether the nmad grid is plotted or not
     """
     print("This is the experimental numba version")
@@ -396,9 +510,10 @@ def calc_depths(
     if wht_data is not None and split_depths:
         if provide_labels is None:
             print("Obtaining labels...")
-            assert (
-                np.shape(wht_data) == np.shape(img_data)
-            ), f"The weight map must have the same shape as the image {np.shape(wht_data)} != {np.shape(img_data)}"
+            assert np.shape(wht_data) == np.shape(img_data), (
+                "The weight map must have the same shape as the "
+                f"image {np.shape(wht_data)} != {np.shape(img_data)}"
+            )
             labels_final, weight_map_smoothed = cluster_wht_map(
                 wht_data,
                 num_regions=n_split,
@@ -425,7 +540,8 @@ def calc_depths(
         # Correct the coordinates if they are in sky coordinates
 
         if coord_type == "sky" and wcs is not None:
-            # This doesn't work because footprint of the image is not the same as the footprint of the catalogue
+            # This doesn't work because footprint of the image is
+            # not the same as the footprint of the catalogue
             cat_x_col, cat_y_col = "ALPHA_J2000", "DELTA_J2000"
             ra_pix, dec_pix = wcs.all_world2pix(
                 catalogue[cat_x_col], catalogue[cat_y_col], 0
@@ -469,14 +585,19 @@ def calc_depths(
         )
         label_size_grid[:] = np.nan
         # print('Grid size:', grid_size)
-        for i in tqdm(range(0, grid_size[0], step_size), disable = galfind_logger.getEffectiveLevel() > logging.INFO):
+        for i in tqdm(
+            range(0, grid_size[0], step_size),
+            disable=galfind_logger.getEffectiveLevel() > logging.INFO,
+        ):
             for j in range(0, grid_size[1], step_size):
                 setnan = False
                 if mask is not None:
                     # Don't calculate the depth if the coordinate is masked
                     try:
-                        #  NOTE np.shape on a 2D array returns (y, x) not (x, y)
-                        # So references to an x, y coordinate in the array should be [y, x]
+                        # NOTE np.shape on a 2D array returns (y, x) not
+                        (x, y)
+                        # So references to an x, y coordinate in the
+                        # array should be [y, x]
                         if mask[j, i] == 1.0:
                             depth = np.nan
                             setnan = True
@@ -491,7 +612,8 @@ def calc_depths(
                     j_label = np.clip(j, 0, y_max - 1)
                     i_label = np.clip(i, 0, x_max - 1)
                     #  NOTE np.shape on a 2D array returns (y, x) not (x, y)
-                    # So references to an x, y coordinate in the array should be [y, x]
+                    # So references to an x, y coordinate in the
+                    # array should be [y, x]
                     label = labels_final[
                         j_label.astype(int), i_label.astype(int)
                     ]
@@ -503,21 +625,24 @@ def calc_depths(
 
                     label_name = label
                     if mode == "rolling":
-                        # Extract the neighboring Y values within the circular window
-                        # Ensure label values of regions are the same as label
+                        # Extract the neighboring Y values within
+                        # the circular window
+                        # Ensure label values of regions are the
+                        # same as label
                         neighbor_values = fluxes_i[
                             (distances_i <= region_radius_used_pix)
                             & (filter_labels == label)
                         ]
-                        # neighbor_values = fluxes[distances <= region_radius_used_pix]
+                        # neighbor_values = fluxes[
+                        #     distances <= region_radius_used_pix]
                     elif mode == "n_nearest":
                         if len(distances_i) < n_nearest:
                             nearest_indices = np.arange(len(distances_i))
                             min_number_of_values = len(distances_i)
                         else:
-                            nearest_indices = np.argpartition(distances_i, n_nearest)[
-                                :n_nearest
-                            ]
+                            nearest_indices = np.argpartition(
+                                distances_i, n_nearest
+                            )[:n_nearest]
                             min_number_of_values = n_nearest
                         neighbor_values = fluxes_i[nearest_indices]
 
@@ -531,7 +656,8 @@ def calc_depths(
                     )
 
                     # NOTE np.shape on a 2D array returns (y, x) not (x, y)
-                    # So references to an x, y coordinate in the array should be [y, x]
+                    # So references to an x, y coordinate in the
+                    # array should be [y, x]
 
                     num_sized_grid[j // step_size, i // step_size] = (
                         num_of_apers
@@ -556,7 +682,11 @@ def calc_depths(
         depths, diagnostic, cat_labels = [], [], []
         count = 0
         print("Total number", len(cat_x))
-        for i, j in tqdm(zip(cat_x, cat_y), total=len(cat_x), disable=galfind_logger.getEffectiveLevel() > logging.INFO):
+        for i, j in tqdm(
+            zip(cat_x, cat_y),
+            total=len(cat_x),
+            disable=galfind_logger.getEffectiveLevel() > logging.INFO,
+        ):
             # Check if the coordinate is outside the image or in the mask
             if i > x_max or i < 0 or j > y_max or j < 0:
                 depth = np.nan
@@ -564,10 +694,10 @@ def calc_depths(
                 label = np.nan
                 depth_diagnostic = np.nan
             else:
-
                 # distances = np.sqrt((x - i)**2 + (y - j)**2)
                 # NOTE np.shape on a 2D array returns (y, x) not (x, y)
-                # So references to an x, y coordinate in the array should be [y, x]
+                # So references to an x, y coordinate in the array should
+                # be[y, x]
 
                 distances = numba_distances(x, y, i, j)
                 # Get the label of interest
@@ -590,17 +720,23 @@ def calc_depths(
                     if len(distances_i) < n_nearest:
                         nearest_indices = np.arange(len(distances_i))
                         min_number_of_values = len(distances_i)
-                    # print(labels_final.dtype, y_label.dtype, x_label.dtype, fluxes.dtype, n_nearest.dtype, label.dtype)
-                    # neighbor_values, depth_diagnostic = numba_n_nearest_filter(fluxes_i, distances_i, n_nearest)
+                    # print(labels_final.dtype, y_label.dtype,
+                    # x_label.dtype, fluxes.dtype, n_nearest.dtype,
+                    # label.dtype)
+                    # neighbor_values, depth_diagnostic =
+                    # numba_n_nearest_filter(fluxes_i, distances_i,
+                    # n_nearest)
                     else:
-                        nearest_indices = np.argpartition(distances_i, n_nearest)[
-                            :n_nearest
-                        ]
+                        nearest_indices = np.argpartition(
+                            distances_i, n_nearest
+                        )[:n_nearest]
                         min_number_of_values = n_nearest
                     neighbor_values = fluxes_i[nearest_indices]
 
                     # Depth diagnostic is distance to n_nearest
-                    depth_diagnostic = min_number_of_values  # distances_i[np.argsort(distances_i[nearest_indices])][-1]
+                    depth_diagnostic = min_number_of_values
+                    # distances_i[np.argsort(
+                    # distances_i[nearest_indices])][-1]
 
                     # if plot:
                     #     if count == diagnostic_id:
@@ -678,7 +814,8 @@ def numba_distances(x=np.array([]), y=np.array([]), x_coords=1, y_coords=1):
         Euclidean distance from each `(x, y)` point to
         `(x_coords, y_coords)`.
     """
-    # distances = np.sqrt((x_coords[:, None] - x)**2 + (y_coords[:, None]- y)**2)
+    # distances = np.sqrt((x_coords[:, None] - x)**2
+    # + (y_coords[:, None] - y)**2)
     # return distances
     distances = np.zeros_like(x)
     for i in range(len(x)):
@@ -743,8 +880,10 @@ def make_ds9_region_file(
     radius: float - the radius of the circles in units of sky or pixels
     filename: str - the name of the file to write the regions to
     coordinate_type: str - 'sky' or 'pixel'
-    convert: bool - whether to convert the coordinates to the other coordinate type
-    wcs = WCS object - the wcs object to use for the conversion if convert is True
+    convert: bool - whether to convert the coordinates to the other
+    coordinate type
+    wcs = WCS object - the wcs object to use for the conversion if convert
+    is True
     """
     # If coordinate shape is (2, n) then we have to transpose it
     if np.shape(coordinates)[-1] == 2:
@@ -768,7 +907,12 @@ def make_ds9_region_file(
 
     with open(filename, "w") as f:
         f.write(
-            f'# Region file format: DS9 version 4.1\nglobal color=green dashlist=8 3 width=1 font="helvetica 10 normal roman" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1\n{coord_type}\n'
+            "# Region file format: DS9 version 4.1\n"
+            "global color=green dashlist=8 3 width=1 "
+            'font="helvetica 10 normal roman" select=1 '
+            "highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 "
+            "include=1 source=1\n"
+            f"{coord_type}\n"
         )
         for xi, yi in zip(x, y):
             f.write(f"circle({xi},{yi},{radius:.5f}{radius_unit})\n")
@@ -798,8 +942,12 @@ def load_xy_from_ds9_region_file(filename: str):
         lines = f.readlines()
     f.close()
     xy = [
-        (float(line.split("(")[1].split(",")[0]), float(line.split("(")[1].split(",")[1]))
-        for line in lines if line.startswith("circle")
+        (
+            float(line.split("(")[1].split(",")[0]),
+            float(line.split("(")[1].split(",")[1]),
+        )
+        for line in lines
+        if line.startswith("circle")
     ]
     return xy
 
@@ -807,7 +955,8 @@ def load_xy_from_ds9_region_file(filename: str):
 def cluster_wht_map(
     wht_map, num_regions="auto", bin_factor=1, min_size=10000, plot=False
 ):
-    """Segment a weight map into contiguous depth regions using KMeans clustering.
+    """Segment a weight map into contiguous depth regions using KMeans
+    clustering.
 
     Down-weights outliers via percentile clipping, optionally resizes
     (bins) the weight map for speed, clusters pixel values into
@@ -852,7 +1001,7 @@ def cluster_wht_map(
     min_size = min_size // bin_factor**2
     if isinstance(wht_map, str):
         #
-        weight_map = fits.open(wht_map, ignore_missing_simple = True)
+        weight_map = fits.open(wht_map, ignore_missing_simple=True)
         # Check if we have multiple extensions
         if len(weight_map) > 1:
             weight_map = weight_map["WHT"].data
@@ -880,7 +1029,8 @@ def cluster_wht_map(
     )
     # Renormalize
 
-    # weight_map_smoothed = cv2.normalize(weight_map_smoothed, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
+    # weight_map_smoothed = cv2.normalize(weight_map_smoothed, None,
+    # 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
     percentiles = np.nanpercentile(weight_map_smoothed, [5, 95])
     weight_map_clipped = np.clip(
         weight_map_smoothed, percentiles[0], percentiles[1]
@@ -893,7 +1043,6 @@ def cluster_wht_map(
 
     weight_map_transformed[np.isnan(weight_map_transformed)] = 0
     labels_filled = []
-    iterations = 0
     if num_regions == "auto":
         num_regions_list = [1, 2, 3, 4]
     else:
@@ -932,7 +1081,6 @@ def cluster_wht_map(
         #     plt.axvline(num_regions, color="red", linestyle="--")
         #     plt.show()
         #     plt.close()
-    
 
     # Find best of doing it 15x
     kmeans = KMeans(n_clusters=num_regions, n_init=15)
@@ -948,7 +1096,8 @@ def cluster_wht_map(
         )
 
     else:
-        # Do this when you have more than 2 regions - doesn't work quite as well at the edges
+        # Do this when you have more than 2 regions - doesn't work
+        # quite as well at the edges
         labels_filled = morphology.area_closing(
             labels, area_threshold=min_size
         )
@@ -985,13 +1134,17 @@ def cluster_wht_map(
         print("Label", int(background_label), "is background")
         if num_regions == 2:
             print(
-                "No other regions detected, so no need to break depths into regions."
+                "No other regions detected, so no need to break "
+                + "depths into regions."
             )
             labels_filled = np.zeros_like(labels_filled)
 
-    # plt.imshow(weight_map_smoothed, cmap='Greys', origin='lower', interpolation='None')
-    # plt.imshow(labels_filled, cmap='viridis', origin='lower', interpolation='None', alpha=0.7)
-    # If bin_factor is greater than 1, enlarge the labels_filled to the original size
+    # plt.imshow(weight_map_smoothed, cmap='Greys', origin='lower',
+    # interpolation='None')
+    # plt.imshow(labels_filled, cmap='viridis', origin='lower',
+    # interpolation='None', alpha=0.7)
+    # If bin_factor is greater than 1, enlarge the labels_filled to
+    # the original size
     if bin_factor > 1:
         labels_filled = cv2.resize(
             labels_filled.astype(np.uint8),
@@ -1052,7 +1205,9 @@ def get_depth_dir(
     return depth_dir
 
 
-def get_forced_phot_subdir(aper_diams: u.Quantity, forced_phot_args: Dict[str, Any]) -> str:
+def get_forced_phot_subdir(
+    aper_diams: u.Quantity, forced_phot_args: Dict[str, Any]
+) -> str:
     """Construct the subdirectory name identifying a forced photometry setup.
 
     Strips version/date substrings from the forced photometry method name
@@ -1078,18 +1233,19 @@ def get_forced_phot_subdir(aper_diams: u.Quantity, forced_phot_args: Dict[str, A
     dates = funcs.date_finder(forced_phot_code)
     for remove in dates + ["version", "(", ")", " "]:
         forced_phot_code = forced_phot_code.replace(remove, "")
-    forced_phot_str = f"_{forced_phot_args['err_type'].split('_')[0]}" + \
-        f"_{forced_phot_args['forced_phot_band'].filt_name}_"
-    return f"{forced_phot_code}{forced_phot_str}{funcs.aper_diams_to_str(aper_diams)}"
-
+    forced_phot_str = (
+        f"_{forced_phot_args['err_type'].split('_')[0]}"
+        + f"_{forced_phot_args['forced_phot_band'].filt_name}_"
+    )
+    aper_diams_str = funcs.aper_diams_to_str(aper_diams)
+    return f"{forced_phot_code}{forced_phot_str}{aper_diams_str}"
 
 
 def get_grid_depth_path(
-    self: Type[Band_Data_Base],
-    aper_diam: u.Quantity,
-    mode: str
+    self: Type[Band_Data_Base], aper_diam: u.Quantity, mode: str
 ) -> str:
-    """Construct (and ensure the parent directory of) the path to a band's grid depth ``.h5`` file.
+    """Construct (and ensure the parent directory of) the path to a
+    band's grid depth ``.h5`` file.
 
     Parameters
     ----------
@@ -1114,10 +1270,9 @@ def get_grid_depth_path(
         `forced_phot_args` attribute).
     """
     depth_dir = get_depth_dir(self, aper_diam, mode)
-    assert hasattr(self, "forced_phot_args"), \
-        galfind_logger.critical(
-            f"Forced photometry not run for {repr(self)}, cannot run depths!"
-        )
+    assert hasattr(self, "forced_phot_args"), galfind_logger.critical(
+        f"Forced photometry not run for {repr(self)}, cannot run depths!"
+    )
     subdir = get_forced_phot_subdir(self.aper_diams, self.forced_phot_args)
     depth_path = f"{depth_dir}/{subdir}/{self.filt_name}.h5"
     funcs.make_dirs(depth_path)
@@ -1125,7 +1280,8 @@ def get_grid_depth_path(
 
 
 def calc_band_depth(params: Tuple[Any]) -> NoReturn:
-    """Compute and save grid-based depths for a single band, if not already computed.
+    """Compute and save grid-based depths for a single band,
+    if not already computed.
 
     Intended to be called (e.g. via multiprocessing) with a single packed
     `params` tuple. Unless the output ``.h5`` file already exists (and
@@ -1225,20 +1381,26 @@ def calc_band_depth(params: Tuple[Any]) -> NoReturn:
             )
         else:
             galfind_logger.info(
-                f"Loading region co-ordinates from {region_path} for {repr(self)}"
+                f"Loading region co-ordinates from {region_path} "
+                + f"for {repr(self)}"
             )
             # load xy and placing efficiency from region_path
             xy = load_xy_from_ds9_region_file(region_path)
             radius_pixels = (aper_diam / 2.0).value / self.pix_scale.value
-            possible_pos = ((im_data.shape[0] * im_data.shape[1]) - np.sum(combined_mask)) / (np.pi * radius_pixels ** 2)
+            possible_pos = (
+                (im_data.shape[0] * im_data.shape[1]) - np.sum(combined_mask)
+            ) / (np.pi * radius_pixels**2)
             placing_efficiency = len(xy) / possible_pos
-            galfind_logger.info(f"Placing efficiency = {100 * placing_efficiency:.2f}%")
+            galfind_logger.info(
+                f"Placing efficiency = {100 * placing_efficiency:.2f}%"
+            )
 
         # Get fluxes in regions
         flux_save_path = region_path.replace(".reg", "_fluxes.npy")
         if not Path(flux_save_path).is_file():
             galfind_logger.info(
-                f"Calculating fluxes for {len(xy)} blank {aper_diam} apertures for {repr(self)}"
+                f"Calculating fluxes for {len(xy)} blank {aper_diam} "
+                + f"apertures for {repr(self)}"
             )
             start_time = time.time()
             fluxes = do_photometry(im_data, xy, radius_pix)
@@ -1327,16 +1489,20 @@ def calc_band_depth(params: Tuple[Any]) -> NoReturn:
         for name_i, data_i in zip(hf_save_names, hf_save_data):
             hf.create_dataset(
                 name_i,
-                data = data_i,
-                compression = "gzip" if isinstance(data_i, np.ndarray) and \
-                    not isinstance(data_i, tuple([u.Quantity, u.Magnitude, u.Dex])) \
-                    else None
+                data=data_i,
+                compression="gzip"
+                if isinstance(data_i, np.ndarray)
+                and not isinstance(
+                    data_i, tuple([u.Quantity, u.Magnitude, u.Dex])
                 )
+                else None,
+            )
         hf.close()
 
 
 def get_depth_tab_path(self: Data) -> str:
-    """Construct (and ensure the parent directory of) the path to a survey's depth table.
+    """Construct (and ensure the parent directory of) the path to a
+    survey's depth table.
 
     Parameters
     ----------
@@ -1374,7 +1540,8 @@ def get_depth_tab_dir(self: Data) -> str:
 
 
 def make_depth_tab(self: Data) -> NoReturn:
-    """Create or update the summary depth table (``.ecsv``) for a `Data` object.
+    """Create or update the summary depth table (
+        ``.ecsv``) for a `Data` object.
 
     If the depth table for `self.survey`/`self.version` does not yet
     exist, computes median and mean depths (per region label, from
@@ -1401,8 +1568,7 @@ def make_depth_tab(self: Data) -> NoReturn:
     if not Path(depth_tab_path).is_file():
         depths_tab = None
         calc_params_arr = [
-            (band_data, aper_diam, 
-            band_data.depth_args[aper_diam]["mode"])
+            (band_data, aper_diam, band_data.depth_args[aper_diam]["mode"])
             for band_data in self
             for aper_diam in band_data.aper_diams
         ]
@@ -1414,8 +1580,11 @@ def make_depth_tab(self: Data) -> NoReturn:
         for stacked_band_data in stacked_band_data_arr:
             calc_params_arr.extend(
                 [
-                    (stacked_band_data, aper_diam, 
-                    stacked_band_data.depth_args[aper_diam]["mode"])
+                    (
+                        stacked_band_data,
+                        aper_diam,
+                        stacked_band_data.depth_args[aper_diam]["mode"],
+                    )
                     for aper_diam in stacked_band_data.aper_diams
                 ]
             )
@@ -1424,17 +1593,21 @@ def make_depth_tab(self: Data) -> NoReturn:
         filt_aper_diams = [
             (filt_name, aper_diam, mode)
             for filt_name, aper_diam, mode in zip(
-                depths_tab["filter"], 
+                depths_tab["filter"],
                 depths_tab["aper_diam"],
-                depths_tab["mode"]
+                depths_tab["mode"],
             )
         ]
         calc_params_arr = [
             (band_data, aper_diam, band_data.depth_args[aper_diam]["mode"])
             for band_data in self
             for aper_diam in band_data.aper_diams
-            if (band_data.filt_name, f"{format(aper_diam.value, '.2f')}as", 
-            band_data.depth_args[aper_diam]["mode"]) not in filt_aper_diams
+            if (
+                band_data.filt_name,
+                f"{format(aper_diam.value, '.2f')}as",
+                band_data.depth_args[aper_diam]["mode"],
+            )
+            not in filt_aper_diams
         ]
         if self.forced_phot_band in self:
             stacked_band_data_arr = []
@@ -1444,13 +1617,16 @@ def make_depth_tab(self: Data) -> NoReturn:
         for stacked_band_data in stacked_band_data_arr:
             calc_params_arr.extend(
                 [
-                    (stacked_band_data, aper_diam, 
-                    stacked_band_data.depth_args[aper_diam]["mode"])
+                    (
+                        stacked_band_data,
+                        aper_diam,
+                        stacked_band_data.depth_args[aper_diam]["mode"],
+                    )
                     for aper_diam in stacked_band_data.aper_diams
                     if (
                         stacked_band_data.filt_name,
                         f"{format(aper_diam.value, '.2f')}as",
-                        stacked_band_data.depth_args[aper_diam]["mode"]
+                        stacked_band_data.depth_args[aper_diam]["mode"],
                     )
                     not in filt_aper_diams
                 ]
@@ -1474,9 +1650,13 @@ def make_depth_tab(self: Data) -> NoReturn:
             for reg_label in med_band_depths.keys():
                 filters.extend([band_data.filt_name])
                 if band_data.__class__.__name__ == "Band_Data":
-                    instruments.extend([band_data.filt.instrument.__class__.__name__])
+                    instruments.extend(
+                        [band_data.filt.instrument.__class__.__name__]
+                    )
                 else:
-                    instruments.extend([band_data.filterset[0].instrument.__class__.__name__])
+                    instruments.extend(
+                        [band_data.filterset[0].instrument.__class__.__name__]
+                    )
                 aper_diams.extend([f"{format(aper_diam.value, '.2f')}as"])
                 modes.extend([mode])
                 reg_labels.extend([reg_label])
@@ -1500,13 +1680,9 @@ def make_depth_tab(self: Data) -> NoReturn:
             tab = vstack([depths_tab, new_tab])
         if os.access(depth_tab_path, os.W_OK) or depths_tab is None:
             tab.write(depth_tab_path, overwrite=True)
-            galfind_logger.info(
-                f"Depth table written to {depth_tab_path}"
-            )
+            galfind_logger.info(f"Depth table written to {depth_tab_path}")
         else:
-            galfind_logger.info(
-                f"No permissions for {depth_tab_path}"
-            )
+            galfind_logger.info(f"No permissions for {depth_tab_path}")
 
 
 def get_depths_from_h5(
@@ -1514,7 +1690,8 @@ def get_depths_from_h5(
     aper_diam: u.Quantity,
     mode: str,
 ) -> Tuple[Dict[str, float], Dict[str, float]]:
-    """Compute median and mean catalogue depths per region label from a band's grid depth ``.h5`` file.
+    """Compute median and mean catalogue depths per region label from
+    a band's grid depth ``.h5`` file.
 
     Parameters
     ----------
@@ -1546,23 +1723,26 @@ def get_depths_from_h5(
     unique_labels, inverse = np.unique(labels, return_inverse=True)
     order = np.argsort(inverse, kind="stable")
     sorted_depths = depths[order]
-    group_bounds = np.searchsorted(inverse[order], np.arange(len(unique_labels) + 1))
+    group_bounds = np.searchsorted(
+        inverse[order], np.arange(len(unique_labels) + 1)
+    )
     med_reg_band_depths = {}
     mean_reg_band_depths = {}
     for i, label in enumerate(unique_labels):
-        group = sorted_depths[group_bounds[i]:group_bounds[i + 1]]
+        group = sorted_depths[group_bounds[i] : group_bounds[i + 1]]
         med_reg_band_depths[str(int(label))] = np.nanmedian(group)
         mean_reg_band_depths[str(int(label))] = np.nanmean(group)
     med_reg_band_depths["all"] = np.nanmedian(cat_depths)
     mean_reg_band_depths["all"] = np.nanmean(cat_depths)
-    
+
     return med_reg_band_depths, mean_reg_band_depths
 
+
 def get_depth_plot_path(
-    self: Type[Band_Data_Base],
-    aper_diam: u.Quantity
+    self: Type[Band_Data_Base], aper_diam: u.Quantity
 ) -> str:
-    """Construct (and ensure the parent directory of) the path to a band's depth diagnostic plot.
+    """Construct (and ensure the parent directory of) the path to a
+    band's depth diagnostic plot.
 
     Parameters
     ----------
@@ -1576,14 +1756,18 @@ def get_depth_plot_path(
     `str`
         Path to the ``.png`` depth diagnostic plot for `self`.
     """
-    depth_dir = f"{'/'.join(get_grid_depth_path(self, aper_diam, self.depth_args[aper_diam]['mode']).split('/')[:-1])}/plots"
+    grid_depth_path = get_grid_depth_path(
+        self, aper_diam, self.depth_args[aper_diam]["mode"]
+    )
+    depth_dir = f"{'/'.join(grid_depth_path.split('/')[:-1])}/plots"
     depth_plot_path = f"{depth_dir}/{self.filt_name}.png"
     funcs.make_dirs(depth_plot_path)
     return depth_plot_path
 
 
 def get_area_depth_dir(self: Union[Type[Band_Data_Base], Data]) -> str:
-    """Construct the directory path used to store area-depth outputs for `self`.
+    """Construct the directory path used to store area-depth outputs
+    for `self`.
 
     Parameters
     ----------
@@ -1601,16 +1785,20 @@ def get_area_depth_dir(self: Union[Type[Band_Data_Base], Data]) -> str:
         + f"{self.version}/{self.survey}"
     )
 
+
 def get_area_depth_h5_path(
     self: Type[Band_Data_Base],
     aper_diam: u.Quantity,
     mask_selector: Union[str, List[str], Type[Mask_Selector]],
     mask_type: Union[str, List[str]],
-    region_selector: Optional[Union[Type[Region_Selector], List[Type[Region_Selector]]]] = None,
+    region_selector: Optional[
+        Union[Type[Region_Selector], List[Type[Region_Selector]]]
+    ] = None,
     invert_region: bool = False,
     zbin: Optional[Tuple[float, float]] = None,
 ) -> str:
-    """Construct (and ensure the parent directory of) the path to a band's area-depth ``.h5`` file.
+    """Construct (and ensure the parent directory of) the path to a
+    band's area-depth ``.h5`` file.
 
     Parameters
     ----------
@@ -1623,7 +1811,8 @@ def get_area_depth_h5_path(
         `Masking.sort_area_mask_names`.
     mask_type : `str` or `list` of `str`
         Mask column type(s) (e.g. ``"MASK"``) to use.
-    region_selector : `Region_Selector` or `list` of `Region_Selector`, optional
+    region_selector : `Region_Selector` or `list` of `Region_Selector`,
+    optional
         Region(s) to restrict the area mask to. Default is `None`.
     invert_region : `bool`, optional
         Whether to invert `region_selector`. Default is `False`.
@@ -1637,7 +1826,7 @@ def get_area_depth_h5_path(
         Path to the ``.h5`` file storing the area-depth output for
         `self`, `aper_diam` and the given mask/region/zbin selection.
     """
-    mask_selector_name, mask_save_name, reg_name, mask_save_path = \
+    mask_selector_name, mask_save_name, reg_name, mask_save_path = (
         Masking.sort_area_mask_names(
             self,
             mask_selector,
@@ -1646,21 +1835,32 @@ def get_area_depth_h5_path(
             invert_region,
             zbin,
         )
-    rebin_mask_path = Masking.get_rebin_mask_path(self, mask_selector_name, mask_save_name, reg_name, shape = None)
-    path = f"{get_area_depth_dir(self)}/{rebin_mask_path.split('/')[-1].replace('.fits', '')}_{format(aper_diam.value, '.2f')}as_{self.filt_name}.h5"
+    )
+    rebin_mask_path = Masking.get_rebin_mask_path(
+        self, mask_selector_name, mask_save_name, reg_name, shape=None
+    )
+    mask_basename = rebin_mask_path.split("/")[-1].replace(".fits", "")
+    path = (
+        f"{get_area_depth_dir(self)}/{mask_basename}_"
+        + f"{format(aper_diam.value, '.2f')}as_{self.filt_name}.h5"
+    )
     funcs.make_dirs(path)
     return path
+
 
 def get_area_depth_plot_path(
     self: Type[Data],
     aper_diam: u.Quantity,
     mask_selector: Union[str, List[str], Type[Mask_Selector]],
     mask_type: Union[str, List[str]],
-    region_selector: Optional[Union[Type[Region_Selector], List[Type[Region_Selector]]]] = None,
+    region_selector: Optional[
+        Union[Type[Region_Selector], List[Type[Region_Selector]]]
+    ] = None,
     invert_region: bool = False,
     zbin: Optional[Tuple[float, float]] = None,
 ) -> str:
-    """Construct (and ensure the parent directory of) the path to a `Data` object's area-depth plot.
+    """Construct (and ensure the parent directory of) the path to a
+    `Data` object's area-depth plot.
 
     Parameters
     ----------
@@ -1673,7 +1873,8 @@ def get_area_depth_plot_path(
         `Masking.sort_area_mask_names`.
     mask_type : `str` or `list` of `str`
         Mask column type(s) (e.g. ``"MASK"``) to use.
-    region_selector : `Region_Selector` or `list` of `Region_Selector`, optional
+    region_selector : `Region_Selector` or `list` of `Region_Selector`,
+    optional
         Region(s) to restrict the area mask to. Default is `None`.
     invert_region : `bool`, optional
         Whether to invert `region_selector`. Default is `False`.
@@ -1687,7 +1888,7 @@ def get_area_depth_plot_path(
         Path to the ``.png`` area-depth plot for `self` and the given
         mask/region/zbin selection.
     """
-    mask_selector_name, mask_save_name, reg_name, mask_save_path = \
+    mask_selector_name, mask_save_name, reg_name, mask_save_path = (
         Masking.sort_area_mask_names(
             self,
             mask_selector,
@@ -1696,21 +1897,32 @@ def get_area_depth_plot_path(
             invert_region,
             zbin,
         )
-    rebin_mask_path = Masking.get_rebin_mask_path(self, mask_selector_name, mask_save_name, reg_name, shape = None)
-    path = f"{get_area_depth_dir(self)}/{rebin_mask_path.split('/')[-1].replace('.fits', '')}_{format(aper_diam.value, '.2f')}as_plot.png"
+    )
+    rebin_mask_path = Masking.get_rebin_mask_path(
+        self, mask_selector_name, mask_save_name, reg_name, shape=None
+    )
+    mask_basename = rebin_mask_path.split("/")[-1].replace(".fits", "")
+    path = (
+        f"{get_area_depth_dir(self)}/{mask_basename}_"
+        + f"{format(aper_diam.value, '.2f')}as_plot.png"
+    )
     funcs.make_dirs(path)
     return path
+
 
 def calc_band_data_area_depth(
     self: Type[Band_Data_Base],
     aper_diam: u.Quantity,
     mask_selector: Union[str, List[str], Type[Mask_Selector]] = None,
     mask_type: Union[str, List[str]] = "MASK",
-    region_selector: Optional[Type[Region_Selector], List[Type[Region_Selector]]] = None,
+    region_selector: Optional[
+        Type[Region_Selector], List[Type[Region_Selector]]
+    ] = None,
     invert_region: bool = False,
     zbin: Optional[float] = None,
 ) -> Tuple[NDArray[float], NDArray[float], float]:
-    """Compute (or load cached) cumulative area-vs-depth data for a single band.
+    """Compute (or load cached) cumulative area-vs-depth data for a
+    single band.
 
     If the area-depth ``.h5`` file for `self`/`aper_diam`/mask selection
     does not already exist, builds (or loads a cached) area mask,
@@ -1732,7 +1944,8 @@ def calc_band_data_area_depth(
     mask_type : `str` or `list` of `str`, optional
         Mask column type(s) (e.g. ``"MASK"``) to use. Default is
         `"MASK"`.
-    region_selector : `Region_Selector` or `list` of `Region_Selector`, optional
+    region_selector : `Region_Selector` or `list` of `Region_Selector`,
+    optional
         Region(s) to restrict the area mask to. Default is `None`.
     invert_region : `bool`, optional
         Whether to invert `region_selector`. Default is `False`.
@@ -1748,8 +1961,17 @@ def calc_band_data_area_depth(
         total unmasked area.
     """
     assert aper_diam in self.depth_args.keys()
-    #galfind_logger.info(f"Calculating area-depth for {repr(self)} in sub-region {depth_subreg}")
-    area_depth_save_path = get_area_depth_h5_path(self, aper_diam, mask_selector, mask_type, region_selector, invert_region, zbin)
+    # galfind_logger.info(f"Calculating area-depth for {repr(self)}
+    # in sub-region {depth_subreg}")
+    area_depth_save_path = get_area_depth_h5_path(
+        self,
+        aper_diam,
+        mask_selector,
+        mask_type,
+        region_selector,
+        invert_region,
+        zbin,
+    )
     if not Path(area_depth_save_path).is_file():
         start = time.time()
         # load appropriate mask if not provided
@@ -1758,28 +1980,50 @@ def calc_band_data_area_depth(
         # load mask and re-bin to nmad grid
         # if mask is None:
         #     re_binned_mask = np.ones(nmad_grid.shape, dtype=bool)
-        #     raise NotImplementedError("Area calculation without mask not implemented yet")
+        #     raise NotImplementedError(
+        #         "Area calculation without mask not implemented yet"
+        #     )
         # else:
-        # calculate total area from this mask
-        mask, mask_selector_name, mask_save_name, reg_name = Masking.make_area_mask_from_band_data(
-            self,
-            mask_selector,
-            mask_type,
-            region_selector,
-            invert_region,
-            zbin = zbin,
-            #**kwargs,
+        # calculate total area from this mask
+        mask, mask_selector_name, mask_save_name, reg_name = (
+            Masking.make_area_mask_from_band_data(
+                self,
+                mask_selector,
+                mask_type,
+                region_selector,
+                invert_region,
+                zbin=zbin,
+                # **kwargs,
+            )
         )
-        re_binned_mask_path = Masking.get_rebin_mask_path(self, mask_selector_name, mask_save_name, reg_name, shape = nmad_grid.shape)
+        re_binned_mask_path = Masking.get_rebin_mask_path(
+            self,
+            mask_selector_name,
+            mask_save_name,
+            reg_name,
+            shape=nmad_grid.shape,
+        )
         if Path(re_binned_mask_path).is_file():
-            galfind_logger.info(f"Loading rebinned mask from {re_binned_mask_path} for area-depth calculation for {repr(self)}")
-            re_binned_mask = fits.open(re_binned_mask_path, ignore_missing_simple = True)[1].data.astype(bool)
+            galfind_logger.info(
+                f"Loading rebinned mask from {re_binned_mask_path} "
+                + f"for area-depth calculation for {repr(self)}"
+            )
+            re_binned_mask = fits.open(
+                re_binned_mask_path, ignore_missing_simple=True
+            )[1].data.astype(bool)
         else:
-            re_binned_mask = Masking.rebin_mask_to_shape(mask, shape = nmad_grid.shape)
+            re_binned_mask = Masking.rebin_mask_to_shape(
+                mask, shape=nmad_grid.shape
+            )
             # save rebinned boolean mask as .fits file
-            hdu = fits.ImageHDU(re_binned_mask.astype(np.uint8), name=mask_selector_name)
+            hdu = fits.ImageHDU(
+                re_binned_mask.astype(np.uint8), name=mask_selector_name
+            )
             hdu.writeto(re_binned_mask_path, overwrite=True)
-            galfind_logger.info(f"Saved rebinned mask to {re_binned_mask_path} for area-depth calculation for {repr(self)}")
+            galfind_logger.info(
+                f"Saved rebinned mask to {re_binned_mask_path} for "
+                + f"area-depth calculation for {repr(self)}"
+            )
             funcs.change_file_permissions(re_binned_mask_path)
         # save rebinned mask to file
         # determine total area of mask
@@ -1791,33 +2035,47 @@ def calc_band_data_area_depth(
         total_depths = total_depths[total_depths != np.inf]
         total_depths = np.flip(np.sort(total_depths))
         # Calculate the cumulative distribution scaled to area of band
-        cum_dist = np.arange(1, len(total_depths) + 1) * area / len(total_depths)
+        cum_dist = (
+            np.arange(1, len(total_depths) + 1) * area / len(total_depths)
+        )
         end = time.time()
-        galfind_logger.info(f"Area-depth calculation for {repr(self)} took {end - start:.2f} seconds")
+        galfind_logger.info(
+            f"Area-depth calculation for {repr(self)} took "
+            + f"{end - start:.2f} seconds"
+        )
         # save total depths and cum_dist to .h5 file
         hf = h5py.File(area_depth_save_path, "w")
-        hf.create_dataset("total_depths", data=total_depths, compression="gzip")
+        hf.create_dataset(
+            "total_depths", data=total_depths, compression="gzip"
+        )
         hf.create_dataset("cum_dist", data=cum_dist, compression="gzip")
         hf.create_dataset("area", data=area)
         hf.close()
-        galfind_logger.info(f"Saved area-depth data for {repr(self)} to {area_depth_save_path}")
+        galfind_logger.info(
+            f"Saved area-depth data for {repr(self)} to {area_depth_save_path}"
+        )
     else:
         # load from .h5 file
-        galfind_logger.debug(f"Loading area-depth data from {area_depth_save_path} for {repr(self)}")
+        galfind_logger.debug(
+            f"Loading area-depth data from {area_depth_save_path} "
+            + f"for {repr(self)}"
+        )
         hf = h5py.File(area_depth_save_path, "r")
         total_depths = np.array(hf.get("total_depths"))
         cum_dist = np.array(hf.get("cum_dist"))
         area = hf.get("area")[()]
         hf.close()
     return total_depths, cum_dist, area
-    
+
 
 def plot_band_data_area_depth(
     self: Type[Band_Data_Base],
     aper_diam: u.Quantity,
     mask_selector: Union[str, List[str], Type[Mask_Selector]] = None,
     mask_type: Union[str, List[str]] = "MASK",
-    region_selector: Optional[Type[Region_Selector], List[Type[Region_Selector]]] = None,
+    region_selector: Optional[
+        Type[Region_Selector], List[Type[Region_Selector]]
+    ] = None,
     invert_region: bool = False,
     zbin: Optional[float] = None,
     fig: Optional[plt.Figure] = None,
@@ -1846,7 +2104,8 @@ def plot_band_data_area_depth(
     mask_type : `str` or `list` of `str`, optional
         Mask column type(s) (e.g. ``"MASK"``) to use. Default is
         `"MASK"`.
-    region_selector : `Region_Selector` or `list` of `Region_Selector`, optional
+    region_selector : `Region_Selector` or `list` of `Region_Selector`,
+    optional
         Region(s) to restrict the area mask to. Default is `None`.
     invert_region : `bool`, optional
         Whether to invert `region_selector`. Default is `False`.
@@ -1899,30 +2158,42 @@ def plot_band_data_area_depth(
         total_depths,
         cum_dist,
         **plot_kwargs_,
-        #color=colors[i] if band_data.__class__.__name__ == "Band_Data" else "black",
-        #drawstyle="steps-post",
-        #linestyle="solid" if band_data.__class__.__name__ == "Band_Data" else "dashed",
+        # color=colors[i] if band_data.__class__.__name__ ==
+        # "Band_Data" else "black",
+        # drawstyle="steps-post",
+        # linestyle="solid" if band_data.__class__.__name__ ==
+        # "Band_Data" else "dashed",
     )
     galfind_logger.info(f"Plotted area-depth for {repr(self)}")
     if save:
-        save_path = f"{get_area_depth_dir(self)}/{format(aper_diam.value, '.2f')}as_area_depth.png"
+        save_path = (
+            f"{get_area_depth_dir(self)}/"
+            + f"{format(aper_diam.value, '.2f')}as_area_depth.png"
+        )
         funcs.make_dirs(save_path)
         fig.savefig(save_path, dpi=300, bbox_inches="tight")
-        galfind_logger.info(f"Saved area-depth plot for {repr(self)} to {save_path}")
+        galfind_logger.info(
+            f"Saved area-depth plot for {repr(self)} to {save_path}"
+        )
     if show:
         plt.show()
     if close:
         plt.close(fig)
+
 
 def calc_data_area_depth(
     self: Data,
     aper_diam: u.Quantity,
     mask_selector: Union[str, List[str], Type[Mask_Selector]] = None,
     mask_type: Union[str, List[str]] = "MASK",
-    region_selector: Optional[Type[Region_Selector], List[Type[Region_Selector]]] = None,
+    region_selector: Optional[
+        Type[Region_Selector], List[Type[Region_Selector]]
+    ] = None,
     invert_region: bool = True,
     zbin: Optional[Tuple[float, float]] = None,
-) -> Tuple[Dict[str, NDArray[float]], Dict[str, NDArray[float]], Dict[str, float]]:
+) -> Tuple[
+    Dict[str, NDArray[float]], Dict[str, NDArray[float]], Dict[str, float]
+]:
     """Compute area-depth relations for every band in a `Data` object.
 
     Builds the area mask for `self` (via `Masking.make_area_mask_from_data`)
@@ -1941,7 +2212,8 @@ def calc_data_area_depth(
     mask_type : `str` or `list` of `str`, optional
         Mask column type(s) (e.g. ``"MASK"``) to use. Default is
         `"MASK"`.
-    region_selector : `Region_Selector` or `list` of `Region_Selector`, optional
+    region_selector : `Region_Selector` or `list` of `Region_Selector`,
+    optional
         Region(s) to restrict the area mask to. Default is `None`.
     invert_region : `bool`, optional
         Whether to invert `region_selector`. Default is `True`.
@@ -1962,13 +2234,16 @@ def calc_data_area_depth(
         mask_type,
         region_selector,
         invert_region,
-        zbin = zbin,
+        zbin=zbin,
     )
     total_depths = {}
     cum_dist = {}
     area = {}
     self_band_data_arr = deepcopy(self.band_data_arr)
-    if hasattr(self, "forced_phot_band") and self.forced_phot_band not in self_band_data_arr:
+    if (
+        hasattr(self, "forced_phot_band")
+        and self.forced_phot_band not in self_band_data_arr
+    ):
         self_band_data_arr += [self.forced_phot_band]
     if hasattr(self, "stacked_band_data_arr"):
         self_band_data_arr += self.stacked_band_data_arr
@@ -1987,12 +2262,15 @@ def calc_data_area_depth(
         area[band_data.filt_name] = area_
     return total_depths, cum_dist, area
 
+
 def plot_data_area_depth(
     self: Data,
     aper_diam: u.Quantity,
     mask_selector: Union[str, List[str], Type[Mask_Selector]] = None,
     mask_type: Union[str, List[str]] = "MASK",
-    region_selector: Optional[Type[Region_Selector], List[Type[Region_Selector]]] = None,
+    region_selector: Optional[
+        Type[Region_Selector], List[Type[Region_Selector]]
+    ] = None,
     invert_region: bool = True,
     fig: Optional[plt.Figure] = None,
     ax: Optional[plt.Axes] = None,
@@ -2003,7 +2281,8 @@ def plot_data_area_depth(
     close: bool = True,
     **kwargs: Dict[str, Any],
 ) -> None:
-    """Plot the cumulative area-vs-depth relation for every band in a `Data` object.
+    """Plot the cumulative area-vs-depth relation for every band in a
+    `Data` object.
 
     Plots the area-depth curve (via `Band_Data.plot_area_depth`) for
     every band in `self`, the forced photometry band (dashed, black) and
@@ -2024,7 +2303,8 @@ def plot_data_area_depth(
     mask_type : `str` or `list` of `str`, optional
         Mask column type(s) (e.g. ``"MASK"``) to use. Default is
         `"MASK"`.
-    region_selector : `Region_Selector` or `list` of `Region_Selector`, optional
+    region_selector : `Region_Selector` or `list` of `Region_Selector`,
+    optional
         Region(s) to restrict the area mask to. Default is `None`.
     invert_region : `bool`, optional
         Whether to invert `region_selector`. Default is `True`.
@@ -2062,18 +2342,24 @@ def plot_data_area_depth(
         zbins = mask_selector.extract_zbins(self)
         # select zbin which matches the redshift of the data
         zbin = [zbin_ for zbin_ in zbins if zbin_[0] <= kwargs["z"] < zbin_[1]]
-        assert len(zbin) == 1, \
-            galfind_logger.critical(
-                f"Multiple or no zbins found for z={kwargs['z']}!"
-            )
+        assert len(zbin) == 1, galfind_logger.critical(
+            f"Multiple or no zbins found for z={kwargs['z']}!"
+        )
         zbin = zbin[0]
     else:
         zbin = None
-    
-    save_path = get_area_depth_plot_path(self, aper_diam, mask_selector, mask_type, region_selector, invert_region, zbin)
+
+    save_path = get_area_depth_plot_path(
+        self,
+        aper_diam,
+        mask_selector,
+        mask_type,
+        region_selector,
+        invert_region,
+        zbin,
+    )
     funcs.make_dirs(save_path)
     if not Path(save_path).is_file() or overwrite:
-
         if fig is None or ax is None:
             fig, ax = plt.subplots(1, 1, figsize=(4, 4))
         cmap = plt.cm.get_cmap(cmap_name)
@@ -2081,51 +2367,51 @@ def plot_data_area_depth(
 
         for band_data, colour in zip(self.band_data_arr, colours):
             band_data.plot_area_depth(
-                aper_diam = aper_diam, 
-                mask_selector = mask_selector,
-                mask_type = mask_type,
-                region_selector = region_selector,
-                invert_region = invert_region,
-                zbin = zbin,
-                color = colour,
-                fig = fig,
-                ax = ax,
-                show = False,
-                #**kwargs
+                aper_diam=aper_diam,
+                mask_selector=mask_selector,
+                mask_type=mask_type,
+                region_selector=region_selector,
+                invert_region=invert_region,
+                zbin=zbin,
+                color=colour,
+                fig=fig,
+                ax=ax,
+                show=False,
+                # **kwargs
             )
         if hasattr(self, "forced_phot_band"):
             self.forced_phot_band.plot_area_depth(
-                aper_diam = aper_diam,
-                mask_selector = mask_selector,
-                mask_type = mask_type,
-                region_selector = region_selector,
-                invert_region = invert_region,
-                zbin = zbin,
-                color = "black",
-                linestyle = "--",
-                fig = fig,
-                ax = ax,
-                show = False,
-                #**kwargs
+                aper_diam=aper_diam,
+                mask_selector=mask_selector,
+                mask_type=mask_type,
+                region_selector=region_selector,
+                invert_region=invert_region,
+                zbin=zbin,
+                color="black",
+                linestyle="--",
+                fig=fig,
+                ax=ax,
+                show=False,
+                # **kwargs
             )
         if hasattr(self, "stacked_band_data_arr"):
             for stacked_band_data in self.stacked_band_data_arr:
                 stacked_band_data.plot_area_depth(
-                    aper_diam = aper_diam,
-                    mask_selector = mask_selector,
-                    mask_type = mask_type,
-                    region_selector = region_selector,
-                    invert_region = invert_region,
-                    zbin = zbin,
-                    color = "black",
-                    linestyle = ":",
-                    fig = fig,
-                    ax = ax,
-                    show = False,
-                    #**kwargs
+                    aper_diam=aper_diam,
+                    mask_selector=mask_selector,
+                    mask_type=mask_type,
+                    region_selector=region_selector,
+                    invert_region=invert_region,
+                    zbin=zbin,
+                    color="black",
+                    linestyle=":",
+                    fig=fig,
+                    ax=ax,
+                    show=False,
+                    # **kwargs
                 )
-        
-        #breakpoint()
+
+        # breakpoint()
         # data = {}
         # for i, band_data in enumerate(self_band_data):
         #     area = None
@@ -2136,32 +2422,36 @@ def plot_data_area_depth(
         #     total_depths = total_depths[total_depths != 0]
         #     total_depths = total_depths[total_depths != np.inf]
         #     total_depths = np.flip(np.sort(total_depths))
-        #     # Calculate the cumulative distribution scaled to area of band
-        #     cum_dist = np.arange(1, len(total_depths) + 1) * area / len(total_depths)
+        #     # Calculate the cumulative distribution scaled to area
+        #     # of band
+        #     cum_dist = np.arange(1, len(total_depths) + 1) * area \
+        #         / len(total_depths)
 
         #     # Plot
         #     ax.plot(
         #         cum_dist,
         #         total_depths,
         #         label=band_data.filt_name,
-        #         color=colors[i] if band_data.__class__.__name__ == "Band_Data" else "black",
+        #         color=colors[i] if band_data.__class__.__name__ ==
+        #         "Band_Data" else "black",
         #         drawstyle="steps-post",
-        #         linestyle="solid" if band_data.__class__.__name__ == "Band_Data" else "dashed",
+        #         linestyle="solid" if band_data.__class__.__name__ ==
+        #         "Band_Data" else "dashed",
         #     )
 
-            # if i == 0:
-            #     min_depth = np.percentile(total_depths, 0.5)
-            #     max_depth = np.percentile(total_depths, 99.5)
-            # else:
-            #     min_temp = np.percentile(total_depths, 0.5)
-            #     max_temp = np.percentile(total_depths, 99.5)
-            #     if min_temp < min_depth:
-            #         min_depth = min_temp
-            #     if max_temp > max_depth:
-            #         max_depth = max_temp
+        # if i == 0:
+        #     min_depth = np.percentile(total_depths, 0.5)
+        #     max_depth = np.percentile(total_depths, 99.5)
+        # else:
+        #     min_temp = np.percentile(total_depths, 0.5)
+        #     max_temp = np.percentile(total_depths, 99.5)
+        #     if min_temp < min_depth:
+        #         min_depth = min_temp
+        #     if max_temp > max_depth:
+        #         max_depth = max_temp
 
         if save:
-            #ax.set_ylim(max_depth, min_depth)
+            # ax.set_ylim(max_depth, min_depth)
             # Place legend under plot
             ax.legend(
                 frameon=False,
@@ -2174,6 +2464,7 @@ def plot_data_area_depth(
             )
             # Add inner ticks
             from matplotlib.ticker import AutoMinorLocator
+
             ax.xaxis.set_minor_locator(AutoMinorLocator())
             ax.yaxis.set_minor_locator(AutoMinorLocator())
             # Make ticks face inwards
@@ -2182,19 +2473,24 @@ def plot_data_area_depth(
             # Set minor ticks to face in
             ax.yaxis.set_ticks_position("both")
             ax.xaxis.set_ticks_position("both")
-            #breakpoint()
-            ax.set_xlabel(rf"{format(aper_diam.value, '.2f')}as 5$\sigma$ Depth (AB mag)")
+            # breakpoint()
+            ax.set_xlabel(
+                rf"{format(aper_diam.value, '.2f')}as 5$\sigma$ Depth (AB mag)"
+            )
             ax.set_ylabel("Cumulative Area (arcmin$^2$)")
-            
+
             fig.savefig(save_path, dpi=300, bbox_inches="tight")
-            galfind_logger.info(f"Saved area-depth plot for {repr(self)} to {save_path}")
+            galfind_logger.info(
+                f"Saved area-depth plot for {repr(self)} to {save_path}"
+            )
         if show:
             plt.show()
         if close:
             plt.close(fig)
 
+
 def get_hf_output(
-    self: Type[Band_Data_Base], 
+    self: Type[Band_Data_Base],
     aper_diam: u.Quantity,
 ) -> Dict[str, Any]:
     """Load the contents of a band's grid depth ``.h5`` file into a dictionary.
@@ -2219,11 +2515,12 @@ def get_hf_output(
         If the expected ``.h5`` file does not exist.
     """
     # open .h5
-    h5_path = get_grid_depth_path(self, aper_diam, self.depth_args[aper_diam]["mode"])
-    assert Path(h5_path).is_file(), \
-        galfind_logger.critical(
-            f"{h5_path} does not exist!"
-        )
+    h5_path = get_grid_depth_path(
+        self, aper_diam, self.depth_args[aper_diam]["mode"]
+    )
+    assert Path(h5_path).is_file(), galfind_logger.critical(
+        f"{h5_path} does not exist!"
+    )
     hf = h5py.File(h5_path, "r")
     hf_output = {
         label: np.array(hf[label])
@@ -2234,9 +2531,9 @@ def get_hf_output(
     hf_output["nmad_grid"][hf_output["nmad_grid"] == 0] = np.nan
     return hf_output
 
+
 def get_cat_xy(
-    self: Type[Band_Data_Base],
-    master_cat_path: Optional[str]
+    self: Type[Band_Data_Base], master_cat_path: Optional[str]
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Compute catalogue source pixel coordinates for a band's image.
 
@@ -2270,15 +2567,17 @@ def get_cat_xy(
     cat_x, cat_y = wcs.world_to_pixel(SkyCoord(cat_ra, cat_dec))
     return cat_x, cat_y
 
+
 def plot_depth_diagnostic(
     self: Type[Band_Data_Base],
     aper_diam: u.Quantity,
-    save: bool = True, 
+    save: bool = True,
     show: bool = False,
     cmap: str = "plasma",
-    master_cat_path: Optional[str] = None
+    master_cat_path: Optional[str] = None,
 ) -> NoReturn:
-    """Create and save/show a multi-panel depth diagnostic plot for a single band.
+    """Create and save/show a multi-panel depth diagnostic plot for a
+    single band.
 
     Produces a figure with panels for the rolling-average depth map, the
     rolling-average diagnostic (number of apertures used), catalogue
@@ -2318,10 +2617,9 @@ def plot_depth_diagnostic(
         If `self` does not have a `depth_path` attribute.
     """
     plt.style.use("default")
-    assert hasattr(self, "depth_path"), \
-        galfind_logger.critical(
-            f"{repr(self)} has no 'depth_path'"
-        )
+    assert hasattr(self, "depth_path"), galfind_logger.critical(
+        f"{repr(self)} has no 'depth_path'"
+    )
     hf_output = get_hf_output(self, aper_diam)
     cat_x, cat_y = get_cat_xy(self, master_cat_path)
     combined_mask = self._combine_seg_data_and_mask()
@@ -2336,20 +2634,28 @@ def plot_depth_diagnostic(
     )
     axs = axs.flatten()
     fig.suptitle(
-        f"{self.survey} {self.version} {self.filt_name} Depths", 
-        fontsize="large", 
-        fontweight="bold"
+        f"{self.survey} {self.version} {self.filt_name} Depths",
+        fontsize="large",
+        fontweight="bold",
     )
     cmap_ = cm.get_cmap(cmap)
     cmap_.set_bad(color="black")
 
-    labels_arr, possible_labels, colours, labels_cmap = _get_labels(hf_output, cmap_name = "Set2")
+    labels_arr, possible_labels, colours, labels_cmap = _get_labels(
+        hf_output, cmap_name="Set2"
+    )
 
     _plot_rolling_average(fig, axs[0], hf_output, cmap_)
     _plot_rolling_average_diagnostic(fig, axs[1], hf_output, cmap_)
-    _plot_cat_depths(fig, axs[2], hf_output, cmap_, cat_x, cat_y, combined_mask)
-    _plot_depth_hist(fig, axs[3], hf_output, labels_arr, possible_labels, colours)
-    _plot_cat_diagnostic(fig, axs[4], hf_output, cmap_, cat_x, cat_y, combined_mask)
+    _plot_cat_depths(
+        fig, axs[2], hf_output, cmap_, cat_x, cat_y, combined_mask
+    )
+    _plot_depth_hist(
+        fig, axs[3], hf_output, labels_arr, possible_labels, colours
+    )
+    _plot_cat_diagnostic(
+        fig, axs[4], hf_output, cmap_, cat_x, cat_y, combined_mask
+    )
     if len(possible_labels) > 1:
         _plot_labels(axs[5], hf_output, labels_cmap)
 
@@ -2367,7 +2673,7 @@ def plot_depth_diagnostic(
                 galfind_logger.debug(
                     f"Removed empty axis {i} in depth diagnostic plot"
                 )
-            except:
+            except Exception:
                 pass
 
     fig.get_layout_engine().set(w_pad=0.1, h_pad=0.1, hspace=0.1, wspace=0.1)
@@ -2382,11 +2688,12 @@ def plot_depth_diagnostic(
     else:
         plt.clf()
 
+
 def _plot_rolling_average(
     fig: plt.Figure,
     ax: plt.Axes,
     hf_output: Dict[str, Any],
-    cmap: plt.Colormap
+    cmap: plt.Colormap,
 ) -> NoReturn:
     """Plot rolling-average depth map with filter size indicator circle.
 
@@ -2432,7 +2739,7 @@ def _plot_rolling_average(
         ha="center",
         color="white",
         fontsize="medium",
-        path_effects = [pe.Stroke(linewidth=0.5, foreground='black')]
+        path_effects=[pe.Stroke(linewidth=0.5, foreground="black")],
     )
     # Make colorbar same height as ax
     divider = make_axes_locatable(ax)
@@ -2440,11 +2747,12 @@ def _plot_rolling_average(
     fig.colorbar(mappable, label=r"5$\sigma$ Depth", cax=cax)
     ax.set_title(r"Rolling Average 5$\sigma$ Depth")
 
+
 def _plot_rolling_average_diagnostic(
     fig: plt.Figure,
     ax: plt.Axes,
     hf_output: Dict[str, Any],
-    cmap: plt.Colormap
+    cmap: plt.Colormap,
 ) -> NoReturn:
     """Plot rolling-average aperture count diagnostic map.
 
@@ -2455,7 +2763,8 @@ def _plot_rolling_average_diagnostic(
     ax : `matplotlib.axes.Axes`
         Axes on which to draw the diagnostic map.
     hf_output : `dict`
-        Output from depth calculation containing ``num_grid`` (aperture counts).
+        Output from depth calculation containing ``num_grid`` (aperture
+        counts).
     cmap : `matplotlib.colors.Colormap`
         Colormap for the diagnostic map visualization.
     """
@@ -2465,25 +2774,29 @@ def _plot_rolling_average_diagnostic(
     fig.colorbar(mappable, label=r"Number of Apertures Used", cax=cax)
     ax.set_title("Rolling Average Diagnostic")
 
+
 def _get_labels(
-    hf_output: Dict[str, Any],
-    cmap_name: str = "Set2"
+    hf_output: Dict[str, Any], cmap_name: str = "Set2"
 ) -> Tuple[List[str], List[int], List[plt.Color], plt.Colormap]:
     """Extract and assign labels and colors for depth regions.
 
     Parameters
     ----------
     hf_output : `dict`
-        Output from depth calculation containing ``labels_grid`` and ``nmad_grid``.
+        Output from depth calculation containing ``labels_grid`` and
+        ``nmad_grid``.
     cmap_name : `str`, optional
         Matplotlib colormap name for label colors. Default is ``"Set2"``.
 
     Returns
     -------
     `tuple`
-        ``(labels_arr, possible_labels, colours, labels_cmap)`` where ``labels_arr``
-        are readable labels (e.g. "Shallow", "Deep"), ``possible_labels`` are unique
-        label values, ``colours`` are the assigned colors, and ``labels_cmap`` is
+        ``(labels_arr, possible_labels, colours, labels_cmap)`` where
+        ``labels_arr``
+        are readable labels (e.g. "Shallow", "Deep"), ``possible_labels``
+        are unique
+        label values, ``colours`` are the assigned colors, and
+        ``labels_cmap`` is
         the colormap used.
 
     Raises
@@ -2511,7 +2824,8 @@ def _get_labels(
     elif len(av_depths) == 2:
         labels_arr = ["Shallow", "Deep"]
         colours = [
-            #[cm.get_cmap(cmap_name)(i / len(av_depths)) for i in range(len())]
+            # [cm.get_cmap(cmap_name)(i / len(av_depths))
+            #  for i in range(len(av_depths))]
             labels_cmap(possible_labels[0]),
             labels_cmap(possible_labels[1]),
         ]
@@ -2520,6 +2834,7 @@ def _get_labels(
         galfind_logger.critical(err_message)
         raise Exception(err_message)
     return labels_arr, possible_labels, colours, labels_cmap
+
 
 def _plot_labels(
     ax: plt.Axes,
@@ -2538,9 +2853,13 @@ def _plot_labels(
         Colormap for rendering the labeled regions.
     """
     ax.imshow(
-        hf_output["labels_grid"], cmap=cmap, origin="lower", interpolation="None"
+        hf_output["labels_grid"],
+        cmap=cmap,
+        origin="lower",
+        interpolation="None",
     )
     ax.set_title("Labels")
+
 
 def _plot_cat_depths(
     fig: plt.Figure,
@@ -2560,7 +2879,8 @@ def _plot_cat_depths(
     ax : `matplotlib.axes.Axes`
         Axes on which to draw the catalogue depths.
     hf_output : `dict`
-        Output from depth calculation containing ``depths`` and ``final_labels``.
+        Output from depth calculation containing ``depths`` and
+        ``final_labels``.
     cmap : `matplotlib.colors.Colormap`
         Colormap for the depth values.
     cat_x : `numpy.ndarray`
@@ -2572,7 +2892,13 @@ def _plot_cat_depths(
     """
     ax.set_title("Catalogue Depths")
     m = ax.scatter(
-        cat_x, cat_y, s=1, zorder=5, c=hf_output["depths"], cmap=cmap, edgecolors=None
+        cat_x,
+        cat_y,
+        s=1,
+        zorder=5,
+        c=hf_output["depths"],
+        cmap=cmap,
+        edgecolors=None,
     )
     divider = make_axes_locatable(ax)
     cax = divider.append_axes("right", size="5%", pad=0.05)
@@ -2593,6 +2919,7 @@ def _plot_cat_depths(
         alpha=0.3,
         zorder=4,
     )
+
 
 def _plot_cat_diagnostic(
     fig: plt.Figure,
@@ -2630,7 +2957,7 @@ def _plot_cat_diagnostic(
         zorder=5,
         c=np.array(hf_output["diagnostic"]),
         cmap=cmap,
-        edgecolors=None
+        edgecolors=None,
     )
     # Make it so axes aren't stetch disproportionately
     ax.set_aspect("equal")
@@ -2639,6 +2966,7 @@ def _plot_cat_diagnostic(
     fig.colorbar(
         mappable=m, label="Distance to 200th Empty Aperture", cax=cax4
     )
+
 
 def _plot_depth_hist(
     fig: plt.Figure,
@@ -2649,7 +2977,7 @@ def _plot_depth_hist(
     colours: List[plt.Color],
     annotate: bool = True,
     label_suffix: Optional[str] = None,
-    title: Optional[str] = None # default None prints "Depth Histogram"
+    title: Optional[str] = None,  # default None prints "Depth Histogram"
 ) -> NoReturn:
     """Plot histogram of depths, optionally split by region labels.
 
@@ -2660,7 +2988,8 @@ def _plot_depth_hist(
     ax : `matplotlib.axes.Axes`
         Axes on which to draw the histogram.
     hf_output : `dict`
-        Output from depth calculation containing ``nmad_grid`` and ``labels_grid``.
+        Output from depth calculation containing ``nmad_grid`` and
+        ``labels_grid``.
     labels_arr : `list` of `str`
         Readable labels for each region (e.g. ["Shallow", "Deep"]).
     possible_labels : `list` of `int`
@@ -2675,7 +3004,8 @@ def _plot_depth_hist(
         Plot title. Default is `None` (uses "Depth Histogram").
     """
     set_labels = [
-        hf_output["depths"][hf_output["depth_labels"] == label] for label in possible_labels
+        hf_output["depths"][hf_output["depth_labels"] == label]
+        for label in possible_labels
     ]
     for set_label, label, colour in zip(set_labels, labels_arr, colours):
         _set_label = set_label[~np.isnan(set_label)]  # remove nans
@@ -2684,7 +3014,10 @@ def _plot_depth_hist(
         ax.hist(
             _set_label,
             bins=40,
-            range=(np.nanmin(hf_output["depths"]), np.nanmax(hf_output["depths"])),
+            range=(
+                np.nanmin(hf_output["depths"]),
+                np.nanmax(hf_output["depths"]),
+            ),
             label=label,
             color=colour,
             histtype="stepfilled",
@@ -2817,13 +3150,15 @@ def get_depth_h5_labels():
         "grid_offset_times",
     ]
 
+
 def append_loc_depth_cols(
-    self: Data, 
-    min_flux_pc_err: Optional[Union[int, float]] = None, 
+    self: Data,
+    min_flux_pc_err: Optional[Union[int, float]] = None,
     update: bool = False,
     overwrite: bool = False,
 ) -> None:
-    """Append local (empty-aperture) depth columns to a survey's photometric catalogue.
+    """Append local (empty-aperture) depth columns to a survey's
+    photometric catalogue.
 
     For each band (plus the forced photometry band and any stacked
     bands) and aperture diameter, loads the pre-computed grid depths
@@ -2869,27 +3204,48 @@ def append_loc_depth_cols(
     """
     from ..catalogues.Catalogue import Catalogue
     from ..imaging.Data import Stacked_Band_Data
+
     # open catalogue
     tab = Table.read(self.phot_cat_path)
     # update catalogue with local depths if not already done so
-    if not all(f"FLUX_APER_{band_data.filt_name}_aper_corr" in tab.colnames for band_data in self):
+    if not all(
+        f"FLUX_APER_{band_data.filt_name}_aper_corr" in tab.colnames
+        for band_data in self
+    ):
         galfind_logger.critical(
-            "Must run aperture corrections before appending local depth columns!"
+            "Must run aperture corrections before appending local "
+            + "depth columns!"
         )
-    elif not all(f"loc_depth_{band_data.filt_name}" in tab.colnames for band_data in self) or update or overwrite:
-        assert hasattr(self, "forced_phot_band"), \
-            galfind_logger.critical(
-                f"{repr(self)} has no 'forced_phot_band'"
-            )
+    elif (
+        not all(
+            f"loc_depth_{band_data.filt_name}" in tab.colnames
+            for band_data in self
+        )
+        or update
+        or overwrite
+    ):
+        assert hasattr(self, "forced_phot_band"), galfind_logger.critical(
+            f"{repr(self)} has no 'forced_phot_band'"
+        )
         # ensure aperture diameters are the same for all bands
-        assert all(all(diam == diam_0 for diam, diam_0 in 
-            zip(band_data.aper_diams, self[0].aper_diams)) 
-            for band_data in self), galfind_logger.critical(
-                f"Aperture diameters are not the same for all bands in {repr(self)}"
+        assert all(
+            all(
+                diam == diam_0
+                for diam, diam_0 in zip(
+                    band_data.aper_diams, self[0].aper_diams
+                )
             )
+            for band_data in self
+        ), galfind_logger.critical(
+            "Aperture diameters are not the same for all bands in "
+            + f"{repr(self)}"
+        )
         aper_diams = self[0].aper_diams.to(u.arcsec).value
         self_band_data_arr = deepcopy(self.band_data_arr)
-        if hasattr(self, "forced_phot_band") and self.forced_phot_band not in self_band_data_arr:
+        if (
+            hasattr(self, "forced_phot_band")
+            and self.forced_phot_band not in self_band_data_arr
+        ):
             self_band_data_arr += [self.forced_phot_band]
         if hasattr(self, "stacked_band_data_arr"):
             self_band_data_arr += self.stacked_band_data_arr
@@ -2902,13 +3258,17 @@ def append_loc_depth_cols(
         elif update:
             # only compute for bands which havn't already been computed
             self_band_data_arr = [
-                band_data for band_data in self_band_data_arr 
+                band_data
+                for band_data in self_band_data_arr
                 if f"loc_depth_{band_data.filt_name}" not in tab.colnames
             ]
 
-        for i, band_data in tqdm(enumerate(self_band_data_arr), 
-                total=len(self_band_data_arr), desc="Appending local depth columns",
-                disable=galfind_logger.getEffectiveLevel() > logging.INFO):
+        for i, band_data in tqdm(
+            enumerate(self_band_data_arr),
+            total=len(self_band_data_arr),
+            desc="Appending local depth columns",
+            disable=galfind_logger.getEffectiveLevel() > logging.INFO,
+        ):
             for j, aper_diam in enumerate(aper_diams):
                 aper_diam *= u.arcsec
                 h5_path = get_grid_depth_path(
@@ -2921,13 +3281,17 @@ def append_loc_depth_cols(
                     hf = h5py.File(h5_path, "r")
                     depths = np.array(hf["depths"])
                     diagnostics = np.array(hf["diagnostic"])
-                    diagnostic_name_ = (
-                        f"d_{int(np.array(hf['n_nearest']))}"
-                        if band_data.depth_args[aper_diam]["mode"] == "n_nearest"
-                        else f"n_aper_{float(np.array(hf['region_radius_used_pix'])):.1f}"
-                        if band_data.depth_args[aper_diam]["mode"] == "rolling"
-                        else None
-                    )
+                    if band_data.depth_args[aper_diam]["mode"] == "n_nearest":
+                        diagnostic_name_ = (
+                            f"d_{int(np.array(hf['n_nearest']))}"
+                        )
+                    elif band_data.depth_args[aper_diam]["mode"] == "rolling":
+                        region_radius_used = float(
+                            np.array(hf["region_radius_used_pix"])
+                        )
+                        diagnostic_name_ = f"n_aper_{region_radius_used:.1f}"
+                    else:
+                        diagnostic_name_ = None
                     # make sure the same depth setup has been run in each band
                     if i == 0 and j == 0:
                         diagnostic_name = diagnostic_name_
@@ -2939,9 +3303,13 @@ def append_loc_depth_cols(
                 if len(aper_diams) == 1:
                     band_depths = list(depths)
                     band_diagnostics = list(diagnostics)
-                    band_sigmas = list(funcs.n_sigma_detection(
-                        depths, tab[f"MAG_APER_{band_data.filt_name}"], band_data.ZP
-                        ))
+                    band_sigmas = list(
+                        funcs.n_sigma_detection(
+                            depths,
+                            tab[f"MAG_APER_{band_data.filt_name}"],
+                            band_data.ZP,
+                        )
+                    )
                 else:
                     if j == 0:
                         band_depths = [(depth,) for depth in depths]
@@ -2979,7 +3347,9 @@ def append_loc_depth_cols(
                                 ),
                             )
                             for band_sigma, depth, mag_aper in zip(
-                                band_sigmas, depths, tab[f"MAG_APER_{band_data.filt_name}"]
+                                band_sigmas,
+                                depths,
+                                tab[f"MAG_APER_{band_data.filt_name}"],
                             )
                         ]
 
@@ -2989,8 +3359,10 @@ def append_loc_depth_cols(
             tab[f"sigma_{band_data.filt_name}"] = band_sigmas
             # make local depth error columns in image units
             if len(aper_diams) == 1:
-                tab[f"FLUXERR_APER_{band_data.filt_name}_loc_depth"] = \
-                    list(funcs.mag_to_flux(np.array(band_depths), band_data.ZP) / 5.0)
+                tab[f"FLUXERR_APER_{band_data.filt_name}_loc_depth"] = list(
+                    funcs.mag_to_flux(np.array(band_depths), band_data.ZP)
+                    / 5.0
+                )
             else:
                 tab[f"FLUXERR_APER_{band_data.filt_name}_loc_depth"] = [
                     tuple(
@@ -3002,34 +3374,34 @@ def append_loc_depth_cols(
                     for element in band_depths
                 ]
 
-            if not isinstance(band_data, Stacked_Band_Data): # or psf_homogenized
-                # impose n_pc min flux error and convert to Jy where appropriate
+            if not isinstance(
+                band_data, Stacked_Band_Data
+            ):  # or psf_homogenized
+                # impose n_pc min flux error and convert to Jy where
+                # appropriate
                 if len(aper_diams) == 1:
                     # TODO: Speed up this bit of code
-                    tab[f"FLUXERR_APER_{band_data.filt_name}_loc_depth_{str(int(min_flux_pc_err))}pc_Jy"] = \
-                        [
-                            np.nan
-                            if flux == 0.0
-                            else funcs.flux_image_to_Jy(
-                                flux,
-                                band_data.ZP
-                            ).value
-                            * min_flux_pc_err
-                            / 100.0
-                            if err / flux
-                            < min_flux_pc_err / 100.0
-                            and flux > 0.0
-                            else funcs.flux_image_to_Jy(
-                                err, band_data.ZP
-                            ).value
-                            for flux, err in zip(
-                                tab[f"FLUX_APER_{band_data.filt_name}_aper_corr"],
-                                tab[f"FLUXERR_APER_{band_data.filt_name}_loc_depth"],
-                            )
-                        ]
+                    tab[
+                        f"FLUXERR_APER_{band_data.filt_name}_loc_depth_{str(int(min_flux_pc_err))}pc_Jy"
+                    ] = [
+                        np.nan
+                        if flux == 0.0
+                        else funcs.flux_image_to_Jy(flux, band_data.ZP).value
+                        * min_flux_pc_err
+                        / 100.0
+                        if err / flux < min_flux_pc_err / 100.0 and flux > 0.0
+                        else funcs.flux_image_to_Jy(err, band_data.ZP).value
+                        for flux, err in zip(
+                            tab[f"FLUX_APER_{band_data.filt_name}_aper_corr"],
+                            tab[
+                                f"FLUXERR_APER_{band_data.filt_name}_loc_depth"
+                            ],
+                        )
+                    ]
                 else:
-                    tab[f"FLUXERR_APER_{band_data.filt_name}_loc_depth_{str(int(min_flux_pc_err))}pc_Jy"] = \
-                        [
+                    tab[
+                        f"FLUXERR_APER_{band_data.filt_name}_loc_depth_{str(int(min_flux_pc_err))}pc_Jy"
+                    ] = [
                         tuple(
                             [
                                 np.nan
@@ -3039,8 +3411,7 @@ def append_loc_depth_cols(
                                 ).value
                                 * min_flux_pc_err
                                 / 100.0
-                                if err / flux
-                                < min_flux_pc_err / 100.0
+                                if err / flux < min_flux_pc_err / 100.0
                                 and flux > 0.0
                                 else funcs.flux_image_to_Jy(
                                     err, band_data.ZP
@@ -3050,19 +3421,19 @@ def append_loc_depth_cols(
                         )
                         for flux_tup, err_tup in zip(
                             tab[f"FLUX_APER_{band_data.filt_name}_aper_corr"],
-                            tab[f"FLUXERR_APER_{band_data.filt_name}_loc_depth"],
+                            tab[
+                                f"FLUXERR_APER_{band_data.filt_name}_loc_depth"
+                            ],
                         )
                     ]
             else:
                 galfind_logger.debug(
-                    f"Not imposing minimum flux error for {repr(self)}" + \
-                    "Aperture corrections cannot be applied unless PSF homogenized"
+                    f"Not imposing minimum flux error for {repr(self)} "
+                    + "Aperture corrections cannot be applied unless "
+                    + "PSF homogenized"
                 )
         # update meta
-        tab.meta = {
-            **tab.meta,
-            "MINPCERR": min_flux_pc_err
-        }
+        tab.meta = {**tab.meta, "MINPCERR": min_flux_pc_err}
         if update:
             Catalogue.update_fits_cat(
                 tab,

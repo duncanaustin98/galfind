@@ -1,19 +1,30 @@
 """Utility functions for constructing standardized GALFIND directory paths.
 
-Provides functions to construct standard data, catalogue, and depth directory paths
+Provides functions to construct standard data, catalogue, and depth
+directory paths
 based on survey name, data reduction version, and instrument configuration.
 """
 
 import os
-import numpy as np
-from astropy import units as u
 import shutil
 from pathlib import Path
 
-from ..utils import useful_funcs_austind as funcs
-#from .Data import morgan_version_to_dir_dict
+import numpy as np
+from astropy import units as u
 
-def get_data_dir(galfind_data_dir, survey, version, instrument_names, pix_scale = 0.03 * u.arcsec, version_to_dir_dict = None):
+from ..utils import useful_funcs_austind as funcs
+
+# from .Data import morgan_version_to_dir_dict
+
+
+def get_data_dir(
+    galfind_data_dir,
+    survey,
+    version,
+    instrument_names,
+    pix_scale=0.03 * u.arcsec,
+    version_to_dir_dict=None,
+):
     """Construct the imaging data directory path(s) for each instrument.
 
     Parameters
@@ -40,23 +51,31 @@ def get_data_dir(galfind_data_dir, survey, version, instrument_names, pix_scale 
         One data directory path per entry in `instrument_names`.
     """
     from . import Instrument
+
     out_dirs = []
     for instrument_name in instrument_names:
-        # determine facility name from instrument name
-        instr = [cls for cls in funcs.all_subclasses(Instrument) if cls.__name__ == instrument_name]
+        # determine facility name from instrument name
+        instr = [
+            cls
+            for cls in funcs.all_subclasses(Instrument)
+            if cls.__name__ == instrument_name
+        ]
         assert len(instr) == 1, f"Instrument {instrument_name} not recognised"
         instr = instr[0]()
         facility_name = instr.facility.SVO_name.lower()
         if version_to_dir_dict is None:
             version_ = version
         else:
-            assert version in version_to_dir_dict, f"Version {version} not recognised"
+            assert (
+                version in version_to_dir_dict
+            ), f"Version {version} not recognised"
             version_ = version_to_dir_dict[version]
         out_dirs.append(
-            f"{galfind_data_dir}/{facility_name}/{survey}/{instrument_name}/" + \
-            f"{version_}/{pix_scale.to(u.marcsec).value:.0f}mas"
+            f"{galfind_data_dir}/{facility_name}/{survey}/{instrument_name}/"
+            + f"{version_}/{pix_scale.to(u.marcsec).value:.0f}mas"
         )
     return np.array(out_dirs)
+
 
 def get_cat_dir(galfind_work_dir, survey, version, instrument_names):
     """Construct the catalogue directory path for a combined instrument set.
@@ -79,7 +98,10 @@ def get_cat_dir(galfind_work_dir, survey, version, instrument_names):
         Single-element array containing the catalogue directory path.
     """
     instrument_name = "+".join(instrument_names)
-    return np.array([f"{galfind_work_dir}/Catalogues/{version}/{instrument_name}/{survey}"])
+    return np.array(
+        [f"{galfind_work_dir}/Catalogues/{version}/{instrument_name}/{survey}"]
+    )
+
 
 def get_depth_dir(galfind_work_dir, survey, version, instrument_names):
     """Construct the depth directory path(s) for each instrument.
@@ -102,12 +124,16 @@ def get_depth_dir(galfind_work_dir, survey, version, instrument_names):
     """
     out_dirs = []
     for instrument_name in instrument_names:
-        out_dirs.append(f"{galfind_work_dir}/Depths/{instrument_name}/{version}/{survey}")
-    #breakpoint()
+        out_dirs.append(
+            f"{galfind_work_dir}/Depths/{instrument_name}/{version}/{survey}"
+        )
+    # breakpoint()
     return np.array(out_dirs)
 
+
 def get_eazy_dir(galfind_work_dir, survey, version, instrument_names):
-    """Construct the EAZY input and output directory paths for a combined instrument set.
+    """Construct the EAZY input and output directory paths for a
+    combined instrument set.
 
     Parameters
     ----------
@@ -130,8 +156,11 @@ def get_eazy_dir(galfind_work_dir, survey, version, instrument_names):
     instrument_name = "+".join(instrument_names)
     out_dirs = []
     for subdir in ["input", "output"]:
-        out_dirs.append(f"{galfind_work_dir}/EAZY/{subdir}/{instrument_name}/{version}/{survey}")
+        out_dirs.append(
+            f"{galfind_work_dir}/EAZY/{subdir}/{instrument_name}/{version}/{survey}"
+        )
     return np.array(out_dirs)
+
 
 def get_mask_dir(galfind_work_dir, survey):
     """Construct the mask directory path for a survey.
@@ -149,6 +178,7 @@ def get_mask_dir(galfind_work_dir, survey):
         Single-element array containing the mask directory path.
     """
     return np.array([f"{galfind_work_dir}/Masks/{survey}"])
+
 
 def get_sex_dir(galfind_work_dir, survey, version, instrument_names):
     """Construct the SExtractor directory path(s) for each instrument.
@@ -171,10 +201,15 @@ def get_sex_dir(galfind_work_dir, survey, version, instrument_names):
     """
     out_dirs = []
     for instrument_name in instrument_names:
-        out_dirs.append(f"{galfind_work_dir}/SExtractor/{instrument_name}/{version}/{survey}")
+        out_dirs.append(
+            f"{galfind_work_dir}/SExtractor/{instrument_name}/{version}/{survey}"
+        )
     return np.array(out_dirs)
 
-def get_stacked_images_dir(galfind_work_dir, survey, version, instrument_names):
+
+def get_stacked_images_dir(
+    galfind_work_dir, survey, version, instrument_names
+):
     """Construct the stacked images directory path(s) for each instrument.
 
     Parameters
@@ -195,8 +230,11 @@ def get_stacked_images_dir(galfind_work_dir, survey, version, instrument_names):
     """
     out_dirs = []
     for instrument_name in instrument_names:
-        out_dirs.append(f"{galfind_work_dir}/Stacked_Images/{version}/{instrument_name}/{survey}")
+        out_dirs.append(
+            f"{galfind_work_dir}/Stacked_Images/{version}/{instrument_name}/{survey}"
+        )
     return np.array(out_dirs)
+
 
 def find_target_dir(galfind_dir, survey, version, instrument_names, keyword):
     """Dispatch to the appropriate ``get_*_dir`` function based on a keyword.
@@ -241,11 +279,21 @@ def find_target_dir(galfind_dir, survey, version, instrument_names, keyword):
     elif keyword == "SExtractor":
         return get_sex_dir(galfind_dir, survey, version, instrument_names)
     elif keyword == "Stacked_Images":
-        return get_stacked_images_dir(galfind_dir, survey, version, instrument_names)
+        return get_stacked_images_dir(
+            galfind_dir, survey, version, instrument_names
+        )
     else:
         raise ValueError(f"Keyword {keyword} not recognised")
 
-def symlink(target_galfind_dir, symlink_galfind_dir, survey, version, instrument_names, keywords):
+
+def symlink(
+    target_galfind_dir,
+    symlink_galfind_dir,
+    survey,
+    version,
+    instrument_names,
+    keywords,
+):
     """Symlink files from a target GALFIND directory tree into another.
 
     For each `keyword`, looks up the corresponding target directories via
@@ -273,12 +321,22 @@ def symlink(target_galfind_dir, symlink_galfind_dir, survey, version, instrument
     `None`
     """
     for keyword in keywords:
-        target_dirs = find_target_dir(target_galfind_dir, survey, version, instrument_names, keyword)
+        target_dirs = find_target_dir(
+            target_galfind_dir, survey, version, instrument_names, keyword
+        )
         for target_dir in target_dirs:
-            target_paths = [str(path) for path in Path(target_dir).rglob("*") if path.is_file()]
-            symlink_paths = [path.replace(target_galfind_dir, symlink_galfind_dir) for path in target_paths]
+            target_paths = [
+                str(path)
+                for path in Path(target_dir).rglob("*")
+                if path.is_file()
+            ]
+            symlink_paths = [
+                path.replace(target_galfind_dir, symlink_galfind_dir)
+                for path in target_paths
+            ]
             for target_path, symlink_path in zip(target_paths, symlink_paths):
                 funcs.symlink(target_path, symlink_path)
+
 
 def unlink(target_galfind_dir, survey, version, instrument_names, keywords):
     """Remove symlinks previously created under a GALFIND directory tree.
@@ -305,19 +363,28 @@ def unlink(target_galfind_dir, survey, version, instrument_names, keywords):
     `None`
     """
     for keyword in keywords:
-        target_dirs = find_target_dir(target_galfind_dir, survey, version, instrument_names, keyword)
+        target_dirs = find_target_dir(
+            target_galfind_dir, survey, version, instrument_names, keyword
+        )
         for target_dir in target_dirs:
-            target_paths = [str(path) for path in Path(target_dir).rglob("*") if path.is_file()]
+            target_paths = [
+                str(path)
+                for path in Path(target_dir).rglob("*")
+                if path.is_file()
+            ]
             for symlink_path in target_paths:
                 if os.path.islink(symlink_path):
                     os.unlink(symlink_path)
 
- 
+
 def _is_up_to_date(target_path, dest_size, dest_mtime):
     """Compare a source file against a known destination size/mtime."""
     src_stat = os.stat(target_path)
-    return src_stat.st_size == dest_size and int(src_stat.st_mtime) <= int(dest_mtime)
- 
+    return src_stat.st_size == dest_size and int(src_stat.st_mtime) <= int(
+        dest_mtime
+    )
+
+
 def _remote_copy(ssh_client, sftp_client, target_path, dest_path, force=False):
     """Create parent dirs on the remote host, then copy the file over via SFTP
     unless an up-to-date copy already exists there."""
@@ -328,11 +395,13 @@ def _remote_copy(ssh_client, sftp_client, target_path, dest_path, force=False):
     if exit_status != 0:
         err = stderr.read().decode().strip()
         raise RuntimeError(f"Failed to create remote dir {parent!r}: {err}")
- 
+
     if not force:
         try:
             dest_stat = sftp_client.stat(dest_path)
-            if _is_up_to_date(target_path, dest_stat.st_size, dest_stat.st_mtime):
+            if _is_up_to_date(
+                target_path, dest_stat.st_size, dest_stat.st_mtime
+            ):
                 return False  # skipped, already up to date
         except FileNotFoundError:
             pass
@@ -344,38 +413,42 @@ def _remote_copy(ssh_client, sftp_client, target_path, dest_path, force=False):
     src_stat = os.stat(target_path)
     sftp_client.utime(dest_path, (src_stat.st_atime, src_stat.st_mtime))
     return True  # copied
- 
+
+
 def _local_copy(target_path, dest_path, force=False):
     """Copy a file locally, recreating any needed subdirectories, unless an
     up-to-date copy already exists at the destination."""
     dest_path = Path(dest_path)
     dest_path.parent.mkdir(parents=True, exist_ok=True)
- 
+
     if not force and dest_path.exists():
         dest_stat = dest_path.stat()
         if _is_up_to_date(target_path, dest_stat.st_size, dest_stat.st_mtime):
             return False  # skipped, already up to date
- 
+
     shutil.copy2(target_path, dest_path)
     return True  # copied
 
 
 if __name__ == "__main__":
-
     # #survey = "COSMOS-Web-1A"
     # version = "v11" #"mosaic_1084_wispnathan_v2"
     # instrument_names = ["ACS_WFC", "NIRCam"]
-    # target_dir = "/raid/scratch/work/jarcidia/GALFIND_WORK" #galfind.config["DEFAULT"]["GALFIND_WORK"]
+    # target_dir = "/raid/scratch/work/jarcidia/GALFIND_WORK"
+    # galfind.config["DEFAULT"]["GALFIND_WORK"]
 
     # symlink_dir = "/raid/scratch/work/austind/GALFIND_WORK"
-    # dirs_to_link = ["Masks"] #["Depths", "EAZY", "Masks", "SExtractor", "Stacked_Images"]
+    # dirs_to_link = ["Masks"]
+    # ["Depths", "EAZY", "Masks", "SExtractor", "Stacked_Images"]
     # type = "symlink"
-    # for survey in [f"COSMOS-Web-{x}{letter}" for x in range(0,8) for letter in ["A", "B"]]:
+    # for survey in [f"COSMOS-Web-{x}{letter}" for x in range(0,8)
+    #     for letter in ["A", "B"]]:
     #     if type == "symlink":
-    #         symlink(target_dir, symlink_dir, survey, version, instrument_names, dirs_to_link)
+    #         symlink(target_dir, symlink_dir, survey, version,
+    #             instrument_names, dirs_to_link)
     #     elif type == "unlink":
-    #         unlink(symlink_dir, survey, version, instrument_names, dirs_to_link)
+    #         unlink(symlink_dir, survey, version, instrument_names,
+    #             dirs_to_link)
     #     else:
     #         raise ValueError(f"Type {type} not recognised")
     pass
-

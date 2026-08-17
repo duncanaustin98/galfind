@@ -39,7 +39,8 @@ lyman_alpha_photon_absorption_const = (
 
 
 def integral_result(x):
-    """Evaluate the analytic antiderivative used in the Miralda-Escude (1998) damping-wing integral.
+    """Evaluate the analytic antiderivative used in the Miralda-Escude
+    (1998) damping-wing integral.
 
     Computes the closed-form result of the integral appearing in the
     calculation of the Lyman-alpha damping wing optical depth through an
@@ -66,10 +67,12 @@ def integral_result(x):
 
 
 def bg_HI_density(z, x_HI, helium_mass_frac, cosmo=astropy_cosmo):
-    """Compute the mean background neutral hydrogen number density at redshift `z`.
+    """Compute the mean background neutral hydrogen number density at
+    redshift `z`.
 
     Scales the cosmic critical baryon density at `z` by the neutral
-    hydrogen fraction and the hydrogen mass fraction (``1 - helium_mass_frac``).
+    hydrogen fraction and the hydrogen mass fraction (``1 -
+    helium_mass_frac``).
 
     Parameters
     ----------
@@ -137,7 +140,8 @@ def tau_DW(
     z_re_end=6.0,
     cosmo=astropy_cosmo,
 ):
-    """Compute the Lyman-alpha damping wing optical depth from the neutral IGM outside an ionized bubble.
+    """Compute the Lyman-alpha damping wing optical depth from the
+    neutral IGM outside an ionized bubble.
 
     Implements the Miralda-Escude (1998) damping wing model for a galaxy
     at redshift `z_gal` sitting at the centre of an ionized bubble of
@@ -223,7 +227,8 @@ def delta_lambda_lyman_alpha_from_gas_temp(gas_temp):
 
 
 def delta_lambda_lyman_alpha_from_b(b):
-    """Compute the Lyman-alpha Doppler wavelength width from a Doppler parameter.
+    """Compute the Lyman-alpha Doppler wavelength width from a Doppler
+    parameter.
 
     Parameters
     ----------
@@ -240,7 +245,8 @@ def delta_lambda_lyman_alpha_from_b(b):
 
 
 def DLA_damping_param(delta_lambda):
-    """Compute the dimensionless Voigt damping parameter for a DLA at the given Doppler width.
+    """Compute the dimensionless Voigt damping parameter for a DLA at
+    the given Doppler width.
 
     Parameters
     ----------
@@ -288,7 +294,8 @@ def full_voigt_profile(x, alpha, gamma):
 
 
 def Tepper_Garcia06_voigt_profile(a, x):
-    """Evaluate the Tepper-Garcia (2006) approximation to the Voigt-Hjerting function, H(a, x).
+    """Evaluate the Tepper-Garcia (2006) approximation to the
+    Voigt-Hjerting function, H(a, x).
 
     A fast pseudo-analytic approximation to the Voigt-Hjerting function,
     valid for small damping parameter `a`, used to model DLA/proximate-DLA
@@ -316,7 +323,8 @@ def Tepper_Garcia06_voigt_profile(a, x):
 
 
 def Tepper_Garcia06_lyman_alpha_voigt_profile(wav_rest, delta_lambda):
-    """Evaluate the Tepper-Garcia (2006) Voigt-Hjerting profile of the Lyman-alpha line at given wavelengths.
+    """Evaluate the Tepper-Garcia (2006) Voigt-Hjerting profile of the
+    Lyman-alpha line at given wavelengths.
 
     Computes the Voigt damping parameter from `delta_lambda` and the
     dimensionless offset from the Lyman-alpha line centre, then evaluates
@@ -346,7 +354,8 @@ def Tepper_Garcia06_lyman_alpha_voigt_profile(wav_rest, delta_lambda):
 def tau_proximate_DLA(
     wav_rest, N_HI, delta_lambda, voigt_method="Tepper-Garcia+06"
 ):
-    """Compute the Lyman-alpha optical depth of a proximate damped Lyman-alpha (DLA) system.
+    """Compute the Lyman-alpha optical depth of a proximate damped
+    Lyman-alpha (DLA) system.
 
     Parameters
     ----------

@@ -10,12 +10,23 @@ from __future__ import annotations
 
 # EAZY.py
 import itertools
-import os
-from shutil import copy
-import warnings
-from pathlib import Path
 import logging
+import os
+import warnings
 from copy import deepcopy
+from pathlib import Path
+from shutil import copy
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    List,
+    NoReturn,
+    Optional,
+    Tuple,
+    Type,
+    Union,
+)
 
 import astropy.units as u
 import eazy
@@ -25,9 +36,17 @@ from astropy.table import Table
 from eazy import hdf5
 from scipy.linalg import LinAlgWarning
 from tqdm import tqdm
-from typing import TYPE_CHECKING, List, Any, Dict, Optional, NoReturn, Type, Union, Tuple
+
 if TYPE_CHECKING:
-    from . import Galaxy, Catalogue, Spectral_Catalogue, PDF, Multiple_Filter, SED_Result, SED_obs
+    from . import (
+        PDF,
+        Catalogue,
+        Galaxy,
+        Multiple_Filter,
+        SED_obs,
+        SED_Result,
+        Spectral_Catalogue,
+    )
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -35,15 +54,17 @@ except ImportError:
 
 warnings.filterwarnings("ignore", category=LinAlgWarning)
 
-from .. import Redshift_PDF, SED_code, config, galfind_logger
+from .. import config, galfind_logger
+from ..spectra.SED import SED_obs
 from ..utils import useful_funcs_austind as funcs
 from ..utils.decorators import run_in_dir
-from ..spectra.SED import SED_obs
+from ..visualization import Redshift_PDF
+from .SED_codes import SED_code
 
 # %% EAZY SED fitting code
 
 # TODO: update these at runtime
-'''EAZY_FILTER_CODES = {
+"""EAZY_FILTER_CODES = {
     "NIRCam": {
         "F070W": 36,
         "F090W": 1,
@@ -89,11 +110,12 @@ from ..spectra.SED import SED_obs
         "F2100W": 20,
         "F2550W": 21,
     },
-}'''
+}"""
 
 
 class EAZY(SED_code):
-    """`SED_code` wrapper around the external EAZY-py photo-z / SED-fitting tool.
+    """`SED_code` wrapper around the external EAZY-py photo-z /
+    SED-fitting tool.
 
     Handles construction of EAZY ASCII input catalogues and filter
     response files, running the ``eazy-py`` `PhotoZ` fitter, and parsing
@@ -119,7 +141,8 @@ class EAZY(SED_code):
     """
 
     ID_label = "IDENT"
-    #ext_src_corr_properties = []
+
+    # ext_src_corr_properties = []
     def __init__(
         self: Self,
         SED_fit_params: Dict[str, Any],
@@ -148,8 +171,10 @@ class EAZY(SED_code):
         templates = "_".join(
             label_arr[1:-1]
         )  # templates may contain underscore
-        SED_fit_params = {"templates": templates,
-            "lowz_zmax": funcs.zmax_from_lowz_label(label_arr[-1])}
+        SED_fit_params = {
+            "templates": templates,
+            "lowz_zmax": funcs.zmax_from_lowz_label(label_arr[-1]),
+        }
         return cls(SED_fit_params)
 
     # @property
@@ -158,17 +183,22 @@ class EAZY(SED_code):
 
     @property
     def label(self) -> str:
-        """`str`: Unique label for this fitting run, implementing the `SED_code.label` interface.
+        """`str`: Unique label for this fitting run, implementing the
+        `SED_code.label` interface.
 
         Combines the class name, template set name, and low-z zmax label.
         """
-        # first write the code name, next write the template name, finish off with lowz_zmax
-        return f"{self.__class__.__name__}_{self.SED_fit_params['templates']}" + \
-            f"_{funcs.lowz_label(self.SED_fit_params['lowz_zmax'])}"
+        # first write the code name, next write the template name,
+        # finish off with lowz_zmax
+        return (
+            f"{self.__class__.__name__}_{self.SED_fit_params['templates']}"
+            + f"_{funcs.lowz_label(self.SED_fit_params['lowz_zmax'])}"
+        )
 
     @property
     def hdu_name(self) -> str:
-        """`str`: Name of the FITS HDU/extension this code's output is stored under.
+        """`str`: Name of the FITS HDU/extension this code's output is
+        stored under.
 
         Implements the `SED_code.hdu_name` interface. Combines the class
         name with the template set name.
@@ -177,17 +207,21 @@ class EAZY(SED_code):
 
     @property
     def tab_suffix(self) -> str:
-        """`str`: Column-name suffix used to distinguish this run's output columns.
+        """`str`: Column-name suffix used to distinguish this run's
+        output columns.
 
         Implements the `SED_code.tab_suffix` interface. Combines the
         template set name with the low-z zmax label.
         """
-        return f"{self.SED_fit_params['templates']}_" + \
-            f"{funcs.lowz_label(self.SED_fit_params['lowz_zmax'])}"
+        return (
+            f"{self.SED_fit_params['templates']}_"
+            + f"{funcs.lowz_label(self.SED_fit_params['lowz_zmax'])}"
+        )
 
     @property
     def required_SED_fit_params(self) -> List[str]:
-        """`list` of `str`: Names of the `SED_fit_params` keys required by `EAZY`.
+        """`list` of `str`: Names of the `SED_fit_params` keys
+        required by `EAZY`.
 
         Implements the `SED_code.required_SED_fit_params` interface.
         """
@@ -195,7 +229,8 @@ class EAZY(SED_code):
 
     @property
     def are_errs_percentiles(self) -> bool:
-        """`bool`: Whether output property errors are stored as percentiles rather than 1-sigma values.
+        """`bool`: Whether output property errors are stored as
+        percentiles rather than 1-sigma values.
 
         Implements the `SED_code.are_errs_percentiles` interface.
         """
@@ -214,7 +249,7 @@ class EAZY(SED_code):
         update: bool = True,
         lowz_zmax_arr: Optional[List[float]] = None,
         save_name: Optional[str] = None,
-        **fit_kwargs
+        **fit_kwargs,
     ) -> Union[Galaxy, Catalogue, Spectral_Catalogue]:
         target = super().__call__(
             target,
@@ -226,14 +261,17 @@ class EAZY(SED_code):
             timed,
             overwrite,
             update,
-            save_name = save_name,
+            save_name=save_name,
             **fit_kwargs,
         )
         from ..catalogues.Catalogue import Catalogue, Spectral_Catalogue
+
         if isinstance(target, (Catalogue, Spectral_Catalogue)):
-            # BUG: save_name doesn't propagate 
+            # BUG: save_name doesn't propagate
             # - don't think it makes a difference in the function though
-            self._update_lowz_zmax(target, aper_diam, lowz_zmax_arr, save_name = save_name)
+            self._update_lowz_zmax(
+                target, aper_diam, lowz_zmax_arr, save_name=save_name
+            )
         return target
 
     def _update_lowz_zmax(
@@ -243,23 +281,38 @@ class EAZY(SED_code):
         lowz_zmax_arr: List[float],
         save_name: Optional[str] = None,
     ) -> Optional[List[SED_Result]]:
-        #cat_SED_results = [deepcopy(gal).aper_phot[aper_diam].SED_results[self.label] for gal in cat]
-        if lowz_zmax_arr is not None and self.SED_fit_params["lowz_zmax"] is None:
+        # cat_SED_results = [
+        #     deepcopy(gal).aper_phot[aper_diam].SED_results[self.label]
+        #     for gal in cat
+        # ]
+        if (
+            lowz_zmax_arr is not None
+            and self.SED_fit_params["lowz_zmax"] is None
+        ):
             # update cat_SED_results with lowz_zmax info
-            h5_path = self._get_out_paths(cat, aper_diam, save_name = save_name)[2].replace(".fits", ".h5")
+            h5_path = self._get_out_paths(cat, aper_diam, save_name=save_name)[
+                2
+            ].replace(".fits", ".h5")
             fit = hdf5.initialize_from_hdf5(h5file=h5_path, verbose=False)
             lowz_zmax_arr = np.sort(lowz_zmax_arr)
             save_dict_arr = np.full(len(cat), deepcopy({}))
             zbest_arr = {}
             chi2_best_arr = {}
             for lowz_zmax in lowz_zmax_arr:
-                assert lowz_zmax <= self.SED_fit_params["Z_MAX"], \
-                    galfind_logger.critical(
-                        f"{lowz_zmax=} cannot be greater than " + \
-                        f"{self.SED_fit_params['Z_MAX']=}!"
-                    )
+                assert (
+                    lowz_zmax <= self.SED_fit_params["Z_MAX"]
+                ), galfind_logger.critical(
+                    f"{lowz_zmax=} cannot be greater than "
+                    + f"{self.SED_fit_params['Z_MAX']=}!"
+                )
                 fit_copy = deepcopy(fit)
-                zgrid_mask = np.array([i for i in range(len(fit_copy.zgrid)) if fit_copy.zgrid[i] <= lowz_zmax])
+                zgrid_mask = np.array(
+                    [
+                        i
+                        for i in range(len(fit_copy.zgrid))
+                        if fit_copy.zgrid[i] <= lowz_zmax
+                    ]
+                )
                 fit_copy.chi2_fit = fit_copy.chi2_fit[:, zgrid_mask]
                 fit_copy.fit_coeffs = fit_copy.fit_coeffs[:, zgrid_mask, :]
                 fit_copy.tef_lnp = fit_copy.tef_lnp[:, zgrid_mask]
@@ -270,48 +323,69 @@ class EAZY(SED_code):
                 idx = np.array(cat.ID) - 1
                 zbest_arr[f"{lowz_zmax:.1f}"] = fit_copy.zbest[idx]
                 chi2_best_arr[f"{lowz_zmax:.1f}"] = fit_copy.chi2_best[idx]
-            
-                #cat_SED_results = [deepcopy(gal).aper_phot[aper_diam].SED_results[self.label] for gal in cat]
+
+                # cat_SED_results = [
+                #     deepcopy(gal).aper_phot[aper_diam]
+                #     .SED_results[self.label] for gal in cat
+                # ]
                 # assert len(cat) == len(zbest_arr) == len(chi2_best_arr), \
                 #     galfind_logger.critical(
                 #         f"ARRAY LENGTH MISMATCH: {len(cat)=}, " +
                 #         f"{len(zbest_arr)=}, {len(chi2_best_arr)=}"
                 #     )
-                #cat_SED_results = [deepcopy(gal).aper_phot[aper_diam].SED_results[self.label].update_lowz_zmax_properties(f"{lowz_zmax:.1f}", {}) for gal in cat]
-                #cat_SED_results = np.full(len(cat), None)
+                # cat_SED_results = [
+                #     deepcopy(gal).aper_phot[aper_diam]
+                #     .SED_results[self.label].update_lowz_zmax_properties(
+                #         f"{lowz_zmax:.1f}", {}
+                #     ) for gal in cat
+                # ]
+                # cat_SED_results = np.full(len(cat), None)
             for i in range(len(cat)):
-                #SED_result = deepcopy(cat[i].aper_phot[aper_diam].SED_results[self.label])
+                # SED_result = deepcopy(
+                #     cat[i].aper_phot[aper_diam].SED_results[self.label]
+                # )
                 save_dict = {
                     f"{lowz_zmax:.1f}": {
                         "zbest": zbest_arr[f"{lowz_zmax:.1f}"][i],
                         "chi2_best": chi2_best_arr[f"{lowz_zmax:.1f}"][i],
-                    } for lowz_zmax in lowz_zmax_arr
+                    }
+                    for lowz_zmax in lowz_zmax_arr
                 }
                 # }
-                save_dict_arr[i] = save_dict #.update(save_dict)
-                #SED_result.update_lowz_zmax_properties(f"{lowz_zmax:.1f}", save_dict)
-                #cat_SED_results[i] = SED_result
-                #cat_SED_result = deepcopy(cat[i]).aper_phot[aper_diam].SED_results[self.label]
-                #cat_SED_results[i] = deepcopy(cat_SED_result)
-            #cat.update_SED_results(cat_SED_results)
-            cat.update_SED_result_lowz_zmax_info(aper_diam, self.label, save_dict_arr)
+                save_dict_arr[i] = save_dict  # .update(save_dict)
+                # SED_result.update_lowz_zmax_properties(
+                #     f"{lowz_zmax:.1f}", save_dict
+                # )
+                # cat_SED_results[i] = SED_result
+                # cat_SED_result = deepcopy(cat[i]).aper_phot[aper_diam]
+                # .SED_results[self.label]
+                # cat_SED_results[i] = deepcopy(cat_SED_result)
+            # cat.update_SED_results(cat_SED_results)
+            cat.update_SED_result_lowz_zmax_info(
+                aper_diam, self.label, save_dict_arr
+            )
             # print(save_dict_arr)
             # for i, gal in enumerate(cat[:5]):
-            #     print(i, id(gal.aper_phot[aper_diam].SED_results[self.label]))
+            # print(i, id(gal.aper_phot[aper_diam].SED_results[self.label]))
             # # cat_SED_results = [
             # #     gal.aper_phot[aper_diam].SED_results[self.label].\
-            # #     update_lowz_zmax_properties(save_dict_arr[i]) for i, gal in enumerate(cat)
+            # #     update_lowz_zmax_properties(save_dict_arr[i])
+            # #     for i, gal in enumerate(cat)
             # # ]
-            #cat.update_SED_results(cat_SED_results)
-            return [gal.aper_phot[aper_diam].SED_results[self.label] for gal in cat]
+            # cat.update_SED_results(cat_SED_results)
+            return [
+                gal.aper_phot[aper_diam].SED_results[self.label] for gal in cat
+            ]
 
     def _load_gal_property_labels(self):
         gal_property_labels = {"z": "zbest", "chi_sq": "chi2_best"}
         if self.SED_fit_params.get("SAVE_UBVJ", True):
-            gal_property_labels.update({
-                f"{ubvj_filt}_flux": f"{ubvj_filt}_rf_flux"
-                for ubvj_filt in ["U", "B", "V", "J"]
-            })
+            gal_property_labels.update(
+                {
+                    f"{ubvj_filt}_flux": f"{ubvj_filt}_rf_flux"
+                    for ubvj_filt in ["U", "B", "V", "J"]
+                }
+            )
         super()._load_gal_property_labels(gal_property_labels)
 
     def _load_gal_property_err_labels(self):
@@ -333,10 +407,12 @@ class EAZY(SED_code):
             for gal_property in ["z", "chi_sq"]
         }
         if self.SED_fit_params.get("SAVE_UBVJ", True):
-            self.gal_property_units.update({
-                f"{ubvj_filt}_flux": u.nJy
-                for ubvj_filt in ["U", "B", "V", "J"]
-            })
+            self.gal_property_units.update(
+                {
+                    f"{ubvj_filt}_flux": u.nJy
+                    for ubvj_filt in ["U", "B", "V", "J"]
+                }
+            )
 
     def _assert_SED_fit_params(self):
         default_strings = ["N_PROC", "Z_STEP", "Z_MIN", "Z_MAX", "SAVE_UBVJ"]
@@ -344,17 +420,27 @@ class EAZY(SED_code):
         for default_str, default_type in zip(default_strings, default_types):
             if default_str == "Z_MAX":
                 if self.SED_fit_params["lowz_zmax"] is None:
-                    self.SED_fit_params["Z_MAX"] = config.getfloat("EAZY", "Z_MAX")
+                    self.SED_fit_params["Z_MAX"] = config.getfloat(
+                        "EAZY", "Z_MAX"
+                    )
                 else:
-                    self.SED_fit_params["Z_MAX"] = self.SED_fit_params["lowz_zmax"]
+                    self.SED_fit_params["Z_MAX"] = self.SED_fit_params[
+                        "lowz_zmax"
+                    ]
             else:
                 if default_str not in self.SED_fit_params.keys():
-                    if default_type == bool:
-                        self.SED_fit_params[default_str] = config.getboolean("EAZY", default_str)
-                    elif default_type == int:
-                        self.SED_fit_params[default_str] = config.getint("EAZY", default_str)
-                    elif default_type == float:
-                        self.SED_fit_params[default_str] = config.getfloat("EAZY", default_str)
+                    if default_type is bool:
+                        self.SED_fit_params[default_str] = config.getboolean(
+                            "EAZY", default_str
+                        )
+                    elif default_type is int:
+                        self.SED_fit_params[default_str] = config.getint(
+                            "EAZY", default_str
+                        )
+                    elif default_type is float:
+                        self.SED_fit_params[default_str] = config.getfloat(
+                            "EAZY", default_str
+                        )
         return super()._assert_SED_fit_params()
 
     def pre_fitting(
@@ -422,16 +508,25 @@ class EAZY(SED_code):
             save_name = ""
         else:
             save_name = f"_{save_name}"
-        in_dir = f"{config['EAZY']['EAZY_DIR']}/input/{cat.filterset.instrument_name}/{cat.version}/{cat.survey}"
-        in_name = cat.cat_name.replace('.fits', f"_{aper_diam.to(u.arcsec).value:.2f}as{save_name}.in")
+        in_dir = (
+            f"{config['EAZY']['EAZY_DIR']}/input/"
+            f"{cat.filterset.instrument_name}/{cat.version}/{cat.survey}"
+        )
+        in_name = cat.cat_name.replace(
+            ".fits", f"_{aper_diam.to(u.arcsec).value:.2f}as{save_name}.in"
+        )
         in_path = f"{in_dir}/{in_name}"
         in_filt_name = f"{in_path.replace('.in', '_filters.RES')}"
         if not Path(in_path).is_file() or overwrite:
             # 1) obtain input data
             IDs = np.array([gal.ID for gal in cat.gals])  # load IDs
-            redshifts = np.array([-99.0 for i in range(len(cat))]) # TODO: Load spec-z's
+            redshifts = np.array(
+                [-99.0 for i in range(len(cat))]
+            )  # TODO: Load spec-z's
             # load photometry
-            phot, phot_err = self._load_phot(cat, aper_diam, u.uJy, -99.0, None)
+            phot, phot_err = self._load_phot(
+                cat, aper_diam, u.uJy, -99.0, None
+            )
 
             funcs.make_dirs(in_path)
 
@@ -439,7 +534,7 @@ class EAZY(SED_code):
             filt_codes = self._make_filter_file(
                 cat.filterset,
                 in_filt_name,
-                default_param_path = f"{config['EAZY']['EAZY_CONFIG_DIR']}/EAZY_UVJ.RES",
+                default_param_path=f"{config['EAZY']['EAZY_CONFIG_DIR']}/EAZY_UVJ.RES",
             )
             # Make input file
             in_data = np.array(
@@ -501,25 +596,29 @@ class EAZY(SED_code):
         z_max - maximum redshift to fit - default 25.
         save_SEDs - whether to write out best-fitting SEDs. Default True.
         save_PDFs - Whether to write out redshift PDF. Default True.
-        save_plots - whether to save SED plots - default False. Use in conjunction with plot_ids to plot SEDS of specific ids.
+        save_plots - whether to save SED plots - default False. Use in
+        conjunction with plot_ids to plot SEDS of specific ids.
         save_ubvj - whether to save restframe UBVJ fluxes -default True.
         **kwargs - additional arguments to pass to EAZY to overide defaults
         """
         # Change this to config file path
-        # This if/else tree chooses which template file to use based on 'templates' argument
+        # This if/else tree chooses which template file to use based
+        # on 'templates' argument
         # FSPS - default EAZY templates, good allrounders
-        # fsps_larson - default here, optimized for high redshift (see Larson et al. 2023)
+        # fsps_larson - default here, optimized for high redshift
+        # (see Larson et al. 2023)
         # HOT_45K - modified IMF high-z templates for use between 8 < z < 12
         # HOT_60K - modified IMF high-z templates for use at z > 12
         # Nakajima - unobscured AGN templates
 
-        in_path, out_path, fits_out_path, PDF_paths, SED_paths = \
+        in_path, out_path, fits_out_path, PDF_paths, SED_paths = (
             self._get_out_paths(
                 cat,
                 aper_diam,
                 overwrite,
-                save_name = save_name,
+                save_name=save_name,
             )
+        )
 
         in_filt_path = f"{in_path.replace('.in', '_filters.RES')}"
 
@@ -587,7 +686,7 @@ class EAZY(SED_code):
             params["TEMPLATES_FILE"] = (
                 f"{eazy_templates_path}/sfhz/carnall_sfhz_13_galfind.param"
             )
-        elif templates == "sfhz_blue_agn": #"sfhz+carnall_eelg+agn":
+        elif templates == "sfhz_blue_agn":  # "sfhz+carnall_eelg+agn":
             params["TEMPLATES_FILE"] = (
                 f"{eazy_templates_path}/sfhz/sorted_agn_blue_sfhz_13_galfind.param"
             )
@@ -598,29 +697,34 @@ class EAZY(SED_code):
             )
 
         # Redshift limits
-        params["Z_MIN"] = z_min # Setting minimum Z
-        params["Z_MAX"] = z_max # Setting maximum Z
-        params["Z_STEP"] = self.SED_fit_params["Z_STEP"] # Setting photo-z step
+        params["Z_MIN"] = z_min  # Setting minimum Z
+        params["Z_MAX"] = z_max  # Setting maximum Z
+        params["Z_STEP"] = self.SED_fit_params[
+            "Z_STEP"
+        ]  # Setting photo-z step
 
-        # Next section deals with passing config parameters into EAZY config dictionary
+        # Next section deals with passing config parameters into EAZY
+        # config dictionary
         # JWST filter_file
         params["FILTERS_RES"] = in_filt_path
-            #f"{config['EAZY']['EAZY_CONFIG_DIR']}/jwst_nircam_FILTER.RES"
+        # f"{config['EAZY']['EAZY_CONFIG_DIR']}/jwst_nircam_FILTER.RES"
 
         # Errors
         params["WAVELENGTH_FILE"] = (
-            f"{eazy_templates_path}/lambda.def"  # Wavelength grid definition file
+            f"{eazy_templates_path}/lambda.def"
+            # Wavelength grid definition file
         )
         params["TEMP_ERR_FILE"] = (
-            f"{eazy_templates_path}/TEMPLATE_ERROR.eazy_v1.0"  # Template error definition file
+            f"{eazy_templates_path}/TEMPLATE_ERROR.eazy_v1.0"
+            # Template error definition file
         )
 
         # Priors
         # TODO: Load in and fix specific galaxies to spec-z's
-        #params["FIX_ZSPEC"] = fix_z
+        # params["FIX_ZSPEC"] = fix_z
 
         # Input files
-        # -------------------------------------------------------------------------------------------------------------
+        # ------------------------------------------------------------
 
         # Defining in/out files
         params["CATALOG_FILE"] = in_path
@@ -644,7 +748,9 @@ class EAZY(SED_code):
                 translate_file=translate_file,
                 n_proc=self.SED_fit_params["N_PROC"],
             )
-            fit.fit_catalog(n_proc=self.SED_fit_params["N_PROC"], get_best_fit=True)
+            fit.fit_catalog(
+                n_proc=self.SED_fit_params["N_PROC"], get_best_fit=True
+            )
             # Save backup of fit in hdf5 file
             hdf5.write_hdf5(
                 fit,
@@ -654,7 +760,8 @@ class EAZY(SED_code):
                 verbose=False,
             )
             galfind_logger.info(
-                f"Finished running {self.__class__.__name__} {templates} {lowz_label}"
+                f"Finished running {self.__class__.__name__} "
+                f"{templates} {lowz_label}"
             )
         elif (
             not Path(fits_out_path).is_file()
@@ -667,7 +774,8 @@ class EAZY(SED_code):
             fit = None
 
         if not Path(fits_out_path).is_file() and fit is not None:
-            # If not using Fsps larson, use standard saving output. Otherwise generate own fits file.
+            # If not using Fsps larson, use standard saving output.
+            # Otherwise generate own fits file.
             if templates == "HOT_45K" or templates == "HOT_60K":
                 fit.standard_output(
                     UBVJ=(9, 10, 11, 12),
@@ -699,12 +807,14 @@ class EAZY(SED_code):
                 # Get rest frame colors
                 if self.SED_fit_params["SAVE_UBVJ"]:
                     # This is duplicated from base code.
-                    # TODO: add n_proc option to rest_frame_fluxes function and use it here. n_proc != 0 spwans many threads
+                    # TODO: add n_proc option to rest_frame_fluxes
+                    # function and use it here. n_proc != 0 spwans
+                    # many threads
                     rf_tempfilt, lc_rest, ubvj = fit.rest_frame_fluxes(
-                        f_numbers = [1, 2, 3, 4],
-                        simple = False,
-                        percentiles = [16, 50, 84],
-                        n_proc = self.SED_fit_params["N_PROC"], #0
+                        f_numbers=[1, 2, 3, 4],
+                        simple=False,
+                        percentiles=[16, 50, 84],
+                        n_proc=self.SED_fit_params["N_PROC"],  # 0
                     )
                     for i, ubvj_filt in enumerate(["U", "B", "V", "J"]):
                         table[f"{ubvj_filt}_rf_flux"] = ubvj[:, i, 1]
@@ -735,9 +845,7 @@ class EAZY(SED_code):
         # save PDFs in .h5 file
         if save_PDFs and not Path(zPDF_path).is_file():
             self.save_zPDFs(zPDF_path, fit)
-            galfind_logger.info(
-                f"Finished saving z-PDFs for {repr(self)}"
-            )
+            galfind_logger.info(f"Finished saving z-PDFs for {repr(self)}")
 
         # Save best-fitting SEDs
         if save_SEDs and not Path(SED_path).is_file():
@@ -745,9 +853,7 @@ class EAZY(SED_code):
                 float
             )
             self.save_SEDs(SED_path, fit, z_arr, u.AA, u.nJy)
-            galfind_logger.info(
-                f"Finished saving SEDs for {repr(self)}"
-            )
+            galfind_logger.info(f"Finished saving SEDs for {repr(self)}")
 
         # Write used parameters
         if fit is not None:
@@ -755,9 +861,7 @@ class EAZY(SED_code):
             funcs.change_file_permissions(
                 fits_out_path.replace(".fits", "_params.csv")
             )
-            galfind_logger.info(
-                f"Written output pararmeters for {repr(self)}"
-            )
+            galfind_logger.info(f"Written output pararmeters for {repr(self)}")
 
     @staticmethod
     def save_zPDFs(zPDF_path: str, fit) -> NoReturn:
@@ -773,7 +877,12 @@ class EAZY(SED_code):
         fit_pz = 10 ** (fit.lnp)
         fit_zgrid = fit.zgrid
         hf = h5py.File(zPDF_path, "w")
-        hf.create_dataset("z", data=np.array(fit.zgrid).astype(np.float32), compression="gzip", dtype="f4")
+        hf.create_dataset(
+            "z",
+            data=np.array(fit.zgrid).astype(np.float32),
+            compression="gzip",
+            dtype="f4",
+        )
         pz_arr = np.array(
             [
                 np.array(
@@ -794,8 +903,15 @@ class EAZY(SED_code):
         hf.close()
 
     @staticmethod
-    def save_SEDs(SED_path: str, fit, z_arr: List[float], wav_unit: u.Unit = u.AA, flux_unit: u.Unit = u.nJy) -> NoReturn:
-        """Save per-galaxy best-fit template SEDs from an EAZY fit to an HDF5 file.
+    def save_SEDs(
+        SED_path: str,
+        fit,
+        z_arr: List[float],
+        wav_unit: u.Unit = u.AA,
+        flux_unit: u.Unit = u.nJy,
+    ) -> NoReturn:
+        """Save per-galaxy best-fit template SEDs from an EAZY fit to
+        an HDF5 file.
 
         Parameters
         ----------
@@ -847,11 +963,13 @@ class EAZY(SED_code):
                 fit_data_arr,
                 desc="Creating wav_flux_arr",
                 total=len(fit_data_arr),
-                disable=galfind_logger.getEffectiveLevel() > logging.INFO
+                disable=galfind_logger.getEffectiveLevel() > logging.INFO,
             )
         ]
         wav_flux_arr = np.array(wav_flux_arr).astype(np.float32)
-        hf.create_dataset("wav_flux_arr", data=wav_flux_arr, compression="gzip", dtype="f4")
+        hf.create_dataset(
+            "wav_flux_arr", data=wav_flux_arr, compression="gzip", dtype="f4"
+        )
         hf.close()
 
     def make_fits_from_out(self, out_path: str) -> NoReturn:
@@ -869,8 +987,8 @@ class EAZY(SED_code):
         pass
 
     def _get_out_paths(
-        self: Self, 
-        cat: Catalogue, 
+        self: Self,
+        cat: Catalogue,
         aper_diam: u.Quantity,
         save_name: Optional[str] = None,
     ) -> Tuple[str, str, str, Dict[str, List[str]], List[str]]:
@@ -878,15 +996,27 @@ class EAZY(SED_code):
             save_name = ""
         else:
             save_name = f"_{save_name}"
-        in_dir = f"{config['EAZY']['EAZY_DIR']}/input/{cat.filterset.instrument_name}/{cat.version}/{cat.survey}"
-        in_name = cat.cat_name.replace('.fits', f"_{aper_diam.to(u.arcsec).value:.2f}as{save_name}.in")
+        in_dir = (
+            f"{config['EAZY']['EAZY_DIR']}/input/"
+            f"{cat.filterset.instrument_name}/{cat.version}/{cat.survey}"
+        )
+        in_name = cat.cat_name.replace(
+            ".fits", f"_{aper_diam.to(u.arcsec).value:.2f}as{save_name}.in"
+        )
         in_path = f"{in_dir}/{in_name}"
 
         out_folder = funcs.split_dir_name(
             in_path.replace("input", "output"), "dir"
         )
-        out_path = f"{out_folder}/{funcs.split_dir_name(in_path, 'name').replace('.in', '.out')}"
-        fits_out_path = f"{out_path.replace('.out', '')}_EAZY_{self.SED_fit_params['templates']}_{funcs.lowz_label(self.SED_fit_params['lowz_zmax'])}.fits"
+        out_path = (
+            f"{out_folder}/"
+            f"{funcs.split_dir_name(in_path, 'name').replace('.in', '.out')}"
+        )
+        fits_out_path = (
+            f"{out_path.replace('.out', '')}_EAZY_"
+            f"{self.SED_fit_params['templates']}_"
+            f"{funcs.lowz_label(self.SED_fit_params['lowz_zmax'])}.fits"
+        )
         IDs = [gal.ID for gal in cat.gals]
         PDF_paths = {
             "z": list(
@@ -940,10 +1070,9 @@ class EAZY(SED_code):
             IDs = np.array([int(IDs)])
         if isinstance(SED_paths, str):
             SED_paths = [SED_paths]
-        assert len(IDs) == len(SED_paths), \
-            galfind_logger.critical(
-                f"{len(IDs)=} != {len(SED_paths)=}"
-            )
+        assert len(IDs) == len(SED_paths), galfind_logger.critical(
+            f"{len(IDs)=} != {len(SED_paths)=}"
+        )
         # ensure that for EAZY all the SED_paths are the same
         assert all(
             SED_path == SED_paths[0] for SED_path in SED_paths
@@ -968,7 +1097,7 @@ class EAZY(SED_code):
                 zip(z_arr, wav_arr, flux_arr),
                 total=len(z_arr),
                 desc="Constructing SEDs",
-                disable=galfind_logger.getEffectiveLevel() > logging.INFO
+                disable=galfind_logger.getEffectiveLevel() > logging.INFO,
             )
         ]
         return SED_obs_arr
@@ -1024,19 +1153,21 @@ class EAZY(SED_code):
             return np.array(list(itertools.repeat(None, len(IDs))))
         else:
             # ensure the correct type
-            assert isinstance(PDF_paths, (list, np.ndarray)), \
-                galfind_logger.critical(
-                    f"type(data_paths) = {type(PDF_paths)} not in [list, np.array]!"
-                )
-            assert isinstance(IDs, (list, np.ndarray)), \
-                galfind_logger.critical(
-                    f"type(IDs) = {type(IDs)} not in [list, np.array]!"
-                )
+            assert isinstance(
+                PDF_paths, (list, np.ndarray)
+            ), galfind_logger.critical(
+                f"type(data_paths) = {type(PDF_paths)} not in "
+                "[list, np.array]!"
+            )
+            assert isinstance(
+                IDs, (list, np.ndarray)
+            ), galfind_logger.critical(
+                f"type(IDs) = {type(IDs)} not in [list, np.array]!"
+            )
             # ensure the correct array size
-            assert len(IDs) == len(PDF_paths), \
-                galfind_logger.critical(
-                    f"len(IDs) = {len(IDs)} != len(data_paths) = {len(PDF_paths)}!"
-                )
+            assert len(IDs) == len(PDF_paths), galfind_logger.critical(
+                f"len(IDs) = {len(IDs)} != len(data_paths) = {len(PDF_paths)}!"
+            )
             # ensure all data_paths are the same and are of .h5 type
             assert all(
                 PDF_path == PDF_paths[0] for PDF_path in PDF_paths
@@ -1055,7 +1186,7 @@ class EAZY(SED_code):
                     zip(IDs, pz_arr),
                     total=len(IDs),
                     desc="Constructing redshift PDFs",
-                    disable=galfind_logger.getEffectiveLevel() > logging.INFO
+                    disable=galfind_logger.getEffectiveLevel() > logging.INFO,
                 )
             ]
             # close .h5 file
@@ -1063,9 +1194,7 @@ class EAZY(SED_code):
             return redshift_PDFs
 
     def load_cat_property_PDFs(
-        self: Self,
-        PDF_paths: List[Dict[str, str]],
-        IDs: List[int]
+        self: Self, PDF_paths: List[Dict[str, str]], IDs: List[int]
     ) -> List[Dict[str, Optional[Type[PDF]]]]:
         """Load per-galaxy property PDFs from a set of PDF file paths.
 
@@ -1115,14 +1244,15 @@ class EAZY(SED_code):
         self: Self,
         filterset: Multiple_Filter,
         filter_file: str,
-        default_param_path: str
+        default_param_path: str,
     ) -> NoReturn:
-        '''
+        """
         Write a filter file for EAZY from a Multiple_Filter object
 
-        '''
+        """
         # Need to write a filterset file for EAZY
-        # Two files one with list of filters and one with the transmission curves
+        # Two files one with list of filters and one with the transmission
+        # curves
         # format of list is
 
         # 1 len(transmission_curve) name1 lambda_c = pivot_wav
@@ -1133,7 +1263,7 @@ class EAZY(SED_code):
         # 1 0.1 0.0
         # 2 0.2 0.1
         # 3 0.3 0.2
-        #...
+        # ...
         # len(transmission_curve) name1 lambda_c = pivot_wav
         # 1 0.1 0.0
         # 2 0.2 0.1
@@ -1141,32 +1271,46 @@ class EAZY(SED_code):
         # copy default filter file and append to it
 
         copy(default_param_path, filter_file)
-        copy(f'{default_param_path}.INFO', f'{filter_file}.INFO')
+        copy(f"{default_param_path}.INFO", f"{filter_file}.INFO")
         # count lines in .INFO
 
-        with open(f'{filter_file}.INFO', 'r') as f:
+        with open(f"{filter_file}.INFO", "r") as f:
             current_lines = f.readlines()
             nexisting = len(current_lines)
             last_line = current_lines[-1]
 
-        with open(filter_file, 'a') as f:
-            with open (f'{filter_file}.INFO', 'a') as f_info:
-                # work out whether we need to move to the next line - i.e is the current line got anything in it
+        with open(filter_file, "a") as f:
+            with open(f"{filter_file}.INFO", "a") as f_info:
+                # work out whether we need to move to the next line -
+                # i.e is the current line got anything in it
 
-                if not last_line.endswith('\n'):
-                    f_info.write('\n')
+                if not last_line.endswith("\n"):
+                    f_info.write("\n")
 
-                f.write('\n')
+                f.write("\n")
 
                 # count lines in file
                 for i, filt in enumerate(filterset):
                     code = i + nexisting + 1
-                    wav_cent = filt.properties["WavelengthEff"].to(u.Angstrom).value
-                    f_info.write(f'{code}  {len(filt.trans)} {filt.facility_name}/{filt.instrument_name}.{filt.filt_name} lambda_c= {wav_cent}\n')
-                    f.write(f' {len(filt.trans)} {filt.facility_name}/{filt.instrument_name}.{filt.filt_name} lambda_c= {wav_cent}\n')
+                    wav_cent = (
+                        filt.properties["WavelengthEff"].to(u.Angstrom).value
+                    )
+                    f_info.write(
+                        f"{code}  {len(filt.trans)} "
+                        f"{filt.facility_name}/{filt.instrument_name}."
+                        f"{filt.filt_name} lambda_c= {wav_cent}\n"
+                    )
+                    f.write(
+                        f" {len(filt.trans)} "
+                        f"{filt.facility_name}/{filt.instrument_name}."
+                        f"{filt.filt_name} lambda_c= {wav_cent}\n"
+                    )
 
-                    for pos, (wav, trans) in enumerate(zip(filt.wav, filt.trans)):
-                        f.write(f'{pos + 1} {wav.to(u.Angstrom).value} {trans}\n')
+                    for pos, (wav, trans) in enumerate(
+                        zip(filt.wav, filt.trans)
+                    ):
+                        f.write(
+                            f"{pos + 1} {wav.to(u.Angstrom).value} {trans}\n"
+                        )
 
         return np.arange(nexisting + 1, nexisting + 1 + len(filterset))
-

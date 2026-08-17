@@ -1,6 +1,7 @@
 """1D posterior probability distribution containers and operations.
 
-Stores property names, evaluation grids, and probability densities for posterior
+Stores property names, evaluation grids, and probability densities for
+posterior
 distributions from SED fitting and other analyses. Provides median/percentile
 extraction, sampling, PDF combination, and persistence operations.
 """
@@ -8,12 +9,14 @@ extraction, sampling, PDF combination, and persistence operations.
 from __future__ import annotations
 
 from copy import deepcopy
+from typing import Any, Callable, Dict, Optional, Union
+
 import astropy.units as u
 import matplotlib.patheffects as pe
 import numpy as np
-from typing import Callable, Union, Optional, Dict, Any
+
 try:
-    from typing import Self, Type  # python 3.11+
+    from typing import Self  # python 3.11+
 except ImportError:
     from typing_extensions import Self  # python > 3.7 AND python < 3.11
 
@@ -22,7 +25,8 @@ from ..utils import useful_funcs_austind as funcs
 
 
 class PDF:
-    """Represents a 1D posterior probability distribution for a galaxy property.
+    """Represents a 1D posterior probability distribution for a galaxy
+    property.
 
     Stores the property name, the grid of x values and corresponding
     (normalised) probability density values, together with any
@@ -34,7 +38,8 @@ class PDF:
     ----------
     property_name : `str`
         Name of the galaxy property this PDF represents (e.g. ``'z'``).
-    x : `astropy.units.Quantity`, `astropy.units.Magnitude`, or `astropy.units.Dex`
+    x : `astropy.units.Quantity`, `astropy.units.Magnitude`, or
+    `astropy.units.Dex`
         Grid of property values at which `p_x` is defined.
     p_x : `numpy.ndarray`
         Probability density evaluated at each point in `x`.
@@ -50,13 +55,15 @@ class PDF:
     ----------
     property_name : `str`
         Name of the galaxy property this PDF represents.
-    x : `astropy.units.Quantity`, `astropy.units.Magnitude`, or `astropy.units.Dex`
+    x : `astropy.units.Quantity`, `astropy.units.Magnitude`, or
+    `astropy.units.Dex`
         Grid of property values at which `p_x` is defined.
     p_x : `numpy.ndarray`
         Normalised probability density evaluated at each point in `x`.
     kwargs : `dict`
         Additional metadata stored with the PDF.
-    input_arr : `astropy.units.Quantity`, `astropy.units.Magnitude`, or `astropy.units.Dex`, optional
+    input_arr : `astropy.units.Quantity`, `astropy.units.Magnitude`,
+    or `astropy.units.Dex`, optional
         Underlying sample of values the PDF was constructed from, set
         by `from_1D_arr`/`from_npy` if the PDF was built from a 1D
         array rather than directly from ``x``/``p_x``.
@@ -86,7 +93,11 @@ class PDF:
 
     def __repr__(self):
         """Return the official string representation of the PDF."""
-        unit_str = f"{self.x.unit}" if self.x.unit != u.dimensionless_unscaled else "dimensionless"
+        unit_str = (
+            f"{self.x.unit}"
+            if self.x.unit != u.dimensionless_unscaled
+            else "dimensionless"
+        )
         return f"PDF({self.property_name}, {unit_str})"
 
     def __str__(self, print_peaks=False):
@@ -153,9 +164,7 @@ class PDF:
                 other_input_arr = other.input_arr
             else:
                 other_input_arr = other.draw_sample()
-            new_input_arr = np.concatenate(
-                (self_input_arr, other_input_arr)
-            )
+            new_input_arr = np.concatenate((self_input_arr, other_input_arr))
 
         if name_ext is None:
             new_property_name = self.property_name
@@ -184,7 +193,8 @@ class PDF:
             )
         else:
             galfind_logger.critical(
-                f"{self.__class__.__name__=} not in [PDF, SED_fit_PDF, Redshift_PDF]!"
+                f"{self.__class__.__name__=} not in "
+                + "[PDF, SED_fit_PDF, Redshift_PDF]!"
             )
             breakpoint()
         # if chosen to save and it has a different name, save the PDF
@@ -205,7 +215,9 @@ class PDF:
         add_kwargs: dict = {},
         save: bool = False,
     ):
-        if isinstance(other, tuple(int, float, u.Quantity, u.Magnitude, u.Dex)):
+        if isinstance(
+            other, tuple(int, float, u.Quantity, u.Magnitude, u.Dex)
+        ):
             # multiply input array by other
             if hasattr(self, "input_arr"):
                 old_input_arr = self.input_arr
@@ -214,7 +226,8 @@ class PDF:
             new_input_arr = old_input_arr * other
             new_kwargs = {**self.kwargs, **add_kwargs}
         else:  # PDF
-            # convolve the two PDFs with each other as done in Qiao's merger work
+            # convolve the two PDFs with each other as done in
+            # Qiao's merger work
             raise NotImplementedError
 
         if name_ext is None:
@@ -244,7 +257,8 @@ class PDF:
             )
         else:
             galfind_logger.critical(
-                f"{self.__class__.__name__=} not in [PDF, SED_fit_PDF, Redshift_PDF]!"
+                f"{self.__class__.__name__=} not in "
+                + "[PDF, SED_fit_PDF, Redshift_PDF]!"
             )
             breakpoint()
         # if chosen to save and it has a different name, save the PDF
@@ -280,7 +294,7 @@ class PDF:
     #         return PDF_obj
     #     except FileNotFoundError:
     #         return None
-        
+
     @classmethod
     def from_npy(cls, path: str):
         """Load a previously saved `PDF` from disk.
@@ -299,7 +313,9 @@ class PDF:
             Reconstructed PDF, with `save_path` set to `path`.
         """
         arr = np.load(path)
-        meta = np.load(path.replace(".npy", ".meta.npy"), allow_pickle=True).item()
+        meta = np.load(
+            path.replace(".npy", ".meta.npy"), allow_pickle=True
+        ).item()
         property_name = meta["name"]
         units = meta["units"]
         [meta.pop(name) for name in ["name", "units"]]
@@ -327,7 +343,8 @@ class PDF:
         ----------
         property_name : `str`
             Name of the galaxy property the array represents.
-        arr : `astropy.units.Quantity`, `astropy.units.Magnitude`, or `astropy.units.Dex`
+        arr : `astropy.units.Quantity`, `astropy.units.Magnitude`,
+        or `astropy.units.Dex`
             1D array of sampled values for the property.
         kwargs : `dict`, optional
             Additional metadata to store with the PDF. Default is `{}`.
@@ -354,11 +371,12 @@ class PDF:
             `astropy.units.Magnitude`, or `astropy.units.Dex`, or if
             no finite values remain after NaN-filtering.
         """
-        assert isinstance(arr, (u.Quantity, u.Magnitude, u.Dex)), \
-            galfind_logger.critical(
-                f"{property_name=} 1D {arr=} with {type(arr)=}" + \
-                " not in [u.Quantity, u.Magnitude, u.Dex]"
-            )
+        assert isinstance(
+            arr, (u.Quantity, u.Magnitude, u.Dex)
+        ), galfind_logger.critical(
+            f"{property_name=} 1D {arr=} with {type(arr)=}"
+            + " not in [u.Quantity, u.Magnitude, u.Dex]"
+        )
         if ignore_nans:
             arr_ = arr[np.isfinite(arr)]
         else:
@@ -367,8 +385,10 @@ class PDF:
             f"{property_name=} 1D {arr_=} with {len(arr_)=} == 0"
         )
         try:
-            p_x, x_bin_edges = np.histogram(arr_.value.astype(np.float64), bins=Nbins, density=True)
-        except:
+            p_x, x_bin_edges = np.histogram(
+                arr_.value.astype(np.float64), bins=Nbins, density=True
+            )
+        except Exception:
             breakpoint()
         x = 0.5 * (x_bin_edges[1:] + x_bin_edges[:-1]) * arr_.unit
         PDF_obj = cls(property_name, x, p_x, kwargs, normed)
@@ -379,7 +399,8 @@ class PDF:
 
     @property
     def median(self):
-        """`astropy.units.Quantity`, `astropy.units.Magnitude`, or `astropy.units.Dex`: Median of the PDF.
+        """`astropy.units.Quantity`, `astropy.units.Magnitude`, or
+        `astropy.units.Dex`: Median of the PDF.
 
         Computed and cached from `input_arr` if available (via
         `numpy.nanmedian`), otherwise derived from
@@ -398,7 +419,9 @@ class PDF:
 
     @property
     def errs(self):
-        """`astropy.units.Quantity`, `astropy.units.Magnitude`, or `astropy.units.Dex`: Asymmetric 1-sigma errors on `median`, as ``[lower, upper]``.
+        """`astropy.units.Quantity`, `astropy.units.Magnitude`, or
+        `astropy.units.Dex`: Asymmetric 1-sigma errors on
+        `median`, as ``[lower, upper]``.
 
         Computed and cached from the 16th/84th percentiles of
         `input_arr` if available, otherwise from `get_percentile`.
@@ -430,12 +453,16 @@ class PDF:
 
         Returns
         -------
-        `astropy.units.Quantity`, `astropy.units.Magnitude`, or `astropy.units.Dex`
+        `astropy.units.Quantity`, `astropy.units.Magnitude`, or
+        `astropy.units.Dex`
             Random sample of `size` values drawn from `x`, weighted by
             the (normalised) probability `p_x`.
         """
         # draw a sample of specified size from the PDF
-        return np.random.choice(self.x, size=size, p=self.p_x/np.sum(self.p_x)) * self.x.unit
+        return (
+            np.random.choice(self.x, size=size, p=self.p_x / np.sum(self.p_x))
+            * self.x.unit
+        )
 
     def integrate_between_lims(
         self,
@@ -506,18 +533,27 @@ class PDF:
                 self.peaks.append({"value": None, "chi_sq": None})
         if log:
             peaks = deepcopy(self.peaks)
-            peaks[nth_peak]["value"] = np.log10(peaks[nth_peak]["value"].value) * u.dex
+            peaks[nth_peak]["value"] = (
+                np.log10(peaks[nth_peak]["value"].value) * u.dex
+            )
         return peaks
 
         # currently just copied straight from Tom's plotting script
         # # calculate peak locations etc - should go inside of PDF class
-        # pz_column, integral, peak_z, peak_loc, peak_second_loc, secondary_peak, ratio = useful_funcs_updated_new_galfind.robust_pdf([gal_id], [zbest], SED_code, field_name, rel_limits=True, z_fact=int_limit, use_custom_lephare_seds=custom_lephare, template=template, plot=False, version=catalog_version, custom_sex=custom_sex, min_percentage_err=min_percentage_err, custom_path=eazy_pdf_path, use_galfind=True)
-        # print(integral, 'integral', peak_z, 'peak_z', peak_loc, 'peak_loc', peak_second_loc, 'peak_second_loc', secondary_peak, 'secondary_peak', ratio, 'ratio')
+        # pz_column, integral, peak_z, peak_loc, peak_second_loc,
+        # secondary_peak, ratio = useful_funcs_updated_new_galfind.
+        # robust_pdf([gal_id], [zbest], SED_code, field_name,
+        # rel_limits=True, z_fact=int_limit,
+        # use_custom_lephare_seds=custom_lephare, template=template,
+        # plot=False, version=catalog_version, custom_sex=custom_sex,
+        # min_percentage_err=min_percentage_err,
+        # custom_path=eazy_pdf_path, use_galfind=True)
+        # print(integral, 'integral', peak_z, 'peak_z', peak_loc,
+        # 'peak_loc', peak_second_loc, 'peak_second_loc',
+        # secondary_peak, 'secondary_peak', ratio, 'ratio')
 
     def get_percentile(
-        self: Self,
-        percentile: float,
-        log: bool = False
+        self: Self, percentile: float, log: bool = False
     ) -> float:
         """Get a given percentile of the PDF, with caching.
 
@@ -544,25 +580,28 @@ class PDF:
         AssertionError
             If `percentile` is not a `float`.
         """
-        assert isinstance(percentile, float), \
-            galfind_logger.critical(
-                f"{percentile=} with {type(percentile)=} != float"
-            )
+        assert isinstance(percentile, float), galfind_logger.critical(
+            f"{percentile=} with {type(percentile)=} != float"
+        )
         try:
             perc = self.percentiles[f"{percentile:.1f}"]
         except (AttributeError, KeyError) as e:
             if isinstance(e, AttributeError):
                 self.percentiles = {}
             if hasattr(self, "input_arr"):
-                self.percentiles[f"{percentile:.1f}"] = np.nanpercentile( \
-                    self.input_arr.value, percentile) * self.input_arr.unit
+                self.percentiles[f"{percentile:.1f}"] = (
+                    np.nanpercentile(self.input_arr.value, percentile)
+                    * self.input_arr.unit
+                )
             else:
                 # calculate percentile
                 cdf = np.cumsum(self.p_x)
                 cdf /= np.max(cdf)
                 self.percentiles[f"{percentile:.1f}"] = (
                     float(
-                        self.x.value[np.argmin(np.abs(cdf - percentile / 100.0))]
+                        self.x.value[
+                            np.argmin(np.abs(cdf - percentile / 100.0))
+                        ]
                     )
                     * self.x.unit
                 )
@@ -580,7 +619,8 @@ class PDF:
         size: int = 10_000,
         **kwargs,
     ):
-        """Create a new `PDF` by applying a transformation function to a sample.
+        """Create a new `PDF` by applying a transformation function to
+        a sample.
 
         Draws (or takes the last `size` elements of `input_arr`) a
         sample of values from this PDF, applies `update_func` to it,
@@ -629,8 +669,8 @@ class PDF:
         )
 
     def save(
-        self: Self, 
-        save_path: str, 
+        self: Self,
+        save_path: str,
         size: int = 10_000,
     ) -> None:
         """Save the PDF's underlying sample and metadata to disk.
@@ -691,7 +731,7 @@ class PDF:
         self,
         ax,
         annotate: bool = True,
-        #annotate_peak_loc: bool = False,
+        # annotate_peak_loc: bool = False,
         colour: str = "black",
         log: bool = False,
         hatch: str = "//",
@@ -744,45 +784,32 @@ class PDF:
             input_arr = input_arr.value
         if log:
             input_arr = np.log10(input_arr)
-        
+
         # construct gaussian_kde
         # kde = gaussian_kde(input_arr)
-        x = np.linspace(
-            np.min(input_arr),
-            np.max(input_arr),
-            len(input_arr)
-        )
+        x = np.linspace(np.min(input_arr), np.max(input_arr), len(input_arr))
         # y = kde(x)
-        #x = np.sort(input_arr)
+        # x = np.sort(input_arr)
         y = np.interp(x, self.x.value, self.p_x)
 
         # plot the pdf
-        ax.plot(
-            x,
-            y,
-            color = colour,
-            **pdf_kwargs
-        )
-        ax.fill_between(
-            x,
-            y,
-            color = colour,
-            alpha = 0.2,
-            hatch = hatch
-        )
+        ax.plot(x, y, color=colour, **pdf_kwargs)
+        ax.fill_between(x, y, color=colour, alpha=0.2, hatch=hatch)
 
         perc = {}
         perc_lims = [1.0, 3.0, 97.0, 99.0]
         if annotate:
             perc_lims += [16.0, 84.0]
         for p in perc_lims:
-            perc_ = self.get_percentile(p, log = log)
+            perc_ = self.get_percentile(p, log=log)
             if isinstance(perc_, u.Quantity):
                 perc_ = perc_.value
             perc[p] = perc_
 
         # Set x and y plot limits
-        ax.set_xlim(np.max([np.min(x), perc[1.0]]), np.max(x)) #np.min([np.max(x), perc[99.0]]))
+        ax.set_xlim(
+            np.max([np.min(x), perc[1.0]]), np.max(x)
+        )  # np.min([np.max(x), perc[99.0]]))
         ax.set_ylim(0, 1.1 * np.max(y))
 
         if self.property_name in funcs.property_name_to_label:
@@ -790,7 +817,9 @@ class PDF:
         else:
             x_plot_name = self.property_name
             galfind_logger.warning(
-                f"{self.property_name=} not in funcs.property_name_to_label, using property name as label."
+                f"{self.property_name=} not in "
+                + "funcs.property_name_to_label, using property "
+                + "name as label."
             )
         if log:
             x_plot_name = r"$\log_{10}($" + x_plot_name + r"$)$"
@@ -799,12 +828,14 @@ class PDF:
         # turn off grid
         ax.grid(False)
         # turn off y axis tick labels
-        ax.tick_params(axis="y", which="both", labelleft=False, labelright=False)
+        ax.tick_params(
+            axis="y", which="both", labelleft=False, labelright=False
+        )
 
         if annotate:
             # Draw vertical line at zbest
             ax.axvline(
-                self.get_peak(0, log = log)["value"],
+                self.get_peak(0, log=log)["value"],
                 color=colour,
                 linestyle="--",
                 alpha=0.5,
@@ -844,14 +875,16 @@ class PDF:
                 color=colour,
                 path_effects=[pe.withStroke(linewidth=3, foreground="white")],
             )
+            plus_err = perc[84.0] - self.get_peak(0, log=log)["value"].value
+            minus_err = self.get_peak(0, log=log)["value"].value - perc[16.0]
             ax.text(
                 0.05,
                 0.95,
                 r"$z_{\rm phot}="
-                + f'{self.get_peak(0, log = log)["value"].value:.1f}'
-                + f'^{{+{(perc[84.0] - self.get_peak(0, log = log)["value"].value):.1f}}}_{{-{(self.get_peak(0, log = log)["value"].value - perc[16.]):.1f}}}$',
+                + f"{self.get_peak(0, log=log)['value'].value:.1f}"
+                + f"^{{+{plus_err:.1f}}}_{{-{minus_err:.1f}}}$",
                 transform=ax.transAxes,
-                #(self.get_peak(0, log = log)["value"], 1.17),
+                # (self.get_peak(0, log = log)["value"], 1.17),
                 fontsize="medium",
                 va="top",
                 ha="left",
@@ -859,10 +892,11 @@ class PDF:
                 path_effects=[pe.withStroke(linewidth=3, foreground="white")],
             )
 
-            # Horizontal arrow at PDF peak going left or right depending on which side PDF is on, labelled with chi2
+            # Horizontal arrow at PDF peak going left or right
+            # depending on which side PDF is on, labelled with chi2
             # Check if highest peak is closer to xlim[0] or xlim[1]
-            #x_lim = ax.get_xlim()
-            #y_lim = ax.get_ylim()
+            # x_lim = ax.get_xlim()
+            # y_lim = ax.get_ylim()
             # amount = 0.3 * (x_lim[1] - x_lim[0])
             # if (
             #     self.get_peak(0, log = log)["value"] - x_lim[0]
@@ -874,10 +908,11 @@ class PDF:
             ax.text(
                 0.05,
                 0.80,
-                r"$\chi^2=$" + f'{self.get_peak(0, log = log)["chi_sq"]:.2f}',
-                #(self.get_peak(0, log = log)["value"], 1.0),
+                r"$\chi^2=$" + f"{self.get_peak(0, log=log)['chi_sq']:.2f}",
+                # (self.get_peak(0, log = log)["value"], 1.0),
                 transform=ax.transAxes,
-                #xytext=(self.get_peak(0, log = log)["value"] + direction * amount, 0.90),
+                # xytext=(self.get_peak(0, log = log)["value"]
+                # + direction * amount, 0.90),
                 fontsize="small",
                 va="top",
                 ha="left",
@@ -896,16 +931,23 @@ class PDF:
 
             # annotate PDF with peak locations etc
             # if annotate_peak_loc:
-            #     ax.scatter(self.get_peak(0)["value"], peak_pdf, color = colour, edgecolors = colour, marker='o', facecolor='none')
+            #     ax.scatter(self.get_peak(0)["value"], peak_pdf,
+            #     color = colour, edgecolors = colour, marker='o',
+            #     facecolor='none')
 
             #     secondary_peak = self.get_peak(1)["value"]
             #     if secondary_peak > 0:
-            #         ax.scatter(secondary_peak, secondary_peak_pdf, edgecolor='orange', marker='o', facecolor='none')
-            #         ax.annotate(f'P(S)/P(P): {ratio:.2f}', loc_ratio, fontsize='x-small')
+            #         ax.scatter(secondary_peak, secondary_peak_pdf,
+            #         edgecolor='orange', marker='o', facecolor='none')
+            #         ax.annotate(f'P(S)/P(P): {ratio:.2f}', loc_ratio,
+            #         fontsize='x-small')
 
-            # ax.annotate(f'$\\sum = {float(integral):.2f}$', (zbest, 0.45), fontsize='small', \
-            # transform = ax.get_yaxis_transform(), va='bottom', ha='center', fontweight='bold', \
-            # color=eazy_color, path_effects=[pe.withStroke(linewidth=3, foreground='white')])
+            # ax.annotate(f'$\\sum = {float(integral):.2f}$',
+            # (zbest, 0.45), fontsize='small', \
+            # transform = ax.get_yaxis_transform(), va='bottom',
+            # ha='center', fontweight='bold', \
+            # color=eazy_color, path_effects=[pe.withStroke(
+            # linewidth=3, foreground='white')])
 
 
 class SED_fit_PDF(PDF):
@@ -919,7 +961,8 @@ class SED_fit_PDF(PDF):
     ----------
     property_name : `str`
         Name of the galaxy property this PDF represents.
-    x : `astropy.units.Quantity`, `astropy.units.Magnitude`, or `astropy.units.Dex`
+    x : `astropy.units.Quantity`, `astropy.units.Magnitude`, or
+    `astropy.units.Dex`
         Grid of property values at which `p_x` is defined.
     p_x : `numpy.ndarray`
         Probability density evaluated at each point in `x`.
@@ -960,13 +1003,15 @@ class SED_fit_PDF(PDF):
         Nbins=50,
         normed=False,
     ):
-        """Construct a `SED_fit_PDF` from a 1D array of sampled property values.
+        """Construct a `SED_fit_PDF` from a 1D array of sampled
+        property values.
 
         Parameters
         ----------
         property_name : `str`
             Name of the galaxy property the array represents.
-        arr : `astropy.units.Quantity`, `astropy.units.Magnitude`, or `astropy.units.Dex`
+        arr : `astropy.units.Quantity`, `astropy.units.Magnitude`,
+        or `astropy.units.Dex`
             1D array of sampled values for the property.
         SED_fit_params : `dict`
             SED fitting parameters/options of the run that produced
@@ -986,7 +1031,8 @@ class SED_fit_PDF(PDF):
             PDF constructed from the histogram of `arr`, with
             `input_arr` set to `arr`.
         """
-        # super doesn't work here due to argument differences between PDF().__init__ and SED_fit_PDF().__init__
+        # super doesn't work here due to argument differences
+        # between PDF().__init__ and SED_fit_PDF().__init__
         PDF_obj = PDF.from_1D_arr(
             property_name, arr, kwargs, Nbins, normed
         )  # normalizes here if not already
@@ -1002,7 +1048,8 @@ class SED_fit_PDF(PDF):
         return sed_fit_PDF
 
     def load_peaks_from_SED_result(self, SED_result, nth_peak=0):
-        """Populate the 0th peak of this PDF from an `SED_result`'s best-fit values.
+        """Populate the 0th peak of this PDF from an `SED_result`'s
+        best-fit values.
 
         Parameters
         ----------
@@ -1029,33 +1076,43 @@ class SED_fit_PDF(PDF):
             f"nth_peak with type = {type(nth_peak)} must be of type 'int'"
         )
         assert nth_peak == 0, galfind_logger.critical(
-            f"SED_fit_PDF.load_peaks_from_SED_result only loads the 0th peak, not the {funcs.ordinal(nth_peak)}"
+            "SED_fit_PDF.load_peaks_from_SED_result only loads the "
+            + f"0th peak, not the {funcs.ordinal(nth_peak)}"
         )
         # TODO: Implement _dicts_equal from funcs
         # if isinstance(self.SED_fit_params, dict):
-        #     # ensure all keys in self.SED_fit_params are in SED_result.SED_code.SED_fit_params and vice versa
+        #     # ensure all keys in self.SED_fit_params are in
+        #     # SED_result.SED_code.SED_fit_params and vice versa
         #     assert all(
-        #         key in SED_result.SED_code.SED_fit_params for key in self.SED_fit_params.keys()
+        #         key in SED_result.SED_code.SED_fit_params
+        #         for key in self.SED_fit_params.keys()
         #     ), galfind_logger.critical(
-        #         f"{self.SED_fit_params.keys()} not all in {SED_result.SED_code.SED_fit_params.keys()}"
+        #         f"{self.SED_fit_params.keys()} not all in "
+        #         f"{SED_result.SED_code.SED_fit_params.keys()}"
         #     )
         #     assert all(
-        #         key in self.SED_fit_params for key in SED_result.SED_code.SED_fit_params.keys()
+        #         key in self.SED_fit_params
+        #         for key in SED_result.SED_code.SED_fit_params.keys()
         #     ), galfind_logger.critical(
-        #         f"{SED_result.SED_code.SED_fit_params.keys()} not all in {self.SED_fit_params.keys()}"
+        #         f"{SED_result.SED_code.SED_fit_params.keys()} "
+        #         f"not all in {self.SED_fit_params.keys()}"
         #     )
         #     # ensure all values for each key are the same
         #     for key in self.SED_fit_params.keys():
         #         assert (
-        #             SED_result.SED_code.SED_fit_params[key] == self.SED_fit_params[key]
+        #             SED_result.SED_code.SED_fit_params[key]
+        #             == self.SED_fit_params[key]
         #         ), galfind_logger.critical(
-        #             f"{SED_result.SED_code.SED_fit_params[key]=} != {self.SED_fit_params[key]=}"
+        #             f"{SED_result.SED_code.SED_fit_params[key]=} "
+        #             f"!= {self.SED_fit_params[key]=}"
         #         )
         # else:
         #     assert (
-        #         SED_result.SED_code.SED_fit_params == self.SED_fit_params
+        #         SED_result.SED_code.SED_fit_params
+        #         == self.SED_fit_params
         #     ), galfind_logger.critical(
-        #         f"{SED_result.SED_code.SED_fit_params=} != {self.SED_fit_params=}"
+        #         f"{SED_result.SED_code.SED_fit_params=} "
+        #         f"!= {self.SED_fit_params=}"
         #     )
         # load peak value and peak chi_sq
         self.load_peaks_from_best_fit(
@@ -1091,13 +1148,15 @@ class SED_fit_PDF(PDF):
 
 
 class Redshift_PDF(SED_fit_PDF):
-    """`SED_fit_PDF` subclass specifically for redshift posterior distributions.
+    """`SED_fit_PDF` subclass specifically for redshift posterior
+    distributions.
 
     Fixes `property_name` to ``'z'``.
 
     Parameters
     ----------
-    z : `astropy.units.Quantity`, `astropy.units.Magnitude`, or `astropy.units.Dex`
+    z : `astropy.units.Quantity`, `astropy.units.Magnitude`, or
+    `astropy.units.Dex`
         Grid of redshift values at which `p_z` is defined.
     p_z : `numpy.ndarray`
         Probability density evaluated at each point in `z`.
@@ -1110,14 +1169,7 @@ class Redshift_PDF(SED_fit_PDF):
         Whether `p_z` is already normalised. Default is `False`.
     """
 
-    def __init__(
-        self,
-        z,
-        p_z,
-        SED_fit_params,
-        kwargs={},
-        normed=False
-    ):
+    def __init__(self, z, p_z, SED_fit_params, kwargs={}, normed=False):
         super().__init__("z", z, p_z, SED_fit_params, kwargs, normed)
 
     @classmethod
@@ -1129,11 +1181,13 @@ class Redshift_PDF(SED_fit_PDF):
         Nbins=50,
         normed=False,
     ):
-        """Construct a `Redshift_PDF` from a 1D array of sampled redshift values.
+        """Construct a `Redshift_PDF` from a 1D array of sampled
+        redshift values.
 
         Parameters
         ----------
-        z_arr : `astropy.units.Quantity`, `astropy.units.Magnitude`, or `astropy.units.Dex`
+        z_arr : `astropy.units.Quantity`, `astropy.units.Magnitude`,
+        or `astropy.units.Dex`
             1D array of sampled redshift values.
         SED_fit_params : `dict`
             SED fitting parameters/options of the run that produced
@@ -1175,10 +1229,11 @@ class Redshift_PDF(SED_fit_PDF):
         self,
         delta_z_over_z: float,
         zbest: Optional[float] = None,
-        z_min: float = 0.,
-        z_max: float = 25.,
+        z_min: float = 0.0,
+        z_max: float = 25.0,
     ):
-        """Integrate the redshift PDF within a fractional window around the best-fit redshift.
+        """Integrate the redshift PDF within a fractional window
+        around the best-fit redshift.
 
         Parameters
         ----------
@@ -1202,14 +1257,16 @@ class Redshift_PDF(SED_fit_PDF):
             Integral of the PDF (via `PDF.integrate_between_lims`)
             between the clipped lower and upper redshift limits.
         """
-        # find best fitting redshift from peak of the PDF distribution - not needed if peak is loaded in PDF object
+        # find best fitting redshift from peak of the PDF
+        # distribution - not needed if peak is loaded in PDF object
         if zbest is None:
             zbest = self.get_peak(0)["value"]  # find first peak
         elif isinstance(zbest, (int, float)):  # correct format
             pass
         else:
             galfind_logger.critical(
-                f"zbest = {zbest} with type = {type(zbest)} is not in [int, float, None]!"
+                f"zbest = {zbest} with type = {type(zbest)} is "
+                + "not in [int, float, None]!"
             )
         # calculate redshift limits
         lower_z_lim = np.clip(zbest * (1 - delta_z_over_z), z_min, z_max)
@@ -1240,12 +1297,13 @@ class PDF_nD:
     """
 
     def __init__(self, ordered_PDFs):
-        # ensure all PDFs have input arr of values, all of which are the same length
+        # ensure all PDFs have input arr of values, all of which
+        # are the same length
         try:
             assert all(
                 hasattr(PDF_obj, "input_arr") for PDF_obj in ordered_PDFs
             )
-        except:
+        except Exception:
             breakpoint()
         assert all(
             len(PDF_obj.input_arr) == len(ordered_PDFs[0].input_arr)
@@ -1288,7 +1346,8 @@ class PDF_nD:
 
     def __call__(self, func, independent_var, size=None, output_type="chains"):
         # need to provide additional assertions here too
-        # assert that the dimensions of PDF_nD must be the same as the input arguments - 1 of func
+        # assert that the dimensions of PDF_nD must be the same as
+        # the input arguments - 1 of func
         chains = np.array(
             [
                 func(independent_var, *vals)
@@ -1323,7 +1382,8 @@ class PDF_nD:
     def plot_corner(self) -> None:
         """Plot corner plot of 2D PDF posteriors.
 
-        Generates a corner plot (pairwise parameter posteriors) for visualization
+        Generates a corner plot (pairwise parameter posteriors) for
+        visualization
         of multidimensional probability distributions.
         """
         pass

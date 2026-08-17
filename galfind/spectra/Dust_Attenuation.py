@@ -1,25 +1,31 @@
 """Dust attenuation law implementations and utilities.
 
-Provides abstract Dust_Law base class with implementations for different attenuation
-curves (Calzetti, Meurer 1999, etc.) with wavelength-dependent attenuation calculations.
+Provides abstract Dust_Law base class with implementations for
+different attenuation curves (Calzetti, Meurer 1999, etc.) with
+wavelength-dependent attenuation calculations.
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import NoReturn, Optional
+
 import astropy.units as u
+import h5py
 import numpy as np
 from scipy.interpolate import interp1d
-import h5py
 from scipy.optimize import curve_fit
-from typing import Optional, NoReturn
+
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
-    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
+    from typing_extensions import (
+        Self,
+        Type,
+    )  # python > 3.7 AND python < 3.11
 
-from ..utils import useful_funcs_austind as funcs
 from .. import config
+from ..utils import useful_funcs_austind as funcs
 
 
 class Dust_Law(ABC):
@@ -56,10 +62,8 @@ class Dust_Law(ABC):
     n : `float`
         Power-law index of the attenuation curve.
     """
-    def __init__(
-        self: Self,
-        label: Optional[str] = None
-    ) -> NoReturn:
+
+    def __init__(self: Self, label: Optional[str] = None) -> NoReturn:
         """Initialize a dust attenuation law.
 
         Parameters
@@ -70,11 +74,13 @@ class Dust_Law(ABC):
         self.label = label
 
     def __repr__(self):
-        """Return the official string representation of the dust attenuation law."""
+        """Return the official string representation of the dust
+        attenuation law."""
         return f"Dust_Attenuation({self.label}, R_V={self.R_V})"
 
     def __str__(self):
-        """Return a formatted string representation of the dust attenuation law.
+        """Return a formatted string representation of the dust
+        attenuation law.
 
         Returns
         -------
@@ -99,26 +105,34 @@ class Dust_Law(ABC):
         """Dust attenuation curve as a function of wavelength, λ
 
         Args:
-            wavs ([int, float, list, np.array]): Wavelength to calculate attenuation curve at (should have astropy units with dimension L)
+            wavs ([int, float, list, np.array]): Wavelength to
+                calculate attenuation curve at (should have astropy
+                units with dimension L)
         """
         pass
 
     def attenuate(self, wavs, E_BminusV):
-        """Function to calculate the amount of dust attenuation at wavelength(s) λ, A(λ) = m(λ) - m(λ,0)
+        """Function to calculate the amount of dust attenuation at
+        wavelength(s) λ, A(λ) = m(λ) - m(λ,0)
 
         Args:
-            wavs ([int, float, list, np.array]): Wavelength(s) to calculate attenuation at (should have astropy units with dimension L)
-            E_BminusV (int, float): Amount of dust attenuation A(B) - A(V) = m(B) - m(B,0) - m(V) + m(V,0)
+            wavs ([int, float, list, np.array]): Wavelength(s) to
+                calculate attenuation at (should have astropy units
+                with dimension L)
+            E_BminusV (int, float): Amount of dust attenuation
+                A(B) - A(V) = m(B) - m(B,0) - m(V) + m(V,0)
 
         Returns:
-            A_lambda ([int, float, list, np.array]): Dust attenuation at wavelength(s) λ, A(λ)
+            A_lambda ([int, float, list, np.array]): Dust
+                attenuation at wavelength(s) λ, A(λ)
         """
         A_lambda = self.k_lambda(wavs) * E_BminusV
         return A_lambda
 
     @property
     def R_V(self):
-        """Property giving the ratio of total to selective extinction, R(V) = A(V) / E(B-V)
+        """Property giving the ratio of total to selective
+        extinction, R(V) = A(V) / E(B-V)
 
         Returns:
             R_V (float): Ratio of total to selective extinction
@@ -127,17 +141,22 @@ class Dust_Law(ABC):
 
     @property
     def UV_optical_slope(self):
-        """Property giving the UV optical slope of the dust attenuation curve, defined as S = A(1500 Angstrom) - A(V=5500 Angstrom)
+        """Property giving the UV optical slope of the dust
+        attenuation curve, defined as
+        S = A(1500 Angstrom) - A(V=5500 Angstrom)
 
         Returns:
-            slope (float): UV optical slope, S, of the dust attenuation curve
+            slope (float): UV optical slope, S, of the dust
+                attenuation curve
         """
         slope = self.k_lambda(1_500 * u.AA) / self.k_lambda(5_500 * u.AA)
         return slope[0]
 
     @property
     def UV_slope(self):
-        """Property giving the UV slope (different to β) of the dust attenuation curve, defined as A(1500 Angstrom) - A(3000 Angstrom)
+        """Property giving the UV slope (different to β) of the
+        dust attenuation curve, defined as
+        A(1500 Angstrom) - A(3000 Angstrom)
 
         Returns:
             slope (float): UV slope of the dust attenuation curve
@@ -147,7 +166,9 @@ class Dust_Law(ABC):
 
     @property
     def optical_slope(self):
-        """Property giving the optical slope of the dust attenuation curve, defined as A(B=4400 Angstrom) - A(V=5500 Angstrom)
+        """Property giving the optical slope of the dust
+        attenuation curve, defined as
+        A(B=4400 Angstrom) - A(V=5500 Angstrom)
 
         Returns:
             slope (float): Optical slope of the dust attenuation curve
@@ -159,14 +180,20 @@ class Dust_Law(ABC):
     def near_IR_slope(
         self, NIR_range=[0.9, 5.0] * u.um, resolution=0.1 * u.um
     ):
-        """Property giving the near-IR slope of the dust attenuation curve, β_NIR
+        """Property giving the near-IR slope of the dust attenuation curve,
+        β_NIR
         The equation concerning this slope is as follows:
         A(λ)/A(V) = (λ / 5500 Angstrom)^-β_NIR, or equivalently
         k(λ) = R(V) * (5500 Angstrom / λ)^β_NIR
 
         Args:
-            NIR_range ([np.array, list], optional): Near-infrared wavelength range used to calculate near-IR slope. Defaults to [0.9, 5] * u.um. Astropy unit dimensions L
-            resolution (float): Wavelength resolution used to create the array of wavelengths. Defaults to 0.1 * u.um. Astropy unit dimensions L
+            NIR_range ([np.array, list], optional): Near-infrared
+                wavelength range used to calculate near-IR slope.
+                Defaults to [0.9, 5] * u.um. Astropy unit
+                dimensions L
+            resolution (float): Wavelength resolution used to
+                create the array of wavelengths. Defaults to
+                0.1 * u.um. Astropy unit dimensions L
 
         Returns:
             slope (float): Near-IR slope of the dust attenuation curve
@@ -192,39 +219,51 @@ class Dust_Law(ABC):
 
     @property
     def UV_bump_strength(self):
-        """Function to calculate the UV bump strength at 2175 Angstrom, B.
-        Defined as B = A_bump / A_2175_tot, where A_bump is the additional attenuation due to the dust bump and A_2175_tot is the total attenuation at 2175 Angstrom.
-        A_2175_tot = A_bump + A_2175_0, where A_2175_0 is the baseline attenuation
-        A_2175_0 = 0.33 * A_1500 + 0.67 * A_3000, defined empirically from simulated curves in Narayanan+18a and given in Salim+20
+        """Function to calculate the UV bump strength at 2175
+        Angstrom, B.
+        Defined as B = A_bump / A_2175_tot, where A_bump is the
+        additional attenuation due to the dust bump and A_2175_tot
+        is the total attenuation at 2175 Angstrom.
+        A_2175_tot = A_bump + A_2175_0, where A_2175_0 is the baseline
+        attenuation
+        A_2175_0 = 0.33 * A_1500 + 0.67 * A_3000, defined
+        empirically from simulated curves in Narayanan+18a and
+        given in Salim+20
 
         Returns:
-            bump (float): UV bump strength from carbonaceous dust at 2175 Angstrom
+            bump (float): UV bump strength from carbonaceous dust at 2175
+            Angstrom
         """
         bump = 1.0 - (
             0.33 * self.k_lambda(1_500 * u.AA)
             + 0.67 * self.k_lambda(3_000 * u.AA)
         ) / self.k_lambda(2_175 * u.AA)
         return bump[0]
-    
+
     @property
     def n(self):
-        """Property giving the power law index of the dust attenuation curve, n.
-        Defined as n = -d(log(k(λ))) / d(log(λ)), where k(λ) is the dust attenuation curve
+        """Property giving the power law index of the dust attenuation
+        curve, n.
+        Defined as n = -d(log(k(λ))) / d(log(λ)), where k(λ) is the
+        dust attenuation curve
 
         Returns:
             n (float): Power law index of the dust attenuation curve
         """
         if not hasattr(self, "_n"):
-            wavs = np.linspace(1_500., 6_500., 1000) * u.AA
+            wavs = np.linspace(1_500.0, 6_500.0, 1000) * u.AA
             k_lambda = self.k_lambda(wavs)
-            #breakpoint()
-            n = -curve_fit(funcs.power_law_func, wavs.value / 5_500., k_lambda)[0][1]
+            # breakpoint()
+            n = -curve_fit(
+                funcs.power_law_func, wavs.value / 5_500.0, k_lambda
+            )[0][1]
         else:
             n = self._n
         return n
 
-    def plot(self, ax, wavs, label = True, **kwargs):
-        """Plot the attenuation curve k(lambda) against wavelength on a given axis.
+    def plot(self, ax, wavs, label=True, **kwargs):
+        """Plot the attenuation curve k(
+            lambda) against wavelength on a given axis.
 
         Parameters
         ----------
@@ -238,7 +277,12 @@ class Dust_Law(ABC):
         **kwargs : `dict`
             Additional keyword arguments passed to `ax.plot`.
         """
-        ax.plot(wavs, self.k_lambda(wavs), label = self.label if label else None, **kwargs)
+        ax.plot(
+            wavs,
+            self.k_lambda(wavs),
+            label=self.label if label else None,
+            **kwargs,
+        )
         ax.set_xlabel(r"$\lambda_{\mathrm{rest}} / \AA $")
         ax.set_ylabel(r"$k(\lambda)$")
 
@@ -263,7 +307,7 @@ class Calzetti00(Dust_Law):
 
         Sets the label to ``"Calzetti+00"``.
         """
-        #self._n = 0.7
+        # self._n = 0.7
         label = "Calzetti+00"
         super().__init__(label)
 
@@ -271,10 +315,14 @@ class Calzetti00(Dust_Law):
         """Calzetti+00 attenuation curve
 
         Args:
-            wavs ([int, float, list, np.array]): Wavelength to calculate attenuation curve at (should have astropy units with dimension L)
+            wavs ([int, float, list, np.array]): Wavelength to
+                calculate attenuation curve at (should have
+                astropy units with dimension L)
 
         Returns:
-            k ([int, float, list, np.array]): Un-normalized Calzetti+00 attenuation at specified input wavelengths
+            k ([int, float, list, np.array]): Un-normalized
+                Calzetti+00 attenuation at specified input
+                wavelengths
         """
         # convert wavelength(s) to microns
         if type(wavs.value) in [int, float, np.float64]:
@@ -311,17 +359,20 @@ class Calzetti00(Dust_Law):
                 wavs[mask_3], k[mask_3], fill_value="extrapolate"
             )(wavs[mask_4])
         return k
-    
+
     @property
     def R_V(self):
-        """`float`: Ratio of total to selective extinction, R(V) = A(V) / E(B-V).
+        """`float`: Ratio of total to selective extinction,
+        R(V) = A(V) / E(B-V).
 
         Overrides `Dust_Law.R_V`, fixed to 4.05.
         """
         return 4.05
 
+
 class Power_Law_Dust(Dust_Law):
-    """Power-law dust attenuation curve, k(lambda) = R_V * (lambda / 5500 Angstrom)^-n.
+    """Power-law dust attenuation curve,
+    k(lambda) = R_V * (lambda / 5500 Angstrom)^-n.
 
     Parameters
     ----------
@@ -351,24 +402,33 @@ class Power_Law_Dust(Dust_Law):
         """Power law dust attenuation curve
 
         Args:
-            wavs ([int, float, list, np.array]): Wavelength to calculate attenuation curve at (should have astropy units with dimension L)
+            wavs ([int, float, list, np.array]): Wavelength to
+                calculate attenuation curve at (should have
+                astropy units with dimension L)
 
         Returns:
-            k ([int, float, list, np.array]): Power law dust attenuation at specified input wavelengths
+            k ([int, float, list, np.array]): Power law dust
+                attenuation at specified input wavelengths
         """
-        return self.R_V * (wavs / (5_500 * u.AA)).to(u.dimensionless_unscaled) ** -self.n
+        return (
+            self.R_V
+            * (wavs / (5_500 * u.AA)).to(u.dimensionless_unscaled) ** -self.n
+        )
 
     @property
     def R_V(self):
-        """`float`: Ratio of total to selective extinction, R(V) = A(V) / E(B-V).
+        """`float`: Ratio of total to selective extinction,
+        R(V) = A(V) / E(B-V).
 
         Overrides `Dust_Law.R_V`, returning the fixed value passed at
         construction.
         """
         return self._R_V
 
+
 class Modified_Calzetti00(Dust_Law):
-    """Modified Calzetti et al. (2000) attenuation curve with slope adjustment (Salim et al. 2018).
+    """Modified Calzetti et al. (2000) attenuation curve with
+    slope adjustment (Salim et al. 2018).
 
     Modifies the slope of the underlying `Calzetti00` curve by a power
     law in wavelength with index `delta`, following Salim et al. (2018).
@@ -395,7 +455,9 @@ class Modified_Calzetti00(Dust_Law):
         """Modified Calzetti+00 attenuation curve from Salim+18
 
         Args:
-            delta (float): The amount of modification to the slope of the Calzetti+00 attenuation curve. A value of 0.0 is the original Calzetti+00 curve
+            delta (float): The amount of modification to the
+                slope of the Calzetti+00 attenuation curve. A
+                value of 0.0 is the original Calzetti+00 curve
         """
         self.delta = delta
         self.calzetti = Calzetti00()
@@ -404,27 +466,42 @@ class Modified_Calzetti00(Dust_Law):
 
     @property
     def R_V(self):
-        """Property giving the ratio of total to selective extinction, R(V) = A(V) / E(B-V)
+        """Property giving the ratio of total to selective
+        extinction, R(V) = A(V) / E(B-V)
 
         Returns:
             R_V (float): Ratio of total to selective extinction
         """
-        return self.calzetti.R_V / ((self.calzetti.R_V + 1.0) * (4_400.0 / 5_500.0) ** self.delta - self.calzetti.R_V)
+        return self.calzetti.R_V / (
+            (self.calzetti.R_V + 1.0) * (4_400.0 / 5_500.0) ** self.delta
+            - self.calzetti.R_V
+        )
 
     def k_lambda(self, wavs):
         """Modified Calzetti+00 attenuation curve
 
         Args:
-            wavs ([int, float, list, np.array]): Wavelength to calculate attenuation curve at (should have astropy units with dimension L)
+            wavs ([int, float, list, np.array]): Wavelength to
+                calculate attenuation curve at (should have
+                astropy units with dimension L)
 
         Returns:
-            k ([int, float, list, np.array]): Modified Calzetti+00 attenuation at specified input wavelengths
+            k ([int, float, list, np.array]): Modified
+                Calzetti+00 attenuation at specified input
+                wavelengths
         """
-        return self.calzetti.k_lambda(wavs) * self.R_V_mod / self.calzetti.R_V * (wavs / (5_500 * u.AA)).to(u.dimensionless_unscaled) ** self.delta
+        return (
+            self.calzetti.k_lambda(wavs)
+            * self.R_V_mod
+            / self.calzetti.R_V
+            * (wavs / (5_500 * u.AA)).to(u.dimensionless_unscaled)
+            ** self.delta
+        )
 
 
 class Reddy15(Dust_Law):
-    """Reddy et al. (2015) attenuation curve for z~1.4-2.6 star-forming galaxies.
+    """Reddy et al. (2015) attenuation curve for z~1.4-2.6
+    star-forming galaxies.
 
     Attributes
     ----------
@@ -443,7 +520,8 @@ class Reddy15(Dust_Law):
 
     @property
     def R_V(self):
-        """`float`: Ratio of total to selective extinction, R(V) = A(V) / E(B-V).
+        """`float`: Ratio of total to selective extinction,
+        R(V) = A(V) / E(B-V).
 
         Overrides `Dust_Law.R_V`, fixed to 2.505.
         """
@@ -453,10 +531,13 @@ class Reddy15(Dust_Law):
         """Reddy+15 attenuation curve
 
         Args:
-            wavs ([int, float, list, np.array]): Wavelength to calculate attenuation curve at (should have astropy units with dimension L)
+            wavs ([int, float, list, np.array]): Wavelength to
+                calculate attenuation curve at (should have
+                astropy units with dimension L)
 
         Returns:
-            k ([int, float, list, np.array]): Reddy+15 attenuation at specified input wavelengths
+            k ([int, float, list, np.array]): Reddy+15 attenuation
+                at specified input wavelengths
         """
 
         # convert wavelength(s) to microns
@@ -473,14 +554,14 @@ class Reddy15(Dust_Law):
         mask_4 = wavs > 2.2
 
         k[mask_2] = (
-            - 5.726
+            -5.726
             + 4.004 / (wavs[mask_2])
             - 0.525 / (wavs[mask_2] ** 2)
             + 0.029 / (wavs[mask_2] ** 3)
             + self.R_V
         )
         k[mask_3] = (
-            - 2.672
+            -2.672
             - 0.010 / (wavs[mask_3])
             + 1.532 / (wavs[mask_3] ** 2)
             - 0.412 / (wavs[mask_3] ** 3)
@@ -497,7 +578,7 @@ class Reddy15(Dust_Law):
                 wavs[mask_3], k[mask_3], fill_value="extrapolate"
             )(wavs[mask_4])
         return k
-    
+
 
 class Salim18(Dust_Law):
     """Salim et al. (2018) attenuation curve with a 2175 Angstrom UV bump.
@@ -516,7 +597,7 @@ class Salim18(Dust_Law):
 
     def __init__(self):
         """
-            Salim+18 attenuation curve with n = 1.15, R_V = 3.15
+        Salim+18 attenuation curve with n = 1.15, R_V = 3.15
         """
         self._n = 1.15
         label = "Salim+18"
@@ -524,23 +605,27 @@ class Salim18(Dust_Law):
 
     @property
     def R_V(self):
-        """`float`: Ratio of total to selective extinction, R(V) = A(V) / E(B-V).
+        """`float`: Ratio of total to selective extinction,
+        R(V) = A(V) / E(B-V).
 
         Overrides `Dust_Law.R_V`, fixed to 3.15.
         """
         return 3.15
-    
+
     def k_lambda(self, wavs):
         """Salim+18 attenuation curve
 
-            Args:
-                wavs ([int, float, list, np.array]): Wavelength to calculate attenuation curve at (should have astropy units with dimension L)
-            
-            Returns:
-                k ([int, float, list, np.array]): Salim+18 attenuation at specified input wavelengths
+        Args:
+            wavs ([int, float, list, np.array]): Wavelength to
+                calculate attenuation curve at (should have
+                astropy units with dimension L)
+
+        Returns:
+            k ([int, float, list, np.array]): Salim+18 attenuation
+                at specified input wavelengths
         """
-        
-                # convert wavelength(s) to microns
+
+        # convert wavelength(s) to microns
         if type(wavs.value) in [int, float, np.float64]:
             k = np.array([0.0])
             wavs = np.array([wavs.to(u.um).value])
@@ -554,7 +639,7 @@ class Salim18(Dust_Law):
         mask_4 = wavs > 2.28
 
         k[mask_2] = (
-            - 4.30
+            -4.30
             + 2.71 / (wavs[mask_2])
             - 0.191 / (wavs[mask_2] ** 2)
             + 0.0121 / (wavs[mask_2] ** 3)
@@ -575,21 +660,25 @@ class Salim18(Dust_Law):
         k[mask_4] = 0.0
 
         return k
-    
+
     def drude(self, wavs, bump_strength):
         """
-        Function to calculate the Drude profile for the UV bump at 2175 Angstrom
+        Function to calculate the Drude profile for the UV bump at 2175
+        Angstrom
         Args:
-            wavs ([int, float, list, np.array]): Wavelength to calculate attenuation curve at (should have astropy units with dimension L)
+            wavs ([int, float, list, np.array]): Wavelength to
+                calculate attenuation curve at (should have
+                astropy units with dimension L)
         """
         # wavelength in microns
         numerator = bump_strength * (wavs * 0.035) ** 2
-        denominator = ((wavs ** 2) - (0.2175 ** 2)) ** 2 + (wavs * 0.035) ** 2
+        denominator = ((wavs**2) - (0.2175**2)) ** 2 + (wavs * 0.035) ** 2
         return numerator / denominator
 
 
 class SMC(Dust_Law):
-    """Small Magellanic Cloud (SMC) bar attenuation curve from Gordon et al. (2003).
+    """Small Magellanic Cloud (SMC) bar attenuation curve from Gordon
+    et al. (2003).
 
     Loads a tabulated A(lambda)/A(V) curve from an HDF5 data file and
     interpolates it with a cubic spline.
@@ -601,48 +690,56 @@ class SMC(Dust_Law):
     R_V : `float`
         Ratio of total to selective extinction, fixed to 2.74.
     """
+
     # Gordon+03
 
     def __init__(self):
         """
-            SMC attenuation curve from Gordon+03 - specifically for the SMC bar
+        SMC attenuation curve from Gordon+03 - specifically for the SMC bar
         """
         label = "SMC (Gordon+03)"
         super().__init__(label)
 
     @property
     def R_V(self):
-        """`float`: Ratio of total to selective extinction, R(V) = A(V) / E(B-V).
+        """`float`: Ratio of total to selective extinction,
+        R(V) = A(V) / E(B-V).
 
         Overrides `Dust_Law.R_V`, fixed to 2.74.
         """
         return 2.74
-    
+
     def k_lambda(self, wavs):
         """
         SMC attenuation curve
         Args:
-            wavs ([int, float, list, np.array]): Wavelength to calculate attenuation curve at (should have astropy units with dimension L)
+            wavs ([int, float, list, np.array]): Wavelength to
+                calculate attenuation curve at (should have
+                astropy units with dimension L)
         Returns:
-            k ([int, float, list, np.array]): SMC attenuation at specified input wavelengths
+            k ([int, float, list, np.array]): SMC attenuation at
+                specified input wavelengths
         """
         # load data from the .h5 file
-        with h5py.File(f"{config['DEFAULT']['GALFIND_DIR']}/../data/SMC_Gordon+03.h5", "r") as f:
+        with h5py.File(
+            f"{config['DEFAULT']['GALFIND_DIR']}/../data/SMC_Gordon+03.h5", "r"
+        ) as f:
             lam = f["lam"][:]
             Alam_AV = f["Alam_AV"][:]
-            #Alam_AV_err = f["Alam_AV_err"][:]
+            # Alam_AV_err = f["Alam_AV_err"][:]
             f.close()
         k_func = interp1d(
             lam,
             Alam_AV * self.R_V,
-            kind = "cubic",
-            fill_value = "extrapolate",
+            kind="cubic",
+            fill_value="extrapolate",
         )
         return k_func(wavs.to(u.um).value) * u.dimensionless_unscaled
 
 
 class AUV_from_beta(ABC):
-    """Abstract base class converting UV continuum slope, beta, to UV dust attenuation, A(UV).
+    """Abstract base class converting UV continuum slope, beta, to
+    UV dust attenuation, A(UV).
 
     Implements the linear relation ``beta = beta_int + slope * A_UV``,
     i.e. ``A_UV = (beta - beta_int) / slope``, calibrated for a given
@@ -708,7 +805,8 @@ class AUV_from_beta(ABC):
         return ((beta - self.beta_int) / self.slope).value * u.ABmag
 
     def change_ref_wav(self, ref_wav):
-        """Change the reference wavelength the beta-A(UV) relation is defined at.
+        """Change the reference wavelength the beta-A(
+            UV) relation is defined at.
 
         Parameters
         ----------
@@ -726,7 +824,8 @@ class AUV_from_beta(ABC):
 
 
 class M99(AUV_from_beta):
-    """Meurer et al. (1999) beta-A(UV) relation, calibrated against `Calzetti00`.
+    """Meurer et al. (1999) beta-A(UV) relation,
+    calibrated against `Calzetti00`.
 
     Fixes ``beta_int = -4.43 / 1.99``, ``slope = 1.0 / 1.99``,
     `dust_law` to `Calzetti00`, and `ref_wav` to 1600 Angstrom.
@@ -734,7 +833,9 @@ class M99(AUV_from_beta):
 
     def __init__(self):
         """Initialize a Meurer et al. (1999) beta-A(UV) relation instance."""
-        super().__init__(-4.43 / 1.99, 1.0 / 1.99, Calzetti00(), 1_600.0 * u.AA)
+        super().__init__(
+            -4.43 / 1.99, 1.0 / 1.99, Calzetti00(), 1_600.0 * u.AA
+        )
 
 
 class Reddy15_conv(AUV_from_beta):
@@ -746,13 +847,12 @@ class Reddy15_conv(AUV_from_beta):
 
     def __init__(self):
         """Initialize a Reddy et al. (2015) beta-A(UV) relation instance."""
-        super().__init__(
-            -4.48 / 1.84, 1.0 / 1.84, Reddy15(), 1_600.0 * u.AA
-        )
+        super().__init__(-4.48 / 1.84, 1.0 / 1.84, Reddy15(), 1_600.0 * u.AA)
 
 
 class Reddy18(AUV_from_beta):
-    """Reddy et al. (2018) beta-A(UV) relation for a given dust law and stellar population age.
+    """Reddy et al. (2018) beta-A(UV) relation for a given dust
+    law and stellar population age.
 
     Selects `beta_int` from a BPASS-age-dependent lookup and `slope`
     from a `dust_law`-dependent lookup (only defined for `Reddy15`),
@@ -782,7 +882,7 @@ class Reddy18(AUV_from_beta):
     def __init__(
         self: Self,
         dust_law: Type[Dust_Law] = Reddy15(),
-        BPASS_age: u.Quantity = 100 * u.Myr
+        BPASS_age: u.Quantity = 100 * u.Myr,
     ) -> NoReturn:
         """Initialize a Reddy et al. (2018) beta-A(UV) relation instance.
 

@@ -7,10 +7,15 @@ Voigt profiles and photon absorption cross-sections for DLA modeling.
 """
 
 # DLA.py
+import astropy.constants as const
 import astropy.units as u
+import numpy as np
 
+from ..utils.lyman_alpha_damping_wing import (
+    Tepper_Garcia06_lyman_alpha_voigt_profile,
+    Tepper_Garcia06_voigt_profile,
+)
 from .Emission_lines import line_diagnostics
-from ..utils.lyman_alpha_damping_wing import *
 
 
 class DLA:
@@ -41,12 +46,13 @@ class DLA:
     Doppler_b : `astropy.units.Quantity`
         Doppler broadening parameter.
     """
+
     def __init__(
         self,
         N_HI,
         Doppler_b,
-        vel_offset = 0.0 * u.km / u.s,
-        z_offset = 0.0,
+        vel_offset=0.0 * u.km / u.s,
+        z_offset=0.0,
         voigt_method="Tepper-Garcia+06",
     ):
         """Initialize a DLA absorption system.
@@ -62,7 +68,8 @@ class DLA:
         z_offset : `float`, optional
             Redshift offset from the parent absorption. Default is 0.0.
         voigt_method : `str`, optional
-            Voigt profile computation method. Default is ``"Tepper-Garcia+06"``.
+            Voigt profile computation method. Default is
+            ``"Tepper-Garcia+06"``.
         """
         self.N_HI = N_HI
         self.Doppler_b = Doppler_b
@@ -126,7 +133,8 @@ class DLA:
         zponesq = (1 + self.z_offset) ** 2
         out = (const.c * (zponesq - 1) / (zponesq + 1)).to(u.km / u.s)
         return out
-        # print((self.z_offset * u.dimensionless_unscaled).to(u.AA, equivalencies = u.doppler_redshift()))
+        # print((self.z_offset * u.dimensionless_unscaled).to(
+        #     u.AA, equivalencies = u.doppler_redshift()))
 
     def tau(self, wav_rest):
         """Compute the optical depth as a function of rest-frame wavelength.
@@ -156,7 +164,8 @@ class DLA:
         return tau
 
     def transmission(self, wav_rest):
-        """Compute the transmission (e^-tau) as a function of rest-frame wavelength.
+        """Compute the transmission (
+            e^-tau) as a function of rest-frame wavelength.
 
         Parameters
         ----------

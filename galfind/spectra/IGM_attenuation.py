@@ -7,6 +7,7 @@ for IGM absorption in galaxy spectra.
 """
 
 # IGM_attenuation.py
+import logging
 from pathlib import Path
 
 import astropy.units as u
@@ -16,14 +17,14 @@ import numpy as np
 from astropy.table import Table
 from scipy.interpolate import RegularGridInterpolator
 from tqdm import tqdm
-import logging 
 
-from .. import config, wav_lyman_lim, galfind_logger
+from .. import config, galfind_logger, wav_lyman_lim
 from .Emission_lines import wav_lyman_alpha
 
 
 def calc_Inoue14_LS_LAF_optical_depth(lyman_series, wav_obs_arr, z):
-    """Compute the Lyman series Lyman-alpha forest (LAF) optical depth of Inoue et al. (2014).
+    """Compute the Lyman series Lyman-alpha forest (LAF) optical depth
+    of Inoue et al. (2014).
 
     Implements the piecewise power-law fits to the Lyman-alpha forest
     absorption (equations 8-9, 21 of Inoue et al. 2014) summed over all
@@ -77,7 +78,8 @@ def calc_Inoue14_LS_LAF_optical_depth(lyman_series, wav_obs_arr, z):
 
 
 def calc_Inoue14_LS_DLA_optical_depth(lyman_series, wav_obs_arr, z):
-    """Compute the Lyman series damped Lyman-alpha (DLA) optical depth of Inoue et al. (2014).
+    """Compute the Lyman series damped Lyman-alpha (DLA) optical depth
+    of Inoue et al. (2014).
 
     Implements the piecewise power-law fits to the DLA absorption
     (equations 10-11, 22 of Inoue et al. 2014) summed over all Lyman
@@ -120,7 +122,8 @@ def calc_Inoue14_LS_DLA_optical_depth(lyman_series, wav_obs_arr, z):
 
 
 def calc_Inoue14_LC_LAF_optical_depth(wav_obs_arr, z):
-    """Compute the Lyman continuum Lyman-alpha forest (LAF) optical depth of Inoue et al. (2014).
+    """Compute the Lyman continuum Lyman-alpha forest (LAF) optical
+    depth of Inoue et al. (2014).
 
     Implements the redshift-dependent piecewise power-law fits to the
     Lyman continuum forest absorption (equations 12-15, 21 of Inoue et al.
@@ -233,7 +236,8 @@ def calc_Inoue14_LC_LAF_optical_depth(wav_obs_arr, z):
 
 
 def calc_Inoue14_LC_DLA_optical_depth(wav_obs_arr, z):
-    """Compute the Lyman continuum damped Lyman-alpha (DLA) optical depth of Inoue et al. (2014).
+    """Compute the Lyman continuum damped Lyman-alpha (DLA) optical
+    depth of Inoue et al. (2014).
 
     Implements the redshift-dependent piecewise power-law fits to the
     Lyman continuum DLA absorption (equations 16-17, 22 of Inoue et al.
@@ -300,7 +304,8 @@ def calc_IGM_transmission(
     z,
     prescription=config["MockSEDs"]["IGM_PRESCRIPTION"],
 ):
-    """Compute the intergalactic medium (IGM) transmission spectrum for a source at redshift `z`.
+    """Compute the intergalactic medium (IGM) transmission spectrum for
+    a source at redshift `z`.
 
     Converts `wav_rest_arr` to observed-frame wavelengths using `z`, sums
     the Lyman series and Lyman continuum LAF/DLA optical depths (for the
@@ -347,7 +352,8 @@ def calc_IGM_transmission(
     else:
         raise (
             Exception(
-                f"IGM attenuation not available for prescription = {prescription}. Please choose one of ['Inoue+14']"
+                "IGM attenuation not available for prescription = "
+                f"{prescription}. Please choose one of ['Inoue+14']"
             )
         )
     transmission = np.exp(-optical_depth)
@@ -357,7 +363,8 @@ def calc_IGM_transmission(
 def make_IGM_transmission_grid(
     wav_rest_arr, z_arr, prescription=config["MockSEDs"]["IGM_PRESCRIPTION"]
 ):
-    """Compute and save a 2D grid of IGM transmission over rest wavelength and redshift.
+    """Compute and save a 2D grid of IGM transmission over rest
+    wavelength and redshift.
 
     Loads the Lyman series absorption table from
     ``config['MockSEDs']['IGM_DIR']/LS_absorption.fits``, computes
@@ -388,7 +395,7 @@ def make_IGM_transmission_grid(
         enumerate(z_arr),
         total=len(z_arr),
         desc=f"Making {prescription} IGM grid",
-        disable=galfind_logger.getEffectiveLevel() > logging.INFO
+        disable=galfind_logger.getEffectiveLevel() > logging.INFO,
     ):
         IGM_transmission[i, :] = calc_IGM_transmission(
             lyman_series, wav_rest_arr, z, prescription=prescription
@@ -403,7 +410,8 @@ def make_IGM_transmission_grid(
 
 
 class IGM:
-    """Intergalactic medium (IGM) transmission model, backed by a precomputed grid.
+    """Intergalactic medium (IGM) transmission model,
+    backed by a precomputed grid.
 
     On construction, loads (creating if necessary) a 2D grid of IGM
     transmission as a function of rest-frame wavelength and redshift,
@@ -467,7 +475,9 @@ class IGM:
 
     @property
     def interpolator(self):
-        """`scipy.interpolate.RegularGridInterpolator`: Interpolator over `(z_arr, wav_rest_arr)` for `transmission_grid`, extrapolating outside its bounds."""
+        """`scipy.interpolate.RegularGridInterpolator`: Interpolator
+        over `(z_arr, wav_rest_arr)` for `transmission_grid`,
+        extrapolating outside its bounds."""
         return RegularGridInterpolator(
             (self.z_arr, self.wav_rest_arr),
             self.transmission_grid,
@@ -476,7 +486,8 @@ class IGM:
         )  # extrapolate points too
 
     def load_IGM_transmission_grid(self):
-        """Load the precomputed IGM transmission grid from disk into `transmission_grid`, `z_arr` and `wav_rest_arr`.
+        """Load the precomputed IGM transmission grid from disk into
+        `transmission_grid`, `z_arr` and `wav_rest_arr`.
 
         Reads the HDF5 file at
         ``config['MockSEDs']['IGM_DIR']/{self.prescription}_IGM_grid.h5``,
@@ -547,7 +558,8 @@ class IGM:
     def interp_transmission(
         self, z, wav_rest_arr
     ):  # wav_rest_arr should have units
-        """Interpolate the IGM transmission grid at a given redshift and rest wavelengths.
+        """Interpolate the IGM transmission grid at a given redshift
+        and rest wavelengths.
 
         Wavelengths below `wav_lyman_lim` are assigned zero transmission,
         wavelengths above `wav_lyman_alpha` are assigned unit transmission,
@@ -567,7 +579,8 @@ class IGM:
             `wav_rest_arr`.
         """
         wav_rest_arr = wav_rest_arr.to(u.AA).value
-        # calculate rest wavelengths from self in the appropriate wavelength range between wav_lyman_lim and wav_lyman_alpha
+        # calculate rest wavelengths from self in the appropriate
+        # wavelength range between wav_lyman_lim and wav_lyman_alpha
         attenuated_indices = (wav_rest_arr > wav_lyman_lim) & (
             wav_rest_arr <= wav_lyman_alpha
         )
@@ -641,7 +654,8 @@ class IGM:
         else:
             raise (
                 Exception(
-                    f"frame = {frame} is invalid! Please choose either 'rest' or 'obs'"
+                    f"frame = {frame} is invalid! Please choose "
+                    "either 'rest' or 'obs'"
                 )
             )
         if annotate:

@@ -10,9 +10,9 @@ Created on Fri Aug 18 12:20:13 2023
 
 import astropy.units as u
 import numpy as np
+from galfind.Catalogue_Creator import Galfind_Catalogue_Creator
 
 from galfind import Catalogue, config
-from galfind.Catalogue_Creator import Galfind_Catalogue_Creator
 
 
 def calc_UV_properties(
@@ -68,14 +68,12 @@ def calc_UV_properties(
                 if templates == "fsps_larson" and pc_err == 10:
                     print(cat.cat_path)
                     tab = cat.open_full_cat()
-                    if crop_key != None:
+                    if crop_key is not None:
                         skip_IDs = np.array(
-                            tab[tab[crop_key] == False]["NUMBER"]
+                            tab[~tab[crop_key]]["NUMBER"]
                         )
-                    # skip_IDs = np.array(tab[tab[f"robust_gal_eazy_3sigma_{templates}"] == False]["NUMBER"])
-                    print(
-                        f"Performing UV fitting on {len(tab) - len(skip_IDs)} galaxies"
-                    )
+                    n_gal = len(tab) - len(skip_IDs)
+                    print(f"Performing UV fitting on {n_gal} galaxies")
                     cat.make_UV_fit_cat(
                         code_name=code_names[0],
                         UV_PDF_path=f"{config['RestUVProperties']['UV_PDF_PATH']}/{version}/{cat.data.instrument.name}/{survey}/{code_names[0]}+{pc_err}pc/{templates}",
@@ -89,7 +87,7 @@ if __name__ == "__main__":
     instruments = [
         "NIRCam",
         "ACS_WFC",
-    ]  # , 'WFC3_IR'] # Can leave this - if there is no data for an instrument it is removed automatically
+    ]
     cat_type = "loc_depth"
     surveys = [
         "JADES-Deep-GS"
@@ -104,9 +102,9 @@ if __name__ == "__main__":
     fast_depths = False
     jems_bands = ["f182M", "f210M", "f430M", "f460M", "f480M"]
     ngdeep_excl_bands = ["f435W", "f775W", "f850LP"]
-    excl_bands = []  # ["f435W", "f775W", "f850LP"] # ["f606W", "f814W", "f090W", "f115W", "f277W", "f335M", "f356W", "f410M", "f444W"]
+    excl_bands = []
     n_loc_depth_samples = 10
-    crop_key = "selected_gal_all_criteria_delta_chi2_4_fsps_larson"  # f"final_sample_highz_{templates}"
+    crop_key = "selected_gal_all_criteria_delta_chi2_4_fsps_larson"
     overwrite = True
 
     for survey in surveys:

@@ -1,6 +1,7 @@
 """Number density function containers and statistical fitting.
 
-Provides classes for storing binned number densities (UVLFs, mass functions) with
+Provides classes for storing binned number densities (UVLFs, mass
+functions) with
 uncertainties and includes MCMC/Schechter fitters for function fitting.
 """
 
@@ -10,17 +11,28 @@ import os
 import sys
 from copy import deepcopy
 from pathlib import Path
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    List,
+    NoReturn,
+    Optional,
+    Tuple,
+    Union,
+)
+
 import astropy.units as u
 import matplotlib.pyplot as plt
 import numpy as np
-from numpy.typing import NDArray
 from astropy.table import Table
-from typing import NoReturn, Optional, Union, Tuple, Dict, List, Any, TYPE_CHECKING
+from numpy.typing import NDArray
+
 if TYPE_CHECKING:
     from . import (
         Catalogue_Base,
-        Property_Calculator,
         Mask_Selector,
+        Property_Calculator,
     )
     from .selection import Completeness, Completeness_2D
 try:
@@ -28,17 +40,19 @@ try:
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from ..utils import useful_funcs_austind as funcs
-from ..utils.MCMC import MCMC_Fitter, Priors
 from .. import config, galfind_logger
 from ..sed_fitting.SED_codes import SED_code
+from ..utils import useful_funcs_austind as funcs
+from ..utils.MCMC import MCMC_Fitter, Priors
 
 
 class Base_Number_Density_Function:
     """Base class for number density functions (UVLFs, mass functions, etc.).
 
-    Stores binned number density measurements at a reference redshift, including
-    measurements and their uncertainties. Subclasses add additional functionality
+    Stores binned number density measurements at a reference redshift,
+    including
+    measurements and their uncertainties. Subclasses add additional
+    functionality
     for computing densities and handling multiple functions.
 
     Parameters
@@ -71,6 +85,7 @@ class Base_Number_Density_Function:
     author_year : `str`
         Citation.
     """
+
     def __init__(
         self: Self,
         x_name: str,
@@ -78,7 +93,7 @@ class Base_Number_Density_Function:
         z_ref: Union[str, int, float],
         phi: NDArray[float],
         phi_errs_cv: NDArray[float],
-        author_year: str
+        author_year: str,
     ):
         self.x_name = x_name
         self.x_mid_bins = x_mid_bins
@@ -90,10 +105,7 @@ class Base_Number_Density_Function:
     # obsolete after Base_Number_Density_Function.from_flags_repo()
     @classmethod
     def from_ecsv(
-        cls,
-        x_name: str,
-        z_ref: Union[str, int, float],
-        author_year: str
+        cls, x_name: str, z_ref: Union[str, int, float], author_year: str
     ) -> Self:
         """Load a number density function from an ECSV data file.
 
@@ -116,7 +128,10 @@ class Base_Number_Density_Function:
         if isinstance(z_ref, (str, int)):
             z_ref = float(z_ref)
         x_name_config_key = f"{x_name}_LIT_DIR"
-        ecsv_data_path = f"{config['NumberDensityFunctions'][x_name_config_key]}/z={z_ref:.1f}/{author_year}.ecsv"
+        ecsv_data_path = (
+            f"{config['NumberDensityFunctions'][x_name_config_key]}"
+            f"/z={z_ref:.1f}/{author_year}.ecsv"
+        )
         tab = Table.read(ecsv_data_path)
         x_mid_bins = np.array(tab["M_UV"])
         phi = np.array(tab["phi"])
@@ -142,7 +157,8 @@ class Base_Number_Density_Function:
         author_year : `str`
             Author and year label for the publication.
         obs_or_models : `str`, optional
-            Data type: ``"obs"`` for observations or ``"models/binned"`` for models.
+            Data type: ``"obs"`` for observations or ``"models/binned"``
+            for models.
             Default is ``"obs"``.
 
         Returns
@@ -154,7 +170,7 @@ class Base_Number_Density_Function:
         sys.path.insert(1, config["NumberDensityFunctions"]["FLAGS_DATA_DIR"])
         try:
             from flags_data import distribution_functions
-        except:
+        except Exception:
             galfind_logger.critical(
                 "Could not import flags_data.distribution_functions"
             )
@@ -167,12 +183,12 @@ class Base_Number_Density_Function:
             "M_UV": "LUV",
             "stellar_mass": "Mstar",
         }
-        
+
         datasets = distribution_functions.list_datasets(
             f"{flags_property_name_conv[x_name]}/{obs_or_models}"
         )
 
-        #num_obs = np.linspace(0, 1, len(datasets))
+        # num_obs = np.linspace(0, 1, len(datasets))
         z_ref = (z_bin[0] + z_bin[1]) / 2.0
         for pos, path in enumerate(datasets):
             ds = distribution_functions.read(path, verbose=False)
@@ -189,8 +205,9 @@ class Base_Number_Density_Function:
                             z = float(z_i)
                 if z is None:
                     galfind_logger.warning(
-                        f"No available redshift for {author_year=} in {z_bin=}!" + \
-                        f" Available redshifts are {ds.redshifts}"
+                        f"No available redshift for {author_year=} "
+                        f"in {z_bin=}!"
+                        + f" Available redshifts are {ds.redshifts}"
                     )
                     return None
                 else:
@@ -205,14 +222,14 @@ class Base_Number_Density_Function:
 
                     try:
                         if x_name in [
-                            key for (key, val)
-                            in flags_property_name_conv.items()
+                            key
+                            for (key, val) in flags_property_name_conv.items()
                             if val == "LUV"
                         ]:
                             x = ds.M[z]
                         else:
                             x = ds.log10X[z]
-                    except:
+                    except Exception:
                         breakpoint()
 
                     if flags_property_name_conv[x_name] == "LUV":
@@ -232,19 +249,23 @@ class Base_Number_Density_Function:
                         err_high = 10 ** (log10phi + high) - 10**log10phi
                         err_low = (10**log10phi) - 10 ** (log10phi - low)
                         phi_err = np.array([err_low, err_high])
-                    else: # obs_or_models == "models/binned"
+                    else:  # obs_or_models == "models/binned"
                         phi_err = np.zeros((2, len(log10phi)))
 
-                    # x = ds.log10X[z] - np.log10(1. / funcs.imf_mass_factor[ds.imf]) stellar mass only
+                    # x = ds.log10X[z] - np.log10(
+                    #     1. / funcs.imf_mass_factor[ds.imf]
+                    # ) stellar mass only
                     return cls(
                         x_name,
                         x,
                         z,
-                        10 ** log10phi,
+                        10**log10phi,
                         phi_err,
                         author_year,
                     )
-        galfind_logger.info(f"No {author_year=} in {obs_or_models} for {x_name=}")
+        galfind_logger.info(
+            f"No {author_year=} in {obs_or_models} for {x_name=}"
+        )
         return None  # if no author_year in flags_data
 
     def __add__(
@@ -252,7 +273,7 @@ class Base_Number_Density_Function:
         other: Union[
             Type[Base_Number_Density_Function],
             List[Type[Base_Number_Density_Function]],
-            Multiple_Number_Density_Function
+            Multiple_Number_Density_Function,
         ],
     ) -> Multiple_Number_Density_Function:
         base_ndf_subcls = tuple(Base_Number_Density_Function.__subclasses__())
@@ -262,10 +283,17 @@ class Base_Number_Density_Function:
         elif isinstance(other, base_ndf_subcls):
             number_density_funcs = [self, other]
         elif isinstance(other, Multiple_Number_Density_Function):
-            assert all(isinstance(ndf, base_ndf_subcls) for ndf in other.number_density_functions)
+            assert all(
+                isinstance(ndf, base_ndf_subcls)
+                for ndf in other.number_density_functions
+            )
             number_density_funcs = [self] + other.number_density_functions
         else:
-            err_message = f"{repr(other)=} not in [{base_ndf_subcls}, List[{base_ndf_subcls}], Multiple_Number_Density_Function]!"
+            err_message = (
+                f"{repr(other)=} not in [{base_ndf_subcls}, "
+                f"List[{base_ndf_subcls}], "
+                "Multiple_Number_Density_Function]!"
+            )
             galfind_logger.critical(err_message)
             raise ValueError(err_message)
         # TODO: Ensure no duplicates
@@ -352,7 +380,11 @@ class Base_Number_Density_Function:
         # don't plot empty bins
         if isinstance(self.x_mid_bins, (u.Quantity, u.Magnitude, u.Dex)):
             x_mid_bins = np.array(
-                [_x for _x, _y in zip(self.x_mid_bins.value, self.phi) if _y != 0.0]
+                [
+                    _x
+                    for _x, _y in zip(self.x_mid_bins.value, self.phi)
+                    if _y != 0.0
+                ]
             )
         else:
             x_mid_bins = np.array(
@@ -360,8 +392,11 @@ class Base_Number_Density_Function:
             )
         x_mid_bins += offset
         phi = np.array([_y for _y in self.phi if _y != 0.0])
-        if not plot_cv_errs and hasattr(self, "phi_errs") and \
-                isinstance(self, Number_Density_Function):
+        if (
+            not plot_cv_errs
+            and hasattr(self, "phi_errs")
+            and isinstance(self, Number_Density_Function)
+        ):
             phi_errs_ = self.phi_errs
         else:
             phi_errs_ = self.phi_errs_cv
@@ -407,17 +442,22 @@ class Base_Number_Density_Function:
                 default_plot_kwargs.pop(key)
                 default_plot_kwargs[key] = plot_kwargs[key]
         _plot_kwargs = {**plot_kwargs, **default_plot_kwargs}
-        
+
         galfind_logger.info(f"Plotting {default_plot_kwargs['label']}")
         if all([y_err == 0.0 for y_err in y_errs.flatten()]):
-            galfind_logger.debug(f"No errors to plot for {default_plot_kwargs['label']}")
+            galfind_logger.debug(
+                f"No errors to plot for {default_plot_kwargs['label']}"
+            )
             line = ax_.plot(x_mid_bins, y, **_plot_kwargs)
         else:
             # turn nans into upper limits
             if any(np.isnan(y_errs[0])):
                 upper_limit_indices = np.where(np.isnan(y_errs[0]))[0]
                 y_errs[0][upper_limit_indices] = 0.5 * y[upper_limit_indices]
-                _plot_kwargs["uplims"] = [True if i in upper_limit_indices else False for i in range(len(y))]
+                _plot_kwargs["uplims"] = [
+                    True if i in upper_limit_indices else False
+                    for i in range(len(y))
+                ]
             line = ax_.errorbar(x_mid_bins, y, yerr=y_errs, **_plot_kwargs)
 
         if annotate:
@@ -438,7 +478,7 @@ class Base_Number_Density_Function:
             # sort out legend_kwargs
             default_legend_kwargs = {
                 "loc": "best",
-                #"bbox_to_anchor": (1.05, 0.5),
+                # "bbox_to_anchor": (1.05, 0.5),
             }
             # overwrite default with input for duplicate kwargs
             for key in legend_kwargs.keys():
@@ -463,13 +503,17 @@ class Base_Number_Density_Function:
             # if self.__class__.__name__ != "Number_Density_Function":
             #     raise NotImplementedError
             #     # assert save_path is not None
-            #     # save_path = config['NumberDensityFunctions']['NUMBER_DENSITY_FUNC_DIR'] + \
+            #     # save_path = \
+            #     #     config['NumberDensityFunctions'] \
+            #     #     ['NUMBER_DENSITY_FUNC_DIR'] + \
             #     #     f"/Plots/Literature/{save_name}"
             # else:
             if save_path is None:
                 save_path = self.get_plot_path()
                 # if save_name is not None:
-                #     plot_path = "/".join(plot_path.split("/")[:-1]) + f"/{save_name}.png"
+                #     plot_path = "/".join(
+                #         plot_path.split("/")[:-1]
+                #     ) + f"/{save_name}.png"
             funcs.make_dirs(save_path)
             plt.savefig(save_path, bbox_inches="tight")
             funcs.change_file_permissions(save_path)
@@ -482,8 +526,10 @@ class Base_Number_Density_Function:
 class Number_Density_Function(Base_Number_Density_Function):
     """Number density function computed from a galaxy sample.
 
-    Computes and stores binned number densities for a property (e.g., UV luminosity,
-    stellar mass) from a galaxy catalogue, including cosmic variance and completeness
+    Computes and stores binned number densities for a property (e.g., UV
+    luminosity,
+    stellar mass) from a galaxy catalogue, including cosmic variance and
+    completeness
     corrections.
 
     Parameters
@@ -515,6 +561,7 @@ class Number_Density_Function(Base_Number_Density_Function):
     Vmax_method : `str`, optional
         Method for volume calculation. Default is "uniform_depth".
     """
+
     def __init__(
         self,
         x_name: str,
@@ -536,16 +583,19 @@ class Number_Density_Function(Base_Number_Density_Function):
         self.x_origin = x_origin
         self.z_bin = z_bin
         self.Ngals = Ngals
-        self.phi_errs = phi_errs # poisson only
+        self.phi_errs = phi_errs  # poisson only
         self.cv_errs = cv_errs  # cosmic variance % errs / 100
         self.origin_surveys = origin_surveys
         self.cv_origin = cv_origin
         self.completeness = completeness
         self.Vmax_method = Vmax_method
-        x_mid_bins = np.array(
-            [(x_bin[1].value + x_bin[0].value) / 2.0 for x_bin in x_bins]
-        ) * x_bins[0].unit
-        
+        x_mid_bins = (
+            np.array(
+                [(x_bin[1].value + x_bin[0].value) / 2.0 for x_bin in x_bins]
+            )
+            * x_bins[0].unit
+        )
+
         z_ref = float((z_bin[1] + z_bin[0]) / 2.0)
         phi_errs_cv = np.array(
             [
@@ -566,7 +616,7 @@ class Number_Density_Function(Base_Number_Density_Function):
     def from_ecsv(
         cls: Type[Number_Density_Function],
         save_path: str,
-        completeness: Optional[Completeness] = None
+        completeness: Optional[Completeness] = None,
     ) -> Self:
         """Load a number density function from an ECSV file.
 
@@ -586,18 +636,24 @@ class Number_Density_Function(Base_Number_Density_Function):
         x_bins_up = np.array(tab["x_bins_up"])
         x_bins_low = np.array(tab["x_bins_low"])
         x_unit = tab["x_bins_up"].unit
-        x_bins = np.array(
-            [
-                [x_bin_low, x_bin_up]
-                for x_bin_low, x_bin_up in zip(x_bins_low, x_bins_up)
-            ]
-        ) * x_unit
+        x_bins = (
+            np.array(
+                [
+                    [x_bin_low, x_bin_up]
+                    for x_bin_low, x_bin_up in zip(x_bins_low, x_bins_up)
+                ]
+            )
+            * x_unit
+        )
         Ngals = np.array(tab["Ngals"])
         phi = np.array(tab["phi"])
         phi_l1 = np.array(tab["phi_l1"])
         phi_u1 = np.array(tab["phi_u1"])
         cv_errs = np.array(tab["cv_errs"])
-        # SED_fit_params_key, x_name, origin_surveys, z_bin = Number_Density_Function.extract_info_from_save_path(save_path)
+        # SED_fit_params_key, x_name, origin_surveys, z_bin = \
+        #     Number_Density_Function.extract_info_from_save_path(
+        #         save_path
+        #     )
         cv_origin = tab.meta["cv_origin"]
         x_origin = tab.meta["x_origin"]
         x_name = tab.meta["x_name"]
@@ -637,7 +693,9 @@ class Number_Density_Function(Base_Number_Density_Function):
         z_step: float = 0.01,
         cv_origin: Union[str, None] = "Driver2010",
         completeness: Optional[Dict[str, Dict[str, Completeness_2D]]] = None,
-        unmasked_area: Union[str, List[str], u.Quantity, Type[Mask_Selector]] = "selection",
+        unmasked_area: Union[
+            str, List[str], u.Quantity, Type[Mask_Selector]
+        ] = "selection",
         plot: bool = True,
         save: bool = True,
         timed: bool = False,
@@ -685,16 +743,19 @@ class Number_Density_Function(Base_Number_Density_Function):
         Returns
         -------
         `Number_Density_Function` or `None`
-            The computed number density function, or `None` if calculation fails.
+            The computed number density function, or `None` if calculation
+            fails.
         """
         from ..catalogues.Multiple_Catalogue import Combined_Catalogue
+
         if isinstance(cat, Combined_Catalogue):
             plot = False
         # input assertions
         assert len(z_bin) == 2
         assert z_bin[0] < z_bin[1]
         assert len(x_bin_edges) >= 2
-        # ensure x_bin_edges are sorted from lower to higher x values in every z bin
+        # ensure x_bin_edges are sorted from lower to higher x
+        # values in every z bin
         assert all(
             _x == _sorted_x
             for _x, _sorted_x in zip(
@@ -706,16 +767,29 @@ class Number_Density_Function(Base_Number_Density_Function):
         assert cv_origin in ["Driver2010"]
         # SED fit label assertions
         assert isinstance(SED_fit_code, tuple(SED_code.__subclasses__()))
-        assert all(SED_fit_code.label in gal.aper_phot[aper_diam].SED_results.keys() for gal in cat)
+        assert all(
+            SED_fit_code.label in gal.aper_phot[aper_diam].SED_results.keys()
+            for gal in cat
+        )
         # x_origin assertions
         assert x_origin in ["phot_rest", "SED_result"]
 
         # extract x values
         # TODO: Generalize this to exclude x_origin dependence
         if x_origin == "phot_rest":
-            x = [gal.aper_phot[aper_diam].SED_results[SED_fit_code.label].phot_rest.properties[x_calculator.name] for gal in cat]
-        else: # x_origin == "SED_result":
-            x = [gal.aper_phot[aper_diam].SED_results[SED_fit_code.label].properties[x_calculator.name] for gal in cat]
+            x = [
+                gal.aper_phot[aper_diam]
+                .SED_results[SED_fit_code.label]
+                .phot_rest.properties[x_calculator.name]
+                for gal in cat
+            ]
+        else:  # x_origin == "SED_result":
+            x = [
+                gal.aper_phot[aper_diam]
+                .SED_results[SED_fit_code.label]
+                .properties[x_calculator.name]
+                for gal in cat
+            ]
         # remove nans
         x = [x_ for x_ in x if not np.isnan(x_)]
         assert all(x_.unit == x[0].unit for x_ in x)
@@ -723,19 +797,33 @@ class Number_Density_Function(Base_Number_Density_Function):
 
         # crop catalogue to this redshift bin
         from . import Redshift_Bin_Selector
+
         # TODO: Implement Redshift_Limit_Selector in case of np.nan z_bin entry
         z_bin_selector = Redshift_Bin_Selector(aper_diam, SED_fit_code, z_bin)
         z_bin_cat = deepcopy(cat).crop(z_bin_selector)
-        # ensure every galaxy in this redshift bin has 
+        # ensure every galaxy in this redshift bin has
         # the relevant property already calculated
-        if len([i for i, gal in enumerate(z_bin_cat) if \
-                np.isnan(gal.aper_phot[aper_diam].SED_results \
-                [SED_fit_code.label].phot_rest.properties \
-                [x_calculator.name])]) != 0:
+        if (
+            len(
+                [
+                    i
+                    for i, gal in enumerate(z_bin_cat)
+                    if np.isnan(
+                        gal.aper_phot[aper_diam]
+                        .SED_results[SED_fit_code.label]
+                        .phot_rest.properties[x_calculator.name]
+                    )
+                ]
+            )
+            != 0
+        ):
             nan_gals = [
-                gal for gal in z_bin_cat if np.isnan(
-                    gal.aper_phot[aper_diam].SED_results \
-                    [SED_fit_code.label].phot_rest.properties[x_calculator.name]
+                gal
+                for gal in z_bin_cat
+                if np.isnan(
+                    gal.aper_phot[aper_diam]
+                    .SED_results[SED_fit_code.label]
+                    .phot_rest.properties[x_calculator.name]
                 )
             ]
             galfind_logger.warning(
@@ -743,18 +831,17 @@ class Number_Density_Function(Base_Number_Density_Function):
             )
             for gal in nan_gals:
                 galfind_logger.warning(
-                    f"{gal.ID}: (z={gal.aper_phot[aper_diam].SED_results[SED_fit_code.label].z:.2f}" + \
-                    f",{gal.aper_phot[aper_diam].filterset.filt_names})"
+                    f"{gal.ID}: "
+                    f"(z={gal.aper_phot[aper_diam].SED_results[SED_fit_code.label].z:.2f}"
+                    + f",{gal.aper_phot[aper_diam].filterset.filt_names})"
                 )
             # remove nan_gals from z_bin_cat
             z_bin_cat.gals = [gal for gal in z_bin_cat if gal not in nan_gals]
 
         if len(z_bin_cat) == 0:
-            galfind_logger.warning(
-                f"No galaxies in {z_bin=}"
-            )
+            galfind_logger.warning(f"No galaxies in {z_bin=}")
             return None
-        
+
         # determine save_path
         # full_survey_name = funcs.get_full_survey_name(
         #     cat.survey,
@@ -766,14 +853,16 @@ class Number_Density_Function(Base_Number_Density_Function):
             x_origin,
             x_calculator.name,
             z_bin_cat.crop_name,
-            completeness = completeness,
-            Vmax_method = Vmax_method,
+            completeness=completeness,
+            Vmax_method=Vmax_method,
         )
 
         if not Path(save_path).is_file():
-            # create x_bins from x_bin_edges (must include start and end values here too)
+            # create x_bins from x_bin_edges (must include start
+            # and end values here too)
             x_bins = [
-                [x_bin_edges[i].value, x_bin_edges[i + 1].value] * x_bin_edges.unit
+                [x_bin_edges[i].value, x_bin_edges[i + 1].value]
+                * x_bin_edges.unit
                 for i in range(len(x_bin_edges) - 1)
                 if i != len(x_bin_edges) - 1
             ]
@@ -783,27 +872,29 @@ class Number_Density_Function(Base_Number_Density_Function):
                 aper_diam,
                 SED_fit_code,
                 z_step,
-                unmasked_area = unmasked_area,
-                Vmax_method = Vmax_method,
-                n_jobs = n_Vmax_jobs,
+                unmasked_area=unmasked_area,
+                Vmax_method=Vmax_method,
+                n_jobs=n_Vmax_jobs,
             )
 
             if plot:
-                #overall_fig, fig_axs_ = figs.make_phot_diagnostic_fig(len(z_bin_cat.filterset))
+                # overall_fig, fig_axs_ = figs.make_phot_diagnostic_fig(
+                #     len(z_bin_cat.filterset)
+                # )
                 z_bin_cat.plot_phot_diagnostics(
-                    aper_diam, 
-                    SED_arr = SED_fit_code,
-                    zPDF_arr = SED_fit_code,
-                    #fig_axs = fig_axs_
+                    aper_diam,
+                    SED_arr=SED_fit_code,
+                    zPDF_arr=SED_fit_code,
+                    # fig_axs = fig_axs_
                 )
-                #plt.close(fig_axs_[0].figure)
+                # plt.close(fig_axs_[0].figure)
 
             Ngals = np.zeros(len(x_bins))
             phi = np.zeros(len(x_bins))
             phi_l1 = np.zeros(len(x_bins))
             phi_u1 = np.zeros(len(x_bins))
             cv_errs = np.zeros(len(x_bins))
-            #phi_errs_cv = np.zeros(len(x_bins))
+            # phi_errs_cv = np.zeros(len(x_bins))
             # loop through each mass bin in the given redshift bin
             for i, x_bin in enumerate(x_bins):
                 if len(z_bin_cat) == 0:
@@ -812,51 +903,99 @@ class Number_Density_Function(Base_Number_Density_Function):
                     if plot:
                         # plot histogram
                         hist_fig, hist_ax = plt.subplots()
-                        z_bin_cat.hist(x_calculator, hist_fig, hist_ax, from_pdf = True, save = False, overwrite = True, density = True)
-                        z_bin_cat.hist(x_calculator, hist_fig, hist_ax, from_pdf = False, save = True, overwrite = True, density = True)
+                        z_bin_cat.hist(
+                            x_calculator,
+                            hist_fig,
+                            hist_ax,
+                            from_pdf=True,
+                            save=False,
+                            overwrite=True,
+                            density=True,
+                        )
+                        z_bin_cat.hist(
+                            x_calculator,
+                            hist_fig,
+                            hist_ax,
+                            from_pdf=False,
+                            save=True,
+                            overwrite=True,
+                            density=True,
+                        )
                         plt.close(hist_fig)
-                    
-                    # crop to galaxies in the x bin - not the bootstrapping method
+
+                    # crop to galaxies in the x bin - not the
+                    # bootstrapping method
                     from . import Rest_Frame_Property_Bin_Selector
-                    # TODO: Implement Rest_Frame_Property_Limit_Selector in case of np.nan x_bin entry
-                    x_bin_selector = Rest_Frame_Property_Bin_Selector(aper_diam, SED_fit_code, x_calculator, x_bin)
+
+                    # TODO: Implement Rest_Frame_Property_Limit_Selector
+                    # in case of np.nan x_bin entry
+                    x_bin_selector = Rest_Frame_Property_Bin_Selector(
+                        aper_diam, SED_fit_code, x_calculator, x_bin
+                    )
                     try:
-                        z_bin_x_bin_cat = deepcopy(z_bin_cat).crop(x_bin_selector)
-                    except:
+                        z_bin_x_bin_cat = deepcopy(z_bin_cat).crop(
+                            x_bin_selector
+                        )
+                    except Exception:
                         breakpoint()
                     Ngals[i] = len(z_bin_x_bin_cat)
 
                     # plot cutouts
                     if plot and Ngals[i] > 0:
-                        #fig_axs_ = figs.make_phot_diagnostic_fig(len(z_bin_x_bin_cat.filterset))
+                        # fig_axs_ = figs.make_phot_diagnostic_fig(
+                        #     len(z_bin_x_bin_cat.filterset)
+                        # )
                         z_bin_x_bin_cat.plot_phot_diagnostics(
-                            aper_diam, 
-                            SED_arr = SED_fit_code,
-                            zPDF_arr = SED_fit_code,
-                            #fig_axs = fig_axs_,
+                            aper_diam,
+                            SED_arr=SED_fit_code,
+                            zPDF_arr=SED_fit_code,
+                            # fig_axs = fig_axs_,
                         )
-                        #plt.close(fig_axs_[0].figure)
+                        # plt.close(fig_axs_[0].figure)
                         # plot histogram
                         hist_fig, hist_ax = plt.subplots()
-                        z_bin_x_bin_cat.hist(x_calculator, hist_fig, hist_ax, from_pdf = True, save = False, overwrite = True, density = True)
-                        z_bin_x_bin_cat.hist(x_calculator, hist_fig, hist_ax, from_pdf = False, save = True, overwrite = True, density = True)
+                        z_bin_x_bin_cat.hist(
+                            x_calculator,
+                            hist_fig,
+                            hist_ax,
+                            from_pdf=True,
+                            save=False,
+                            overwrite=True,
+                            density=True,
+                        )
+                        z_bin_x_bin_cat.hist(
+                            x_calculator,
+                            hist_fig,
+                            hist_ax,
+                            from_pdf=False,
+                            save=True,
+                            overwrite=True,
+                            density=True,
+                        )
                         plt.close(hist_fig)
-                    
+
                 # if there are galaxies in the z,x bin
                 if int(Ngals[i]) != 0:
                     # plot histogram
-                    #z_bin_x_bin_cat.hist(x_calculator, hist_fig, hist_ax)
+                    # z_bin_x_bin_cat.hist(x_calculator, hist_fig, hist_ax)
                     dx = x_bin[1].value - x_bin[0].value
                     # extract Vmax's
                     Vmax_arr = [
-                        getattr(gal.aper_phot[aper_diam].SED_results[SED_fit_code.label], "Vmax")
+                        getattr(
+                            gal.aper_phot[aper_diam].SED_results[
+                                SED_fit_code.label
+                            ],
+                            "Vmax",
+                        )
                         for gal in z_bin_x_bin_cat
                     ]
-                    #V_max[z_bin_cat.crop_name.split("/")[-1]][full_survey_name].value
+                    # V_max[z_bin_cat.crop_name.split("/")[-1]]
+                    # [full_survey_name].value
                     # V_max = np.array(
                     #     [
-                    #         gal.aper_phot[aper_diam].SED_results[SED_fit_code.label]. \
-                            
+                    #         gal.aper_phot[aper_diam]. \
+                    #         SED_results[SED_fit_code.label]. \
+
                     #         for gal in z_bin_x_bin_cat
                     #     ]
                     # )
@@ -867,62 +1006,113 @@ class Number_Density_Function(Base_Number_Density_Function):
                     Vmax_reg_compl = []
                     for cat_ in cat_arr:
                         if completeness is not None:
-                            assert cat_.data.survey in completeness.keys(), \
-                                galfind_logger.critical(
-                                    f"{cat_.data.survey=} not in {completeness.keys()=}"
-                                )
-                        regions = np.unique([reg for Vmax in Vmax_arr for reg in Vmax[cat_.survey].keys()])
-                        #detectable_gals = np.full(len(regions), Ngals[i])
+                            assert (
+                                cat_.data.survey in completeness.keys()
+                            ), galfind_logger.critical(
+                                f"{cat_.data.survey=} not in "
+                                f"{completeness.keys()=}"
+                            )
+                        regions = np.unique(
+                            [
+                                reg
+                                for Vmax in Vmax_arr
+                                for reg in Vmax[cat_.survey].keys()
+                            ]
+                        )
+                        # detectable_gals = np.full(len(regions), Ngals[i])
                         for region in regions:
                             # TODO: FINISH THIS FOR MULTI-REGION SURVEYS
-                            Vmax_ = np.array([Vmax[cat_.survey][region] for Vmax in Vmax_arr])
+                            Vmax_ = np.array(
+                                [
+                                    Vmax[cat_.survey][region]
+                                    for Vmax in Vmax_arr
+                                ]
+                            )
                             keep_indices = Vmax_ != -1.0
-                            #Vmax = Vmax_[keep_indices] # * u.Mpc ** 3
+                            # Vmax = Vmax_[keep_indices] # * u.Mpc ** 3
                             if len(Vmax_[keep_indices]) != Ngals[i]:
                                 galfind_logger.warning(
-                                    f"{Ngals[i] - len(Vmax_[keep_indices])} galaxies not detected in {region=}"
+                                    f"{Ngals[i] - len(Vmax_[keep_indices])} "
+                                    f"galaxies not detected in {region=}"
                                 )
-                                #detectable_gals[j] = len(Vmax_[keep_indices])
+                                # detectable_gals[j] = len(Vmax_[keep_indices])
                             if completeness is None:
                                 compl_bin = np.ones(len(z_bin_x_bin_cat))
                             else:
-                                assert region in completeness[cat_.survey].keys(), \
-                                    galfind_logger.critical(
-                                        f"{region=} not in {completeness[cat_.survey].keys()=}"
-                                    )
+                                assert (
+                                    region in completeness[cat_.survey].keys()
+                                ), galfind_logger.critical(
+                                    f"{region=} not in "
+                                    f"{completeness[cat_.survey].keys()=}"
+                                )
                                 redshifts = np.zeros(len(z_bin_x_bin_cat))
                                 xvals = np.zeros(len(z_bin_x_bin_cat))
                                 for k, gal in enumerate(z_bin_x_bin_cat):
-                                    redshifts[k] = gal.aper_phot[aper_diam].SED_results[SED_fit_code.label].z.value
-                                    xvals[k] = gal.aper_phot[aper_diam].SED_results[SED_fit_code.label].phot_rest.properties[x_calculator.name].value
-                                compl_bin = completeness[cat_.survey][region](redshifts, xvals)
-                            assert len(compl_bin) == len(Vmax_), \
-                                galfind_logger.critical(
-                                    f"{len(compl_bin)=} != {len(Vmax_)=} for {z_bin_x_bin_cat.crop_name}"
+                                    redshifts[k] = (
+                                        gal.aper_phot[aper_diam]
+                                        .SED_results[SED_fit_code.label]
+                                        .z.value
+                                    )
+                                    xvals[k] = (
+                                        gal.aper_phot[aper_diam]
+                                        .SED_results[SED_fit_code.label]
+                                        .phot_rest.properties[
+                                            x_calculator.name
+                                        ]
+                                        .value
+                                    )
+                                compl_bin = completeness[cat_.survey][region](
+                                    redshifts, xvals
                                 )
-                        # import matplotlib.pyplot as plt
-                        # from scipy.interpolate import interp1d
-                        # fig, ax = plt.subplots()
-                        # ax.scatter(completeness.compl_arr[0].x_calculator(z_bin_x_bin_cat)[keep_indices], compl_bin, label = str(x_bin))
-                        # ax.plot(completeness.compl_arr[0].x, completeness.compl_arr[0].completeness, label = "Completeness")
-                        # ax.plot(completeness.compl_arr[0].x, interp1d(completeness.compl_arr[0].x, completeness.compl_arr[0].completeness)(completeness.compl_arr[0].x), label = "Interpolated Completeness")
-                        # ax.legend()
-                        # plt.savefig("test_compl_NEP.png")
-                            mean_compl_bin = np.mean(compl_bin)
+                            assert len(compl_bin) == len(
+                                Vmax_
+                            ), galfind_logger.critical(
+                                f"{len(compl_bin)=} != {len(Vmax_)=} "
+                                f"for {z_bin_x_bin_cat.crop_name}"
+                            )
+                            # import matplotlib.pyplot as plt
+                            # from scipy.interpolate import interp1d
+                            # fig, ax = plt.subplots()
+                            # ax.scatter(
+                            #     completeness.compl_arr[0].x_calculator(
+                            #         z_bin_x_bin_cat
+                            #     )[keep_indices],
+                            #     compl_bin, label = str(x_bin)
+                            # )
+                            # ax.plot(
+                            #     completeness.compl_arr[0].x,
+                            #     completeness.compl_arr[0].completeness,
+                            #     label = "Completeness"
+                            # )
+                            # ax.plot(
+                            #     completeness.compl_arr[0].x,
+                            #     interp1d(
+                            #         completeness.compl_arr[0].x,
+                            #         completeness.compl_arr[0].completeness
+                            #     )(completeness.compl_arr[0].x),
+                            #     label = "Interpolated Completeness"
+                            # )
+                            # ax.legend()
+                            # plt.savefig("test_compl_NEP.png")
+                            np.mean(compl_bin)
                             Vmax_reg_compl.append(Vmax_ * compl_bin)
 
                     Vmax_reg_compl = np.array(Vmax_reg_compl)
-                    Vmax_tot = np.clip(Vmax_reg_compl, 0.0, None).sum(axis = 0) #np.sum(Vmax_reg_compl, axis = 1)
+                    Vmax_tot = np.clip(Vmax_reg_compl, 0.0, None).sum(axis=0)
+                    # np.sum(Vmax_reg_compl, axis = 1)
                     Vmax_tot = Vmax_tot[Vmax_tot > 0.0]
-                    phi[i] = np.sum(Vmax_tot ** -1.0) / dx
-                    # use standard Poisson errors if number of galaxies in bin is not small
+                    phi[i] = np.sum(Vmax_tot**-1.0) / dx
+                    # use standard Poisson errors if number of
+                    # galaxies in bin is not small
                     detected_gals = len(Vmax_tot)
                     if detected_gals >= 4:
-                        phi_errs = np.sqrt(np.sum(Vmax_tot ** -2.0)) / dx
+                        phi_errs = np.sqrt(np.sum(Vmax_tot**-2.0)) / dx
                         phi_l1[i] = phi_errs
                         phi_u1[i] = phi_errs
                     else:
-                        poisson_int = funcs.poisson_interval(detected_gals, 0.32)
+                        poisson_int = funcs.poisson_interval(
+                            detected_gals, 0.32
+                        )
                         phi_l1[i] = phi[i] * np.min(
                             np.abs((np.array(poisson_int[0]) - detected_gals))
                             / detected_gals
@@ -931,25 +1121,31 @@ class Number_Density_Function(Base_Number_Density_Function):
                             np.abs((np.array(poisson_int[1]) - detected_gals))
                             / detected_gals
                         )
-                    
-                    from ..catalogues.Catalogue_Base import Catalogue_Base
+
                     from ..catalogues.Catalogue import Catalogue
-                    from ..catalogues.Multiple_Catalogue import Combined_Catalogue
+                    from ..catalogues.Catalogue_Base import Catalogue_Base
+                    from ..catalogues.Multiple_Catalogue import (
+                        Combined_Catalogue,
+                    )
+
                     if isinstance(cat, Combined_Catalogue):
                         data_arr = [cat_.data for cat_ in cat.cat_arr]
                     elif isinstance(cat, Catalogue):
                         data_arr = [cat.data]
                     else:
-                        err_message = f"{repr(cat)=} not in {', '.join(Catalogue_Base.__subclasses__())}!"
+                        err_message = (
+                            f"{repr(cat)=} not in "
+                            f"{', '.join(Catalogue_Base.__subclasses__())}!"
+                        )
                         raise ValueError(err_message)
                     if cv_origin is None:
                         pass
                     elif cv_origin == "Driver2010":
                         cv_errs[i] = funcs.calc_cv_proper(
-                            z_bin, 
-                            data_arr = data_arr,
-                            masked_selector = unmasked_area,
-                            z = np.sum(z_bin) / 2.0,
+                            z_bin,
+                            data_arr=data_arr,
+                            masked_selector=unmasked_area,
+                            z=np.sum(z_bin) / 2.0,
                         )
                     else:
                         raise NotImplementedError
@@ -965,14 +1161,14 @@ class Number_Density_Function(Base_Number_Density_Function):
                 cat.survey,
                 z_bin_cat.crop_name,
                 cv_origin,
-                completeness = completeness,
-                Vmax_method = Vmax_method,
+                completeness=completeness,
+                Vmax_method=Vmax_method,
             )
             if save:
                 number_density_func.save()
             return number_density_func
 
-        else: # load results
+        else:  # load results
             return cls.from_ecsv(save_path)
 
     # @staticmethod
@@ -1022,14 +1218,18 @@ class Number_Density_Function(Base_Number_Density_Function):
             Vmax_method_str = ""
         else:
             Vmax_method_str = f"/{Vmax_method}"
-        save_path = config['NumberDensityFunctions']['NUMBER_DENSITY_FUNC_DIR'] + \
-            f"/Data/{SED_fit_params_key}/{x_name}/{origin_surveys}" + \
-            f"{Vmax_method_str}/{crop_name}{compl_name}{ext}"
+        save_path = (
+            config["NumberDensityFunctions"]["NUMBER_DENSITY_FUNC_DIR"]
+            + f"/Data/{SED_fit_params_key}/{x_name}/{origin_surveys}"
+            + f"{Vmax_method_str}/{crop_name}{compl_name}{ext}"
+        )
         funcs.make_dirs(save_path)
         return save_path
 
     @staticmethod
-    def extract_info_from_save_path(save_path) -> Tuple[str, str, str, NDArray[float]]:
+    def extract_info_from_save_path(
+        save_path,
+    ) -> Tuple[str, str, str, NDArray[float]]:
         """Extract NDF metadata from file path.
 
         Parameters
@@ -1070,21 +1270,24 @@ class Number_Density_Function(Base_Number_Density_Function):
         # check if x_bin is within self.x_bins
         if x_bin[0] < self.x_bins[0][0] and x_bin[1] > self.x_bins[-1][1]:
             galfind_logger.warning(
-                f"{x_bin=} not within {self.x_bins[0][0]} and {self.x_bins[-1][1]}!"
+                f"{x_bin=} not within {self.x_bins[0][0]} "
+                f"and {self.x_bins[-1][1]}!"
             )
             return None
-        # find indices of x bins in self that are entirely within the output crop x_bin
+        # find indices of x bins in self that are entirely within
+        # the output crop x_bin
         if np.isfinite(x_bin[0]):
-            lower_mask = (self.x_mid_bins >= x_bin[0])
+            lower_mask = self.x_mid_bins >= x_bin[0]
         else:
             lower_mask = np.full(len(self.x_mid_bins), True)
         if np.isfinite(x_bin[1]):
-            upper_mask = (self.x_mid_bins <= x_bin[1])
+            upper_mask = self.x_mid_bins <= x_bin[1]
         else:
             upper_mask = np.full(len(self.x_mid_bins), True)
         if np.isfinite(x_bin[0]) and np.isfinite(x_bin[1]):
-            assert x_bin[0] < x_bin[1], \
-                galfind_logger.critical(f"{x_bin[0]=} must be less than {x_bin[1]=}!")
+            assert x_bin[0] < x_bin[1], galfind_logger.critical(
+                f"{x_bin[0]=} must be less than {x_bin[1]=}!"
+            )
             xbin_str = f"{x_bin[0].value:.1f}<=x<={x_bin[1].value:.1f}"
         elif np.isfinite(x_bin[0]) and not np.isfinite(x_bin[1]):
             xbin_str = f"x>={x_bin[0].value:.1f}"
@@ -1109,12 +1312,12 @@ class Number_Density_Function(Base_Number_Density_Function):
                 self.cv_errs[indices],
                 self.origin_surveys,
                 new_crop_name,
-                cv_origin = self.cv_origin,
-                completeness = self.completeness,
-                Vmax_method = self.Vmax_method,
+                cv_origin=self.cv_origin,
+                completeness=self.completeness,
+                Vmax_method=self.Vmax_method,
             )
             return new_ndf
-    
+
     # def get_z_bin_name(self) -> str:
     #     return f"{self.z_bin[0]:.1f}<z<{self.z_bin[1]:.1f}"
 
@@ -1131,9 +1334,9 @@ class Number_Density_Function(Base_Number_Density_Function):
             self.x_origin,
             self.x_name,
             self.crop_name,
-            ext = ".png",
-            completeness = self.completeness,
-            Vmax_method = self.Vmax_method,
+            ext=".png",
+            completeness=self.completeness,
+            Vmax_method=self.Vmax_method,
         ).replace("/Data/", "/Plots/")
 
         if os.access(plot_path, os.W_OK):
@@ -1180,10 +1383,12 @@ class Number_Density_Function(Base_Number_Density_Function):
                 self.x_origin,
                 self.x_name,
                 self.crop_name,
-                completeness = self.completeness,
-                Vmax_method = self.Vmax_method,
+                completeness=self.completeness,
+                Vmax_method=self.Vmax_method,
             )
-            fixed_params_str = "_".join([f'{key}={val:.3f}' for key, val in fixed_params.items()])
+            fixed_params_str = "_".join(
+                [f"{key}={val:.3f}" for key, val in fixed_params.items()]
+            )
             if fixed_params_str != "":
                 fixed_params_str = f"_{fixed_params_str}"
             if not incl_cv_errs:
@@ -1192,18 +1397,22 @@ class Number_Density_Function(Base_Number_Density_Function):
             else:
                 incl_cv_str = ""
                 phi_errs_ptr = self.phi_errs_cv
-            backend_filename = backend_filename \
-                .replace("/Data/", f"/{fit_type.__name__.replace('Fitter', 'Fits')}/")\
-                .replace(".ecsv", f"{fixed_params_str}{incl_cv_str}.h5")
+            backend_filename = backend_filename.replace(
+                "/Data/", f"/{fit_type.__name__.replace('Fitter', 'Fits')}/"
+            ).replace(".ecsv", f"{fixed_params_str}{incl_cv_str}.h5")
             funcs.make_dirs(backend_filename)
         # remove 0s from x_mid_bins, phi, and phi_errs
         zero_indices = np.where(self.phi == 0.0)[0]
         x_mid_bins = np.delete(self.x_mid_bins.value, zero_indices)
         phi = np.delete(self.phi, zero_indices)
-        phi_errs = np.array([np.delete(phi_errs_ptr[0], zero_indices), 
-            np.delete(phi_errs_ptr[1], zero_indices)])
+        phi_errs = np.array(
+            [
+                np.delete(phi_errs_ptr[0], zero_indices),
+                np.delete(phi_errs_ptr[1], zero_indices),
+            ]
+        )
         self.fitter = fit_type(
-            priors, 
+            priors,
             x_mid_bins,
             phi,
             phi_errs,
@@ -1211,7 +1420,7 @@ class Number_Density_Function(Base_Number_Density_Function):
             backend_filename,
             fixed_params,
         )
-        # run fitter
+        # run fitter
         self.fitter(n_steps, n_processes)
 
     def save(self, save_path: Optional[str] = None) -> NoReturn:
@@ -1228,14 +1437,24 @@ class Number_Density_Function(Base_Number_Density_Function):
                 self.x_origin,
                 self.x_name,
                 self.crop_name,
-                completeness = self.completeness,
-                Vmax_method = self.Vmax_method,
+                completeness=self.completeness,
+                Vmax_method=self.Vmax_method,
             )
-        assert all(x_bin[0].unit == self.x_bins[0][0].unit for x_bin in self.x_bins)
-        assert all(x_bin[1].unit == self.x_bins[0][1].unit for x_bin in self.x_bins)
+        assert all(
+            x_bin[0].unit == self.x_bins[0][0].unit for x_bin in self.x_bins
+        )
+        assert all(
+            x_bin[1].unit == self.x_bins[0][1].unit for x_bin in self.x_bins
+        )
         assert self.x_bins[0][0].unit == self.x_bins[0][1].unit
-        x_bins_low = np.array([x_bin[0].value for x_bin in self.x_bins]) * self.x_bins[0][0].unit
-        x_bins_up = np.array([x_bin[1].value for x_bin in self.x_bins]) * self.x_bins[0][1].unit
+        x_bins_low = (
+            np.array([x_bin[0].value for x_bin in self.x_bins])
+            * self.x_bins[0][0].unit
+        )
+        x_bins_up = (
+            np.array([x_bin[1].value for x_bin in self.x_bins])
+            * self.x_bins[0][1].unit
+        )
         tab = Table(
             {
                 "x_bins_low": x_bins_low,
@@ -1260,8 +1479,8 @@ class Number_Density_Function(Base_Number_Density_Function):
         funcs.make_dirs(save_path)
         tab.write(save_path, overwrite=True)
         galfind_logger.info(
-            f"Saved {self.x_name} {self.z_bin} " + \
-            f"{self.origin_surveys} to {save_path}"
+            f"Saved {self.x_name} {self.z_bin} "
+            + f"{self.origin_surveys} to {save_path}"
         )
 
     def plot(
@@ -1277,6 +1496,12 @@ class Number_Density_Function(Base_Number_Density_Function):
         legend_kwargs: Dict[str, Any] = {},
         x_lims: Optional[Union[List[float], str]] = "default",
         y_lims: Optional[List[float]] = None,
+        title: Optional[str] = None,
+        save_path: Optional[str] = None,
+        plot_cv_errs: bool = True,
+        offset: float = 0.0,
+        obs_author_years: Dict[str, Dict[str, Any]] = {},
+        sim_author_years: Dict[str, Dict[str, Any]] = {},
     ) -> Tuple[plt.Figure, plt.Axes]:
         """Plot the number density function.
 
@@ -1304,6 +1529,22 @@ class Number_Density_Function(Base_Number_Density_Function):
             X-axis limits or "default". Default is "default".
         y_lims : `list`, optional
             Y-axis limits. Default is None.
+        title : `str`, optional
+            Plot title. Default is None.
+        save_path : `str`, optional
+            Path to save figure. Default is None.
+        plot_cv_errs : `bool`, optional
+            Whether to plot cosmic variance errors. Default is True.
+        offset : `float`, optional
+            X-axis offset. Default is 0.0.
+        obs_author_years : `dict`, optional
+            Mapping of observational literature author-years to their
+            plot kwargs, overplotted via `Base_Number_Density_Function
+            .from_flags_repo`. Default is empty dict.
+        sim_author_years : `dict`, optional
+            Mapping of simulation literature author-years to their plot
+            kwargs, overplotted via `Base_Number_Density_Function
+            .from_flags_repo`. Default is empty dict.
 
         Returns
         -------
@@ -1379,19 +1620,26 @@ class Number_Density_Function(Base_Number_Density_Function):
             y_lims,
             title,
             save_path,
-            plot_cv_errs = plot_cv_errs,
-            offset = offset,
+            plot_cv_errs=plot_cv_errs,
+            offset=offset,
         )
-        return fig_, ax_, line, lit_lines    
+        return fig_, ax_, line, lit_lines
 
 
-#         def mass_function(catalog, fields, z_bins, mass_bins, rerun=False, out_directory = '/nvme/scratch/work/tharvey/masses/',
-#  mass_keyword='MASS_BEST',mass_form='log', z_keyword='Z_BEST', sed_tool='LePhare', template='', z_step=0.01,
-#   n_jobs=2, cat_version='v7', do_muv=False, use_vmax_simple = False, field_keyword='field',
-#   other_name = '', other_sed_path='/nvme/scratch/work/austind/Bagpipes/pipes/seds/',
-#   use_base=True, base_cat='/nvme/scratch/work/tharvey/catalogs/robust_and_good_gal_all_criteria_3sigma_all_fields_masses.fits',
-#   id_keyword='NUMBER',  use_new_zloop=True, select_444=False, use_bootstrap=True, rerun_other_pdfs = True,
-#     other_appended=False, flag_ids=[], base_cat_filter=None, zgauss=False):
+#         def mass_function(catalog, fields, z_bins, mass_bins,
+#  rerun=False, out_directory = '/nvme/scratch/work/tharvey/masses/',
+#  mass_keyword='MASS_BEST',mass_form='log', z_keyword='Z_BEST',
+#  sed_tool='LePhare', template='', z_step=0.01,
+#   n_jobs=2, cat_version='v7', do_muv=False, use_vmax_simple = False,
+#   field_keyword='field',
+# other_name = '',
+other_sed_path = ("/nvme/scratch/work/austind/Bagpipes/pipes/seds/",)
+#   use_base=True, base_cat='/nvme/scratch/work/tharvey/catalogs/
+#   robust_and_good_gal_all_criteria_3sigma_all_fields_masses.fits',
+#   id_keyword='NUMBER',  use_new_zloop=True, select_444=False,
+#   use_bootstrap=True, rerun_other_pdfs = True,
+#     other_appended=False, flag_ids=[], base_cat_filter=None,
+#     zgauss=False):
 
 # calculate optimal redshift bin size?
 # try:
@@ -1413,11 +1661,15 @@ class Number_Density_Function(Base_Number_Density_Function):
 #     field_keyword=field_keyword, other_name=other_name,
 #     other_sed_path=other_sed_path, load_duncans=load_duncans,
 #     id_keyword=id_keyword, other_h5_path=other_h5_path, muv=muv,
-#     vmax_keyword=vmax_keyword, name_444=name_444, zgauss=zgauss, sed_tool=sed_tool)
+#     vmax_keyword=vmax_keyword, name_444=name_444, zgauss=zgauss,
+#     sed_tool=sed_tool)
 
-#     plot_bins_pdfs(catalog, fields, z_bins, mass_bins, rerun=False, out_directory = out_directory,
-#     mass_form=mass_form,mass_keyword=mass_keyword, z_keyword=z_keyword, zgauss=zgauss)
+#     plot_bins_pdfs(catalog, fields, z_bins, mass_bins, rerun=False,
+#     out_directory = out_directory,
+#     mass_form=mass_form,mass_keyword=mass_keyword,
+#     z_keyword=z_keyword, zgauss=zgauss)
 # else:
+
 
 # Specific class written to allow for fitting of galaxy bias
 class Multiple_Number_Density_Function(Number_Density_Function):
@@ -1438,6 +1690,7 @@ class Multiple_Number_Density_Function(Number_Density_Function):
     number_density_functions : `list`
         The input list of density functions.
     """
+
     def __init__(
         self: Self,
         number_density_functions: List[Type[Base_Number_Density_Function]],
@@ -1445,18 +1698,26 @@ class Multiple_Number_Density_Function(Number_Density_Function):
         self.number_density_functions = number_density_functions
         self._assertions(number_density_functions)
         super().__init__(
-            x_name = getattr(number_density_functions[0], "x_name"),
-            x_bins = getattr(number_density_functions[0], "x_bins"),
-            x_origin = getattr(number_density_functions[0], "x_origin"),
-            z_bin = getattr(number_density_functions[0], "z_bin"),
-            Ngals = np.array([ndf.Ngals for ndf in number_density_functions]).T,
-            phi = np.array([ndf.phi for ndf in number_density_functions]).T,
-            phi_errs = np.array([ndf.phi_errs for ndf in number_density_functions]).transpose((1, 2, 0)),
-            cv_errs = np.array([ndf.cv_errs for ndf in number_density_functions]).T,
-            origin_surveys = "+".join([ndf.origin_surveys for ndf in number_density_functions]),
-            crop_name = getattr(number_density_functions[0], "crop_name"),
-            cv_origin = getattr(number_density_functions[0], "cv_origin"),
-            #completeness = getattr(number_density_functions[0], "completeness"),
+            x_name=getattr(number_density_functions[0], "x_name"),
+            x_bins=getattr(number_density_functions[0], "x_bins"),
+            x_origin=getattr(number_density_functions[0], "x_origin"),
+            z_bin=getattr(number_density_functions[0], "z_bin"),
+            Ngals=np.array([ndf.Ngals for ndf in number_density_functions]).T,
+            phi=np.array([ndf.phi for ndf in number_density_functions]).T,
+            phi_errs=np.array(
+                [ndf.phi_errs for ndf in number_density_functions]
+            ).transpose((1, 2, 0)),
+            cv_errs=np.array(
+                [ndf.cv_errs for ndf in number_density_functions]
+            ).T,
+            origin_surveys="+".join(
+                [ndf.origin_surveys for ndf in number_density_functions]
+            ),
+            crop_name=getattr(number_density_functions[0], "crop_name"),
+            cv_origin=getattr(number_density_functions[0], "cv_origin"),
+            # completeness = getattr(
+            #     number_density_functions[0], "completeness"
+            # ),
         )
 
     @staticmethod
@@ -1470,25 +1731,34 @@ class Multiple_Number_Density_Function(Number_Density_Function):
             "z_bin",
             "crop_name",
             "cv_origin",
-            #"completeness",
+            # "completeness",
         ]
         assert all(
-            np.array_equal(getattr(ndf, attr_label), getattr(number_density_functions[0], attr_label))
-            for ndf in number_density_functions for attr_label in same_attr_labels
-        ), galfind_logger.critical(
-            f"Not all {', '.join(same_attr_labels)} are the same for all number density functions!"
-        )
-        assert all(getattr(ndf, "completeness") is None for ndf in number_density_functions), \
-            galfind_logger.critical(
-                f"Not all completeness are None for all {number_density_functions}!"
+            np.array_equal(
+                getattr(ndf, attr_label),
+                getattr(number_density_functions[0], attr_label),
             )
+            for ndf in number_density_functions
+            for attr_label in same_attr_labels
+        ), galfind_logger.critical(
+            f"Not all {', '.join(same_attr_labels)} are the same "
+            "for all number density functions!"
+        )
+        assert all(
+            getattr(ndf, "completeness") is None
+            for ndf in number_density_functions
+        ), galfind_logger.critical(
+            "Not all completeness are None for all "
+            f"{number_density_functions}!"
+        )
         # ensure all number density functions have different Ngals arrays
         assert all(
             np.unique(
                 [getattr(ndf, "phi") for ndf in number_density_functions],
-                axis = 0,
-                return_counts = True
-            )[1] == 1
+                axis=0,
+                return_counts=True,
+            )[1]
+            == 1
         )
 
     def __iter__(self):
@@ -1503,7 +1773,13 @@ class Multiple_Number_Density_Function(Number_Density_Function):
             self.iter += 1
             return ndf
 
-    def __getitem__(self, index: Any) -> Optional[Union[Type[Number_Density_Function], List[Type[Number_Density_Function]]]]:
+    def __getitem__(
+        self, index: Any
+    ) -> Optional[
+        Union[
+            Type[Number_Density_Function], List[Type[Number_Density_Function]]
+        ]
+    ]:
         if len(self) == 0:
             raise IndexError("No number density functions in object!")
         if isinstance(index, int):
@@ -1513,7 +1789,11 @@ class Multiple_Number_Density_Function(Number_Density_Function):
 
     def __add__(
         self: Self,
-        other: Union[Type[Base_Number_Density_Function], List[Type[Base_Number_Density_Function]], Multiple_Number_Density_Function]
+        other: Union[
+            Type[Base_Number_Density_Function],
+            List[Type[Base_Number_Density_Function]],
+            Multiple_Number_Density_Function,
+        ],
     ) -> Multiple_Number_Density_Function:
         base_ndf_subcls = tuple(Base_Number_Density_Function.__subclasses__())
         if isinstance(other, list):
@@ -1522,22 +1802,50 @@ class Multiple_Number_Density_Function(Number_Density_Function):
         elif isinstance(other, base_ndf_subcls):
             new_ndfs = [other]
         elif isinstance(other, Multiple_Number_Density_Function):
-            assert all(isinstance(ndf, base_ndf_subcls) for ndf in other.number_density_functions)
+            assert all(
+                isinstance(ndf, base_ndf_subcls)
+                for ndf in other.number_density_functions
+            )
             new_ndfs = other.number_density_functions
         else:
-            err_message = f"{repr(other)=} not in [{base_ndf_subcls}, List[{base_ndf_subcls}], Multiple_Number_Density_Function]!"
+            err_message = (
+                f"{repr(other)=} not in [{base_ndf_subcls}, "
+                f"List[{base_ndf_subcls}], "
+                "Multiple_Number_Density_Function]!"
+            )
             galfind_logger.critical(err_message)
             raise ValueError(err_message)
         self._assertions(new_ndfs)
         self.number_density_functions += new_ndfs
         for hstack_label in ["Ngals", "phi", "cv_errs"]:
-            setattr(self, hstack_label, \
-                np.hstack([getattr(self, hstack_label), np.array([getattr(ndf, hstack_label) for ndf in new_ndfs]).T])
+            setattr(
+                self,
+                hstack_label,
+                np.hstack(
+                    [
+                        getattr(self, hstack_label),
+                        np.array(
+                            [getattr(ndf, hstack_label) for ndf in new_ndfs]
+                        ).T,
+                    ]
+                ),
             )
-        phi_errs_l1 = np.hstack([getattr(self, "phi_errs")[0], np.array([getattr(ndf, "phi_errs")[0] for ndf in new_ndfs]).T])
-        phi_errs_u1 = np.hstack([getattr(self, "phi_errs")[1], np.array([getattr(ndf, "phi_errs")[1] for ndf in new_ndfs]).T])
+        phi_errs_l1 = np.hstack(
+            [
+                getattr(self, "phi_errs")[0],
+                np.array([getattr(ndf, "phi_errs")[0] for ndf in new_ndfs]).T,
+            ]
+        )
+        phi_errs_u1 = np.hstack(
+            [
+                getattr(self, "phi_errs")[1],
+                np.array([getattr(ndf, "phi_errs")[1] for ndf in new_ndfs]).T,
+            ]
+        )
         self.phi_errs = np.array([phi_errs_l1, phi_errs_u1])
-        self.origin_surveys = "+".join([ndf.origin_surveys for ndf in self.number_density_functions])
+        self.origin_surveys = "+".join(
+            [ndf.origin_surveys for ndf in self.number_density_functions]
+        )
         return self
 
     # @classmethod
@@ -1558,7 +1866,8 @@ class Multiple_Number_Density_Function(Number_Density_Function):
     #     assert all(z_bin[0] < z_bin[1] for z_bin in z_bins)
     #     assert len(x_bin_edges_arr) == len(z_bins)
     #     assert all(len(x_bin_edges) >= 2 for x_bin_edges in x_bin_edges_arr)
-    #     # ensure x_bin_edges are sorted from lower to higher x values in every z bin
+    # # ensure x_bin_edges are sorted from lower to higher x
+    # # values in every z bin
     #     assert all(
     #         np.sort(np.array(x_bin_edges)) == np.array(x_bin_edges)
     #         for x_bin_edges in x_bin_edges_arr
@@ -1570,7 +1879,8 @@ class Multiple_Number_Density_Function(Number_Density_Function):
     #         assert x_origin["code"].__class__.__name__ in [
     #             code.__name__ for code in SED_code.__subclasses__()
     #         ]
-    #         SED_fit_params = x_origin  # redshifts must come from same SED fitting as x values
+    #         SED_fit_params = x_origin  # redshifts must come from
+    #         same SED fitting as x values
     #     elif isinstance(x_origin, str):
     #         # convert to SED_fit_params
     #         SED_fit_params = x_origin.split("_")[0]
@@ -1582,8 +1892,11 @@ class Multiple_Number_Density_Function(Number_Density_Function):
     #     x = getattr(cat, x_name, x_origin)
 
     #     # calculate mass function in each redshift bin
-    #     for i, (z_bin, x_bin_edges) in enumerate(zip(z_bins, x_bin_edges_arr)):
-    #         # create x_bins from x_bin_edges (must include start and end values here too)
+    #     for i, (z_bin, x_bin_edges) in enumerate(
+    #         zip(z_bins, x_bin_edges_arr)
+    #     ):
+    #         # create x_bins from x_bin_edges (must include start
+    #         # and end values here too)
     #         x_bins = [
     #             [x_bin_edges[i], x_bin_edges[i + 1]]
     #             for i in range(len(x_bin_edges) - 1)
@@ -1594,7 +1907,10 @@ class Multiple_Number_Density_Function(Number_Density_Function):
     #         z_bin_name = f"{x_origin}_{z_bin[0]:.1f}<z<{z_bin[1]:.1f}"
     #         # calculate Vmax for each galaxy in catalogue within z bin
     #         # in general call Vmax_multifield
-    #         cat.calc_Vmax(cat.data, z_bin, x_origin, z_step, unmasked_area = unmasked_area, timed=timed)
+    #         cat.calc_Vmax(
+    #             cat.data, z_bin, x_origin, z_step,
+    #             unmasked_area = unmasked_area, timed=timed
+    #         )
     #         # crop catalogue to this redshift bin
     #         z_bin_cat = cat.crop(z_bin, "z", x_origin)
 
@@ -1605,8 +1921,10 @@ class Multiple_Number_Density_Function(Number_Density_Function):
     #         phi_errs_cv = np.zeros(len(x_bins))
     #         # loop through each mass bin in the given redshift bin
     #         for j, x_bin in enumerate(x_bins):
-    #             # crop to galaxies in the x bin - not the bootstrapping method
-    #             z_bin_x_bin_cat = z_bin_cat.crop(x_bin, x_name, SED_fit_params)
+    #             # crop to galaxies in the x bin - not the bootstrapping
+    #             method
+    #             z_bin_x_bin_cat = z_bin_cat.crop(
+    #                 x_bin, x_name, SED_fit_params)
 
     #             Ngals[j] = len(z_bin_x_bin_cat)
     #             # if there are galaxies in the z, mx bin
@@ -1619,11 +1937,14 @@ class Multiple_Number_Density_Function(Number_Density_Function):
     #                     ]
     #                 )
     #                 phi[j] = (np.sum(V_max**-1.0) / dx).value
-    #                 # use standard Poisson errors if number of galaxies in bin is not small
+    #                 # use standard Poisson errors if number of
+    #                 # galaxies in bin is not small
     #                 if len(V_max) >= 4:
-    #                     phi_errs[j] = (np.sqrt(np.sum(V_max**-2.0)) / dx).value
+    #                     phi_errs[j] = (
+    #                         np.sqrt(np.sum(V_max**-2.0)) / dx
+    #                     ).value
     #                 else:
-    #                     # using minimum is a minor cheat for symmetric errors?
+    #                     # using minimum is a minor cheat for symmetric errors
     #                     phi_errs[j] = phi[j] * np.min(
     #                         np.abs(
     #                             (
@@ -1655,13 +1976,12 @@ class Multiple_Number_Density_Function(Number_Density_Function):
         fit_type: Type[MCMC_Fitter],
         priors: Priors,
         fixed_params: Dict[str, float],
-        n_walkers: int, 
+        n_walkers: int,
         n_steps: int,
         n_processes: int = 1,
         backend_filename: Optional[str] = None,
         incl_cv_errs: bool = True,
     ) -> NoReturn:
-
         # instantiate fitter
         if backend_filename is None:
             backend_filename = self.get_save_path(
@@ -1669,10 +1989,12 @@ class Multiple_Number_Density_Function(Number_Density_Function):
                 self.x_origin,
                 self.x_name,
                 self.crop_name,
-                completeness = self.completeness,
-                Vmax_method = self.Vmax_method,
+                completeness=self.completeness,
+                Vmax_method=self.Vmax_method,
             )
-            fixed_params_str = "_".join([f'{key}={val:.3f}' for key, val in fixed_params.items()])
+            fixed_params_str = "_".join(
+                [f"{key}={val:.3f}" for key, val in fixed_params.items()]
+            )
             if fixed_params_str != "":
                 fixed_params_str = f"_{fixed_params_str}"
             if not incl_cv_errs:
@@ -1681,42 +2003,40 @@ class Multiple_Number_Density_Function(Number_Density_Function):
             else:
                 incl_cv_str = ""
                 phi_errs_ptr = self.phi_errs_cv
-            backend_filename = backend_filename \
-                .replace("/Data/", f"/{fit_type.__name__.replace('Fitter', 'Fits')}/")\
-                .replace(".ecsv", f"{fixed_params_str}{incl_cv_str}.h5")
+            backend_filename = backend_filename.replace(
+                "/Data/", f"/{fit_type.__name__.replace('Fitter', 'Fits')}/"
+            ).replace(".ecsv", f"{fixed_params_str}{incl_cv_str}.h5")
             funcs.make_dirs(backend_filename)
         # mask nans and zeros
         phi_mask = np.isnan(self.phi) | (self.phi == 0)
         x_mid_bins = np.ma.array(
-            np.tile(
-                self.x_mid_bins.value,
-                (len(self), 1)
-            ).T,
-            mask = phi_mask
+            np.tile(self.x_mid_bins.value, (len(self), 1)).T, mask=phi_mask
         ).compressed()
-        phi = np.ma.array(self.phi, mask = phi_mask).compressed()
-        phi_errs = np.array([
-            np.ma.array(phi_errs_ptr[0], mask = phi_mask).compressed(),
-            np.ma.array(phi_errs_ptr[1], mask = phi_mask).compressed(),
-        ])
+        phi = np.ma.array(self.phi, mask=phi_mask).compressed()
+        phi_errs = np.array(
+            [
+                np.ma.array(phi_errs_ptr[0], mask=phi_mask).compressed(),
+                np.ma.array(phi_errs_ptr[1], mask=phi_mask).compressed(),
+            ]
+        )
         surveys_arr = np.ma.array(
             np.tile(
                 [ndf.origin_surveys for ndf in self.number_density_functions],
-                (len(self[0]), 1)
+                (len(self[0]), 1),
             ),
-            mask = phi_mask,
+            mask=phi_mask,
         ).compressed()
         self.fitter = fit_type(
-            surveys_arr = surveys_arr,
-            priors = priors, 
-            x_data = x_mid_bins,
-            y_data = phi,
-            y_data_errs = phi_errs,
-            nwalkers = n_walkers,
-            backend_filename = backend_filename,
-            fixed_params = fixed_params,
+            surveys_arr=surveys_arr,
+            priors=priors,
+            x_data=x_mid_bins,
+            y_data=phi,
+            y_data_errs=phi_errs,
+            nwalkers=n_walkers,
+            backend_filename=backend_filename,
+            fixed_params=fixed_params,
         )
-        # run fitter
+        # run fitter
         self.fitter(n_steps, n_processes)
 
     def plot(self):

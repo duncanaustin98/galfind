@@ -6,18 +6,19 @@ maps and forced photometry catalogues.
 
 from __future__ import annotations
 
-import numpy as np
-import astropy.units as u
-import subprocess
-from pathlib import Path
-import time
 import os
+import subprocess
+import time
+from pathlib import Path
+
+import astropy.units as u
+import numpy as np
 
 try:
-    from typing import Self, Type  # python 3.11+
+    from typing import Type  # python 3.11+
 except ImportError:
     from typing_extensions import Type  # python > 3.7 AND python < 3.11
-from typing import Optional, Tuple, Union, NoReturn, TYPE_CHECKING
+from typing import TYPE_CHECKING, NoReturn, Optional, Tuple, Union
 
 if TYPE_CHECKING:
     from . import Band_Data_Base
@@ -25,6 +26,7 @@ if TYPE_CHECKING:
 from .. import config, galfind_logger
 from ..utils import useful_funcs_austind as funcs
 from ..utils.decorators import run_in_dir
+
 
 def get_code() -> str:
     """Get the installed SExtractor version information.
@@ -42,10 +44,13 @@ def get_code() -> str:
             .decode("utf-8")
             .replace("\n", "")
         )
-    except:
+    except Exception:
         output = "SExtractor"
-        galfind_logger.warning(f"sex not installed, defaulting version to '{output}'")
+        galfind_logger.warning(
+            f"sex not installed, defaulting version to '{output}'"
+        )
     return output
+
 
 def get_segmentation_path(
     self: Type[Band_Data_Base],
@@ -59,7 +64,8 @@ def get_segmentation_path(
     Parameters
     ----------
     self : `Type[Band_Data_Base]`
-        Band data instance providing survey, filter, version, and instrument info.
+        Band data instance providing survey, filter, version, and
+        instrument info.
     err_map_type : `str`
         Type of error map used ("MAP_RMS" or "MAP_WEIGHT").
 
@@ -68,13 +74,21 @@ def get_segmentation_path(
     `str`
         Path to the segmentation map FITS file.
     """
-    seg_dir = f"{config['SExtractor']['SEX_DIR']}/{self.instr_name}/{self.version}/{self.survey}/{err_map_type}/segmentation"
-    seg_name = f"{self.survey}_{self.filt_name}_{self.filt_name}_sel_cat_{self.version}"
+    sex_dir = config["SExtractor"]["SEX_DIR"]
+    seg_dir = (
+        f"{sex_dir}/{self.instr_name}/{self.version}"
+        f"/{self.survey}/{err_map_type}/segmentation"
+    )
+    seg_name = (
+        f"{self.survey}_{self.filt_name}_"
+        f"{self.filt_name}_sel_cat_{self.version}"
+    )
     if self.is_native:
         seg_name += "_native"
     seg_path = f"{seg_dir}/{seg_name}_seg.fits"
     funcs.make_dirs(seg_path)
     return seg_path
+
 
 def get_forced_phot_path(
     self: Type[Band_Data_Base],
@@ -101,14 +115,24 @@ def get_forced_phot_path(
     `str`
         Path to the forced photometry catalogue FITS file.
     """
-    forced_phot_dir = f"{config['SExtractor']['SEX_DIR']}/{self.instr_name}/{self.version}/{self.survey}/{err_map_type}/forced_phot/{funcs.aper_diams_to_str(self.aper_diams)}"
+    sex_dir = config["SExtractor"]["SEX_DIR"]
+    forced_phot_dir = (
+        f"{sex_dir}/{self.instr_name}/{self.version}"
+        f"/{self.survey}/{err_map_type}/forced_phot"
+        f"/{funcs.aper_diams_to_str(self.aper_diams)}"
+    )
     if forced_phot_band is None:
         select_filt_name = self.filt_name
     else:
         select_filt_name = forced_phot_band.filt_name
-    forced_phot_path = f"{forced_phot_dir}/{self.survey}_{self.filt_name}_{select_filt_name}_sel_cat_{self.version}.fits"
+    forced_phot_path = (
+        f"{forced_phot_dir}/{self.survey}_"
+        f"{self.filt_name}_{select_filt_name}_sel_cat_"
+        f"{self.version}.fits"
+    )
     funcs.make_dirs(forced_phot_path)
     return forced_phot_path
+
 
 def get_err_map(
     self: Type[Band_Data_Base], err_type: str
@@ -123,7 +147,8 @@ def get_err_map(
     self : `Type[Band_Data_Base]`
         Band data instance.
     err_type : `str`
-        Type of error map: either "rms_err" (RMS error map) or "wht" (weight map).
+        Type of error map: "rms_err" (RMS error map) or
+        "wht" (weight map).
 
     Returns
     -------
@@ -144,11 +169,11 @@ def get_err_map(
         else:
             self._make_rms_err_from_wht()
         return self.rms_err_path, self.rms_err_ext, "MAP_RMS"
-            # raise (
-            #     Exception(
-            #         f"No rms_err map available for {self.filt.filt_name}"
-            #     )
-            # )
+        # raise (
+        #     Exception(
+        #         f"No rms_err map available for {self.filt.filt_name}"
+        #     )
+        # )
     elif err_type == "wht":
         if self.wht_path is not None and self.wht_ext is not None:
             pass
@@ -163,6 +188,7 @@ def get_err_map(
             Exception(f"err_type must be 'rms_err' or 'wht', not {err_type}")
         )
 
+
 @run_in_dir(path=config["DEFAULT"]["GALFIND_DIR"])
 def segment(
     self: Type[Band_Data_Base],
@@ -171,7 +197,8 @@ def segment(
     params_name: str = "default.param",
     overwrite: bool = False,
 ) -> str:
-    """Run SExtractor source detection and create segmentation and background maps.
+    """Run SExtractor source detection and create segmentation
+    and background maps.
 
     Executes the SExtractor segmentation pipeline, creating pixel-level
     segmentation and background maps for the band's image. Handles long
@@ -184,9 +211,11 @@ def segment(
     err_type : `str`, optional
         Error map type to use ("rms_err" or "wht"). Default is "rms_err".
     config_name : `str`, optional
-        Name of the SExtractor `.sex` configuration file. Default is "default.sex".
+        Name of the SExtractor `.sex` configuration file.
+        Default is "default.sex".
     params_name : `str`, optional
-        Name of the SExtractor `.param` parameters file. Default is "default.param".
+        Name of the SExtractor `.param` parameters file.
+        Default is "default.param".
     overwrite : `bool`, optional
         Regenerate segmentation even if it already exists. Default is `False`.
 
@@ -211,13 +240,16 @@ def segment(
         # update the SExtractor params file at runtime
         # to include the correct number of aperture diameters
         update_sex_params_aper_diam_len(len(self.aper_diams), params_path)
+        pix_scale_aper_val = (
+            (self.aper_diams / self.pix_scale)
+            .to(u.dimensionless_unscaled)
+            .value
+        )
+        pix_aper_list = [
+            np.round(pix_aper_diam, 2) for pix_aper_diam in pix_scale_aper_val
+        ]
         pix_aper_diams = (
-            str(
-                [
-                    np.round(pix_aper_diam, 2)
-                    for pix_aper_diam in (self.aper_diams / self.pix_scale).to(u.dimensionless_unscaled).value
-                ]
-            )
+            str(pix_aper_list)
             .replace("[", "")
             .replace("]", "")
             .replace(" ", "")
@@ -253,22 +285,30 @@ def segment(
             if len(seg_path) >= 256:
                 if i == 0:
                     galfind_logger.debug(
-                        f"Segmentation path {len(seg_path)}>=256 characters long!"
+                        f"Segmentation path {len(seg_path)}>=256 "
+                        f"characters long!"
                     )
                 temp_filepath = temp_path.replace(".fits", f"{ext}.fits")
                 if Path(temp_filepath).is_file():
-                    galfind_logger.debug(f"Renaming {temp_filepath} to {full_filepath}!")
+                    galfind_logger.debug(
+                        f"Renaming {temp_filepath} to {full_filepath}!"
+                    )
                     os.rename(temp_filepath, full_filepath)
                 else:
-                    err_message = f"Expected temp file {temp_filepath} not found!"
+                    err_message = (
+                        f"Expected temp file {temp_filepath} not found!"
+                    )
                     galfind_logger.critical(err_message)
                     raise Exception(err_message)
             funcs.change_file_permissions(full_filepath)
     return seg_path
 
 
-def update_sex_params_aper_diam_len(aper_diam_length: int, params_path: str) -> None:
-    """Update a SExtractor parameters file to include apertures for a given number of diameters.
+def update_sex_params_aper_diam_len(
+    aper_diam_length: int, params_path: str
+) -> None:
+    """Update a SExtractor parameters file to include apertures
+    for a given number of diameters.
 
     Modifies the `.param` file to generate the correct aperture photometry
     columns (MAG_APER, FLUX_APER, etc.) for all specified aperture diameters.
@@ -315,7 +355,8 @@ def perform_forced_phot(
     timed: bool = True,
     overwrite: bool = False,
 ) -> str:
-    """Perform forced photometry on one band using sources detected in another band.
+    """Perform forced photometry on one band using sources
+    detected in another band.
 
     Measures photometry in the current band using source positions from a
     detection band (typically a deeper or bluer image), useful for detecting
@@ -360,23 +401,27 @@ def perform_forced_phot(
         self, err_map_type, forced_phot_band
     )
     if not Path(forced_phot_path).is_file() or overwrite:
-        # check whether the image of the forced photometry band and sextraction band have the same shape
+        # check whether images of forced phot band and
+        # sextraction band have the same shape
         assert (
             self.data_shape == forced_phot_band.data_shape
         ), galfind_logger.critical(
-            f"{self.data_shape=}!={forced_phot_band.data_shape=} " + \
-            f"({repr(self)=}, {repr(forced_phot_band)=})"
+            f"{self.data_shape=}!={forced_phot_band.data_shape=} "
+            + f"({repr(self)=}, {repr(forced_phot_band)=})"
         )
         # update the SExtractor params file at runtime
         # to include the correct number of aperture diameters
         update_sex_params_aper_diam_len(len(self.aper_diams), params_path)
+        pix_scale_aper_val = (
+            (self.aper_diams / self.pix_scale)
+            .to(u.dimensionless_unscaled)
+            .value
+        )
+        pix_aper_list = [
+            np.round(pix_aper_diam, 2) for pix_aper_diam in pix_scale_aper_val
+        ]
         pix_aper_diams = (
-            str(
-                [
-                    np.round(pix_aper_diam, 2)
-                    for pix_aper_diam in (self.aper_diams / self.pix_scale).to(u.dimensionless_unscaled).value
-                ]
-            )
+            str(pix_aper_list)
             .replace("[", "")
             .replace("]", "")
             .replace(" ", "")
@@ -408,7 +453,10 @@ def perform_forced_phot(
         galfind_logger.debug(input)
         process = subprocess.Popen(input)
         process.wait()
-        os.rename(forced_phot_path.replace(f"/{funcs.aper_diams_to_str(self.aper_diams)}", ""), forced_phot_path)
+        old_path = forced_phot_path.replace(
+            f"/{funcs.aper_diams_to_str(self.aper_diams)}", ""
+        )
+        os.rename(old_path, forced_phot_path)
         finish_message_prefix = "Made"
     else:
         finish_message_prefix = "Loaded"
@@ -423,19 +471,18 @@ def perform_forced_phot(
         finish_message += f" ({end - start:.1f}s)"
     galfind_logger.debug(finish_message)
 
-    forced_phot_args = \
-        {
-            "forced_phot_band": forced_phot_band,
-            "err_type": err_type,
-            "method": get_code(),
-            "config_name": config_name,
-            "params_name": params_name,
-            "id_label": "NUMBER",
-            "ra_label": "ALPHA_J2000",
-            "dec_label": "DELTA_J2000",
-            "ra_unit": u.deg,
-            "dec_unit": u.deg,
-        }
+    forced_phot_args = {
+        "forced_phot_band": forced_phot_band,
+        "err_type": err_type,
+        "method": get_code(),
+        "config_name": config_name,
+        "params_name": params_name,
+        "id_label": "NUMBER",
+        "ra_label": "ALPHA_J2000",
+        "dec_label": "DELTA_J2000",
+        "ra_unit": u.deg,
+        "dec_unit": u.deg,
+    }
     return forced_phot_path, forced_phot_args
 
     # if self.forced_phot_band not in self.instrument.filt_names:

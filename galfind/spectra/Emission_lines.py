@@ -139,15 +139,18 @@ class Emission_line:
     Doppler_b : `astropy.units.Quantity`, optional
         Doppler broadening (velocity width). Default is 0 km/s.
     voigt_type : `str`, optional
-        Method for computing Voigt profile. Currently supports "Tepper-Garcia+06".
+        Method for computing Voigt profile. Currently supports
+        "Tepper-Garcia+06".
         Default is "Tepper-Garcia+06".
 
     Attributes
     ----------
     line_diagnostics : `dict`
-        Dictionary of line properties (wavelength, feature windows, continuum windows,
+        Dictionary of line properties (wavelength, feature windows,
+        continuum windows,
         oscillator strength, etc.) from the module-level `line_diagnostics`.
     """
+
     def __init__(
         self,
         line_name: str,
@@ -166,7 +169,8 @@ class Emission_line:
         Doppler_b : `astropy.units.Quantity`, optional
             Doppler broadening (velocity width). Default is 0 km/s.
         voigt_type : `str`, optional
-            Method for computing Voigt profile. Default is ``"Tepper-Garcia+06"``.
+            Method for computing Voigt profile. Default is
+            ``"Tepper-Garcia+06"``.
         """
         self.line_name = line_name
         self.line_flux = line_flux
@@ -188,10 +192,12 @@ class Emission_line:
         """Return a detailed string representation of the emission line."""
         output_str = f"Emission Line: {self.name}\n"
         output_str += f"  Rest wavelength: {self.lambda_0}\n"
-        if hasattr(self, 'doppler_b'):
+        if hasattr(self, "doppler_b"):
             output_str += f"  Doppler parameter (b): {self.doppler_b}\n"
-        if hasattr(self, 'oscillator_strength'):
-            output_str += f"  Oscillator strength: {self.oscillator_strength}\n"
+        if hasattr(self, "oscillator_strength"):
+            output_str += (
+                f"  Oscillator strength: {self.oscillator_strength}\n"
+            )
         return output_str
 
     @property
@@ -214,7 +220,7 @@ class Emission_line:
         `float` or `astropy.units.Quantity`
             Radiative damping parameter, or 0.0 if not defined.
         """
-        if self.line_diagnostics["rel_lambda"] == None:
+        if self.line_diagnostics["rel_lambda"] is None:
             return 0.0
         else:
             return (
@@ -232,7 +238,7 @@ class Emission_line:
         `float` or `astropy.units.Quantity`
             Damping parameter, or 0.0 if not defined.
         """
-        if self.line_diagnostics["rel_lambda"] == None:
+        if self.line_diagnostics["rel_lambda"] is None:
             return 0.0
         else:
             return (
@@ -256,7 +262,8 @@ class Emission_line:
         else:
             raise (
                 Exception(
-                    f"voigt_type={self.voigt_type} not available. Must be one of ['Tepper-Garcia+06']!"
+                    f"voigt_type={self.voigt_type} not available. "
+                    "Must be one of ['Tepper-Garcia+06']!"
                 )
             )
         # normalize profile
@@ -276,12 +283,13 @@ class Emission_line:
         Returns
         -------
         `astropy.units.Quantity` or `None`
-            Wavelength range of the line, or `None` if line_width is incomplete.
+            Wavelength range of the line, or `None` if line_width is
+            incomplete.
         """
         mask = self.line_profile["flux"] < lim * np.max(
             self.line_profile["flux"]
         )
-        cont_wavs = self.wavs[mask]
+        self.wavs[mask]
 
     def Tepper_Garcia06_profile(self, bins=1_000):
         """Compute line profile using Tepper-Garcia+06 Voigt approximation.
@@ -289,7 +297,8 @@ class Emission_line:
         Parameters
         ----------
         bins : `int`, optional
-            Number of wavelength bins to sample the profile over. Default is 1000.
+            Number of wavelength bins to sample the profile over. Default
+            is 1000.
 
         Returns
         -------

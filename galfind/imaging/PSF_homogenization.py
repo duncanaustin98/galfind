@@ -12,14 +12,20 @@ PSF properties (currently experimental/incomplete).
 #     update_default_dictionaries=True,
 # ):
 #     galfind_logger.warning(
-#         "Data.convolve_images easily sped up without the use of Instrument.instrument_from_band!"
+#         "Data.convolve_images easily sped up without the use of "
+#         "Instrument.instrument_from_band!"
 #     )
 #     """Adapted from aperpy - https://github.com/astrowhit/aperpy/"""
 #     if override_bands is not None:
 #         bands = override_bands
 #     else:
 #         bands = self.instrument.filt_names
-#     outdir = f"{config['DEFAULT']['GALFIND_WORK']}/PSF_Matched_Images/{self.version}/{self.instrument.instrument_from_band(bands[0]).name}/{self.survey}"
+#     outdir = (
+#         f"{config['DEFAULT']['GALFIND_WORK']}/PSF_Matched_Images/"
+#         f"{self.version}/"
+#         f"{self.instrument.instrument_from_band(bands[0]).name}/"
+#         f"{self.survey}"
+#     )
 #     self.im_psf_matched_dir = outdir
 #     if use_fft_conv:
 #         convolve_func = convolve_fft
@@ -45,7 +51,8 @@ PSF properties (currently experimental/incomplete).
 
 #         if same_file:
 #             print(
-#                 "WHT, SCI, and ERR are the same file!. Output will be written to the same file."
+#                 "WHT, SCI, and ERR are the same file!. Output will be "
+#                 "written to the same file."
 #             )
 #             outname = im_filename.replace(
 #                 ".fits", f"_{match_band}-matched.fits"
@@ -146,7 +153,8 @@ PSF properties (currently experimental/incomplete).
 #                 else:
 #                     print(outsciname)
 #                     print(
-#                         f"{band.upper()} convolved science image exists, I will not overwrite"
+#                         f"{band.upper()} convolved science image exists, "
+#                         "I will not overwrite"
 #                     )
 
 #                 hdul.close()
@@ -182,7 +190,8 @@ PSF properties (currently experimental/incomplete).
 #                 else:
 #                     print(outwhtname)
 #                     print(
-#                         f"{band.upper()} convolved weight image exists, I will not overwrite"
+#                         f"{band.upper()} convolved weight image exists, "
+#                         "I will not overwrite"
 #                     )
 
 #                 hdul_wht.close()
@@ -264,15 +273,15 @@ PSF properties (currently experimental/incomplete).
 #     return im_paths_matched, wht_paths_matched, rms_err_paths_matched
 
 
-        # if psf_match:
-        #     psf_matched_name = (
-        #         f"{stack_filt_name}_psf_matched_{psf_match_band}"
-        #     )
-        #     im_paths, wht_paths, rms_err_paths = self.convolve_images(
-        #         psf_kernel_dir,
-        #         match_band=psf_match_band,
-        #         update_default_dictionaries=False,
-        #         override_bands=["F277W", "F356W", "F444W"],
-        #     )
-        # else:
-        #     psf_matched_name = stack_filt_name
+# if psf_match:
+#     psf_matched_name = (
+#         f"{stack_filt_name}_psf_matched_{psf_match_band}"
+#     )
+#     im_paths, wht_paths, rms_err_paths = self.convolve_images(
+#         psf_kernel_dir,
+#         match_band=psf_match_band,
+#         update_default_dictionaries=False,
+#         override_bands=["F277W", "F356W", "F444W"],
+#     )
+# else:
+#     psf_matched_name = stack_filt_name

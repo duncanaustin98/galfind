@@ -11,28 +11,32 @@ from __future__ import annotations
 # Photometry_rest.py
 import inspect
 from copy import deepcopy
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
+
 import astropy.units as u
 import numpy as np
 from astropy.utils.masked import Masked
-from typing import TYPE_CHECKING, List, Union, Dict, Optional, Tuple
+
 if TYPE_CHECKING:
-    from . import Multiple_Filter, PDF
+    from . import PDF, Multiple_Filter
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from ..visualization.PDF import PDF
-from .Photometry import Photometry
 from .. import galfind_logger
 from ..utils import useful_funcs_austind as funcs
+from ..visualization.PDF import PDF
+from .Photometry import Photometry
 
 
 class Photometry_rest(Photometry):
     """Rest-frame photometry for a source at a given redshift.
 
-    Stores flux measurements and uncertainties shifted to rest-frame wavelengths,
-    derived from observed-frame photometry and a source redshift. Includes optional
+    Stores flux measurements and uncertainties shifted to rest-frame
+    wavelengths,
+    derived from observed-frame photometry and a source redshift. Includes
+    optional
     computed rest-frame properties and their posterior distributions.
 
     Parameters
@@ -48,7 +52,8 @@ class Photometry_rest(Photometry):
     z : `float`
         Redshift used to shift to rest frame.
     properties : `dict` or `None`, optional
-        Best-fit rest-frame properties (e.g., absolute magnitude, stellar mass).
+        Best-fit rest-frame properties (e.g., absolute magnitude, stellar
+        mass).
         Default is `None`.
     property_errs : `dict` or `None`, optional
         Uncertainties on properties. Default is `None`.
@@ -59,6 +64,7 @@ class Photometry_rest(Photometry):
     ext_src_corrs : `dict` or `None`, optional
         Extended source corrections by filter name. Default is `None`.
     """
+
     def __init__(
         self: Self,
         filterset: Multiple_Filter,
@@ -66,10 +72,22 @@ class Photometry_rest(Photometry):
         flux_errs: u.Quantity,
         depths: u.Quantity,
         z: float,
-        properties: Optional[Dict[str, Union[u.Magnitude, u.Quantity, u.Dex]]] = None,
-        property_errs: Optional[Dict[str, Tuple[Union[u.Magnitude, u.Quantity, u.Dex], Union[u.Magnitude, u.Quantity, u.Dex]]]] = None,
+        properties: Optional[
+            Dict[str, Union[u.Magnitude, u.Quantity, u.Dex]]
+        ] = None,
+        property_errs: Optional[
+            Dict[
+                str,
+                Tuple[
+                    Union[u.Magnitude, u.Quantity, u.Dex],
+                    Union[u.Magnitude, u.Quantity, u.Dex],
+                ],
+            ]
+        ] = None,
         property_PDFs: Optional[Dict[str, Type[PDF]]] = None,
-        property_kwargs: Optional[Dict[str, Dict[str, Union[str, int, float]]]] = None,
+        property_kwargs: Optional[
+            Dict[str, Dict[str, Union[str, int, float]]]
+        ] = None,
         ext_src_corrs: Optional[Dict[str, float]] = None,
     ):
         self.z = z
@@ -140,8 +158,15 @@ class Photometry_rest(Photometry):
             Rest-frame photometry at the specified redshift.
         """
         # Propagate extended source corrections if present
-        ext_src_corrs = getattr(phot, 'ext_src_corrs', None)
-        return cls(phot.filterset, phot.flux, phot.flux_errs, phot.depths, z, ext_src_corrs=ext_src_corrs)
+        ext_src_corrs = getattr(phot, "ext_src_corrs", None)
+        return cls(
+            phot.filterset,
+            phot.flux,
+            phot.flux_errs,
+            phot.depths,
+            z,
+            ext_src_corrs=ext_src_corrs,
+        )
 
     @classmethod
     def from_phot_obs(cls, phot) -> Self:
@@ -158,7 +183,7 @@ class Photometry_rest(Photometry):
             Rest-frame photometry at the galaxy's redshift.
         """
         # Propagate extended source corrections if present
-        ext_src_corrs = getattr(phot, 'ext_src_corrs', None)
+        ext_src_corrs = getattr(phot, "ext_src_corrs", None)
         return cls(
             phot.filterset,
             phot.flux,
@@ -169,13 +194,21 @@ class Photometry_rest(Photometry):
         )
 
     def __repr__(self: Self) -> str:
-        """Return the official string representation of the Photometry_rest object."""
-        return f"Photometry_rest({self.filterset.instrument_name}, z={self.z:.3f})"
+        """Return the official string representation of the
+        Photometry_rest object."""
+        return (
+            f"Photometry_rest({self.filterset.instrument_name}, "
+            f"z={self.z:.3f})"
+        )
 
     def __str__(self: Self) -> str:
-        """Return a detailed string representation of the rest-frame photometry."""
+        """Return a detailed string representation of the rest-frame
+        photometry."""
         output_str = funcs.line_sep
-        output_str += f"PHOTOMETRY_REST: {self.filterset.instrument_name} at z={self.z:.3f}\n"
+        output_str += (
+            f"PHOTOMETRY_REST: {self.filterset.instrument_name} at "
+            f"z={self.z:.3f}\n"
+        )
         output_str += funcs.band_sep
         output_str += f"N FILTERS: {len(self.filterset)}\n"
         if self.properties:
@@ -211,9 +244,10 @@ class Photometry_rest(Photometry):
     #             "pdf",
     #             "recently_updated",
     #         ], galfind_logger.critical(
-    #             f"{property_type=} not in ['val', 'errs', 'l1', 'u1', 'pdf', 'recently_updated']!"
+    #             f"{property_type=} not in ['val', 'errs', 'l1', 'u1', "
+    #             "'pdf', 'recently_updated']!"
     #         )
-    #         # boolean output to say whether property has been recently updated
+    # # boolean output to say whether property has been recently updated
     #         if property_type == "recently_updated":
     #             return (
     #                 True if property_name in self.recently_updated else False
@@ -228,7 +262,10 @@ class Photometry_rest(Photometry):
     #                 access_dict = self.property_PDFs
     #             # return None if relevant property is not available
     #             if property_name not in access_dict.keys():
-    #                 err_message = f"{property_name} {property_type} not available in Photometry_rest object!"
+    #                 err_message = (
+    #                     f"{property_name} {property_type} not available "
+    #                     "in Photometry_rest object!"
+    #                 )
     #                 galfind_logger.warning(err_message)
     #                 raise AttributeError(err_message)  # may be required here
     #             else:
@@ -240,7 +277,8 @@ class Photometry_rest(Photometry):
     #                     return access_dict[property_name]
     #     else:
     #         galfind_logger.critical(
-    #             f"Photometry_rest.__getattr__ currently has no implementation of {origin=} != 'phot_rest'"
+    #             f"Photometry_rest.__getattr__ currently has no "
+    #             f"implementation of {origin=} != 'phot_rest'"
     #         )
     #         raise NotImplementedError
 
@@ -276,7 +314,7 @@ class Photometry_rest(Photometry):
     #     try:
     #         return self._first_Lya_non_detect_band
     #     except AttributeError:
-            
+
     #         first_band = None
     #         # bands already ordered from blue -> red
     #         for band in self.filterset:
@@ -306,7 +344,9 @@ class Photometry_rest(Photometry):
         `str` or `None`
             Name of the first filter redward of the reference, or `None`.
         """
-        return funcs.get_first_redwards_band(self.z, self.filterset, ref_wav, ignore_bands)
+        return funcs.get_first_redwards_band(
+            self.z, self.filterset, ref_wav, ignore_bands
+        )
 
     def get_first_bluewards_band(
         self: Self,
@@ -327,12 +367,12 @@ class Photometry_rest(Photometry):
         `str` or `None`
             Name of the first filter blueward of the reference, or `None`.
         """
-        return funcs.get_first_bluewards_band(self.z, self.filterset, ref_wav, ignore_bands)
+        return funcs.get_first_bluewards_band(
+            self.z, self.filterset, ref_wav, ignore_bands
+        )
 
     def _make_phot_from_scattered_fluxes(
-        self: Self,
-        scattered_fluxes: np.ndarray, 
-        n_scatter: int
+        self: Self, scattered_fluxes: np.ndarray, n_scatter: int
     ) -> List[Photometry_rest]:
         return [
             Photometry_rest(
@@ -350,7 +390,8 @@ class Photometry_rest(Photometry):
     #     try:
     #         return self._lum_distance
     #     except AttributeError:
-    #         self._lum_distance = astropy_cosmo.luminosity_distance(self.z).to(u.pc)
+    #         self._lum_distance =
+    #             astropy_cosmo.luminosity_distance(self.z).to(u.pc)
     #         return self._lum_distance
 
     # @property
@@ -390,7 +431,8 @@ class Photometry_rest(Photometry):
     #     ]
 
     def is_correctly_UV_cropped(self, rest_UV_wav_lims) -> bool:
-        """Check if photometry is correctly UV-cropped to specified wavelength range.
+        """Check if photometry is correctly UV-cropped to specified
+        wavelength range.
 
         Parameters
         ----------
@@ -448,7 +490,7 @@ class Photometry_rest(Photometry):
             property_iters = iters
             if property_name in self.property_PDFs.keys():
                 PDF_obj = self.property_PDFs[property_name]
-                if type(PDF_obj) == type(None):
+                if PDF_obj is None:
                     pass
                 elif len(PDF_obj) < iters:
                     property_iters = iters - len(PDF_obj)
@@ -458,8 +500,11 @@ class Photometry_rest(Photometry):
         assert all(
             property_iters == property_iters_arr[0]
             for property_iters in property_iters_arr
-        ), f"All {property_names=} must have the same number of iterations to run!, " + \
-            f"{[(property_iters, property_iters_arr[0]) for property_iters in property_iters_arr]}"
+        ), (
+            f"All {property_names=} must have the same number of "
+            f"iterations to run!, "
+            f"{[(p, property_iters_arr[0]) for p in property_iters_arr]}"
+        )
         # do nothing if PDFs of the required length have already been loaded
         if property_iters_arr[0] == 0:
             return self, property_names
@@ -474,7 +519,7 @@ class Photometry_rest(Photometry):
         # print(properties, property_name)
         for property, property_name in zip(properties, property_names):
             # update property PDFs
-            if type(property) == type(None):
+            if property is None:
                 self.property_PDFs[property_name] = None
             else:
                 if type(property) not in [dict]:
@@ -494,7 +539,9 @@ class Photometry_rest(Photometry):
                     )
                 else:
                     galfind_logger.critical(
-                        f"{property.keys()=} for {property_name} does not include either ['vals', 'PDF_kwargs'] or 'PDF'!"
+                        f"{property.keys()=} for {property_name} does "
+                        "not include either ['vals', 'PDF_kwargs'] or "
+                        "'PDF'!"
                     )
                 if property_name in self.property_PDFs.keys():
                     old_PDF = self.property_PDFs[property_name]
@@ -530,7 +577,10 @@ class Photometry_rest(Photometry):
                 property_name
             ].errs
 
-    # def plot(self, save_dir, ID, plot_fit = True, iters = 10_000, save = True, show = False, n_interp = 100, conv_filt = False):
+    # def plot(
+    #     self, save_dir, ID, plot_fit=True, iters=10_000, save=True,
+    #     show=False, n_interp=100, conv_filt=False
+    # ):
     #     self.make_rest_UV_phot()
     #     assert(conv_filt == False)
     #     #if not all(beta == -99. for beta in self.beta_PDF):
@@ -541,43 +591,74 @@ class Photometry_rest(Photometry):
     #     fig, ax = plt.subplots()
 
     #     # Plotting code
-    #     ax.errorbar(np.log10(self.rest_UV_phot.wav.value), self.rest_UV_phot.log_flux_lambda, yerr = self.rest_UV_phot.log_flux_lambda_errs,
-    #                  ls = "none", c = "black", zorder = 10, marker = "o", markersize = 5, capsize = 3)
+    #     ax.errorbar(
+    #         np.log10(self.rest_UV_phot.wav.value),
+    #         self.rest_UV_phot.log_flux_lambda,
+    #         yerr=self.rest_UV_phot.log_flux_lambda_errs,
+    #         ls="none", c="black", zorder=10, marker="o",
+    #         markersize=5, capsize=3
+    #     )
 
     #     if plot_fit:
     #         fit_lines = []
     #         fit_lines_interped = []
-    #         wav_interp = np.linspace(np.log10(self.rest_UV_phot.wav.value)[0], np.log10(self.rest_UV_phot.wav.value)[-1], n_interp)
+    #         wav_vals = np.log10(self.rest_UV_phot.wav.value)
+    #         wav_interp = np.linspace(wav_vals[0], wav_vals[-1],
+    #                                   n_interp)
     #         if iters > len(self.amplitude_PDF[conv_filt]):
     #             iters = len(self.amplitude_PDF[conv_filt])
     #         for i in range(iters):
     #             #percentiles = np.percentile([16, 50, 84], axis=0)
-    #             f_interp = interp1d(np.log10(self.rest_UV_phot.wav.value), np.log10(Photometry_rest.beta_slope_power_law_func(self.rest_UV_phot.wav.value, \
-    #                 self.amplitude_PDF[conv_filt][i], self.beta_PDF[conv_filt][i])), kind = 'linear')
+    #             slope_vals = Photometry_rest.beta_slope_power_law_func(
+    #                 self.rest_UV_phot.wav.value,
+    #                 self.amplitude_PDF[conv_filt][i],
+    #                 self.beta_PDF[conv_filt][i]
+    #             )
+    #             f_interp = interp1d(
+    #                 np.log10(self.rest_UV_phot.wav.value),
+    #                 np.log10(slope_vals), kind='linear'
+    #             )
     #             y_new = f_interp(wav_interp)
-    #             fit_lines.append(np.log10(Photometry_rest.beta_slope_power_law_func(self.rest_UV_phot.wav.value, self.amplitude_PDF[conv_filt][i], self.beta_PDF[conv_filt][i])))
+    #             slope_vals = Photometry_rest.beta_slope_power_law_func(
+    #                 self.rest_UV_phot.wav.value,
+    #                 self.amplitude_PDF[conv_filt][i],
+    #                 self.beta_PDF[conv_filt][i]
+    #             )
+    #             fit_lines.append(np.log10(slope_vals))
     #             fit_lines_interped.append(y_new)
     #         fit_lines_interped = np.array(fit_lines_interped)
     #         fit_lines = np.array(fit_lines)
     #         fit_lines.reshape(iters, len(self.rest_UV_phot.wav.value))
     #         fit_lines_interped.reshape(iters, len(wav_interp))
 
-    #         l1_chains = np.array([np.percentile(x, 16) for x in fit_lines_interped.T])
-    #         med_chains = np.array([np.percentile(x, 50) for x in fit_lines.T])
-    #         u1_chains = np.array([np.percentile(x, 84) for x in fit_lines_interped.T])
+    #         l1_chains = np.array(
+    #             [np.percentile(x, 16) for x in fit_lines_interped.T]
+    #         )
+    #         med_chains = np.array(
+    #             [np.percentile(x, 50) for x in fit_lines.T]
+    #         )
+    #         u1_chains = np.array(
+    #             [np.percentile(x, 84) for x in fit_lines_interped.T]
+    #         )
 
-    #         ax.plot(np.log10(self.rest_UV_phot.wav.value), med_chains, color = "red", zorder = 2)
-    #         ax.fill_between(wav_interp, l1_chains, u1_chains, color="grey", alpha=0.2, zorder=1)
+    #         ax.plot(np.log10(self.rest_UV_phot.wav.value), med_chains,
+    #                 color="red", zorder=2)
+    #         ax.fill_between(wav_interp, l1_chains, u1_chains,
+    #                          color="grey", alpha=0.2, zorder=1)
 
     #     ax.set_xlabel(r"$\log_{10}(\lambda_{\mathrm{rest}} / \mathrm{\AA})$")
-    #     ax.set_ylabel(r"$\log_{10}(\mathrm{f}_{\lambda_{\mathrm{rest}}} / \mathrm{erg} \, \mathrm{s}^{-1} \, \mathrm{cm}^{-2} \, \mathrm{\AA}^{-1})$")
+    #     ax.set_ylabel(
+    #         r"$\log_{10}(\mathrm{f}_{\lambda_{\mathrm{rest}}} / "
+    #         r"\mathrm{erg} \, \mathrm{s}^{-1} \, \mathrm{cm}^{-2} \, "
+    #         r"\mathrm{\AA}^{-1})$"
+    #     )
 
     #     # Add the Galaxy ID label
-    #     ax.text(0.05, 0.05, f"Galaxy ID = {str(ID)}", transform=ax.transAxes, ha="left", va="bottom", fontsize=12)
+    #     ax.text(0.05, 0.05, f"Galaxy ID = {str(ID)}",
     #     # Add the Beta label
-    #     ax.text(0.95, 0.95, r"$\beta$" + " = {:.2f} $^{{+{:.2f}}}_{{-{:.2f}}}$".format(np.percentile(self.beta_PDF[conv_filt], 50), \
-    #         np.percentile(self.beta_PDF[conv_filt], 84) - np.percentile(self.beta_PDF[conv_filt], 50), np.percentile(self.beta_PDF[conv_filt], 50) - \
-    #         np.percentile(self.beta_PDF[conv_filt], 16)), transform = ax.transAxes, ha = "right", va = "top", fontsize = 12)
+    #     ax.text(0.95, 0.95, r"$\beta$" + " = {:.2f}",
+    #         transform=ax.transAxes, ha="right", va="top",
+    #         fontsize=12)
 
     #     ax.set_xlim(*np.log10(self.rest_UV_wav_lims.value))
 

@@ -9,7 +9,8 @@ def nadams_jaguar_path(
     is_half=True,
     fits_cat_dir=config["DEFAULT"]["GALFIND_DATA"],
 ):
-    return f"{fits_cat_dir}/{version}_SimDepth_{survey}_{'half' if is_half else ''}.fits"
+    half_str = 'half' if is_half else ''
+    return f"{fits_cat_dir}/{version}_SimDepth_{survey}_{half_str}.fits"
 
 
 def make_EAZY_SED_fit_params_arr(SED_code_arr, templates_arr, lowz_zmax_arr):
@@ -37,7 +38,7 @@ def main():
     SED_fit_params_arr = make_EAZY_SED_fit_params_arr(
         SED_code_arr, templates_arr, lowz_zmax_arr
     )
-    cat = Catalogue.from_fits_cat(
+    return Catalogue.from_fits_cat(
         fits_cat_path,
         version,
         instrument_names,

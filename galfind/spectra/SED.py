@@ -1,6 +1,7 @@
 """Spectral energy distribution (SED) representation and manipulation.
 
-Provides classes for storing and manipulating SEDs as wavelength/magnitude/flux pairs
+Provides classes for storing and manipulating SEDs as
+wavelength/magnitude/flux pairs
 with unit conversion, plotting, and photometric summary calculations.
 """
 
@@ -9,6 +10,8 @@ from __future__ import annotations
 import glob
 import os
 from abc import ABC
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+
 import astropy.io.ascii as ascii
 import astropy.units as u
 import matplotlib.pyplot as plt
@@ -16,17 +19,17 @@ import numpy as np
 from astropy.table import Table
 from scipy.interpolate import interp1d
 from scipy.optimize import curve_fit
-from typing import TYPE_CHECKING, Optional, Dict, Any, List, Union
+
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 if TYPE_CHECKING:
     from . import Multiple_Filter
-from . import IGM_attenuation
-from ..photometry.Photometry import Mock_Photometry
 from .. import astropy_cosmo, config, galfind_logger
+from ..photometry.Photometry import Mock_Photometry
 from ..utils import useful_funcs_austind as funcs
+from . import IGM_attenuation
 from .Emission_lines import line_diagnostics
 
 
@@ -72,13 +75,17 @@ class SED:
 
     def __str__(self):
         """Return a detailed string representation of the SED."""
-        output_str = f"SED Object:\n"
-        # Use first/last values instead of min/max to avoid scanning entire array
-        output_str += f"  Wavelength range: {self.wavs[0]:.3f} - {self.wavs[-1]:.3f} {self.wavs.unit}\n"
+        output_str = "SED Object:\n"
+        # Use first/last values instead of min/max to avoid scanning
+        # entire array
+        output_str += (
+            f"  Wavelength range: {self.wavs[0]:.3f} - "
+            f"{self.wavs[-1]:.3f} {self.wavs.unit}\n"
+        )
         output_str += f"  Number of points: {len(self.wavs)}\n"
-        if hasattr(self, 'file'):
+        if hasattr(self, "file"):
             output_str += f"  File: {self.file}\n"
-        if hasattr(self, 'z'):
+        if hasattr(self, "z"):
             output_str += f"  Redshift: {self.z:.4f}\n"
         return output_str
 
@@ -171,12 +178,16 @@ class SED:
             mags = self.mags.to(
                 units, equivalencies=u.spectral_density(self.wavs)
             )
-            # elif u.get_physical_type(self.mags.unit) == "spectral flux density": # f_ν -> derivative of u.Jy
-            # mags = self.mags.to(units, equivalencies = u.spectral_density(self.wavs))
+            # elif u.get_physical_type(self.mags.unit) == "spectral flux
+            # density": # f_ν -> derivative of u.Jy
+            # mags = self.mags.to(units, equivalencies =
+            # u.spectral_density(self.wavs))
         else:
             raise (
                 Exception(
-                    "Units must be either ABmag or have physical units of 'spectral flux density' or 'power density/spectral flux density wav'!"
+                    "Units must be either ABmag or have physical units "
+                    "of 'spectral flux density' or 'power "
+                    "density/spectral flux density wav'!"
                 )
             )
         if update:
@@ -204,9 +215,11 @@ class SED:
             Axes to plot on. If `None`, a new figure and axes are created.
             Default is `None`.
         wav_units : `astropy.units.Unit`, optional
-            Units to convert the wavelength axis to. Default is `astropy.units.AA`.
+            Units to convert the wavelength axis to. Default is
+            `astropy.units.AA`.
         mag_units : `astropy.units.Unit`, optional
-            Units to convert the flux/magnitude axis to. Default is `astropy.units.ABmag`.
+            Units to convert the flux/magnitude axis to. Default is
+            `astropy.units.ABmag`.
         label : `str`, optional
             Legend label for the plotted line. Overridden by
             `self.template_name` if the SED has one. Default is `None`.
@@ -258,7 +271,8 @@ class SED:
             )
             ax.set_ylabel(
                 funcs.label_fluxes(
-                    mag_units, True if mag_units != u.ABmag and log_fluxes else False
+                    mag_units,
+                    True if mag_units != u.ABmag and log_fluxes else False,
                 )
             )
             ax.legend(**legend_kwargs)
@@ -292,7 +306,8 @@ class SED:
         ----------
         filter_wavs : `astropy.units.Quantity` or `astropy.units.Dex`
             Wavelength grid of the filter transmission profile.
-        filter_trans : `astropy.units.Quantity`, `astropy.units.Magnitude`, or `astropy.units.Dex`
+        filter_trans : `astropy.units.Quantity`,
+            `astropy.units.Magnitude`, or `astropy.units.Dex`
             Filter transmission values corresponding to `filter_wavs`.
         detector_type : `str`, optional
             Either `"photon"` (weights by lambda * T(lambda)) or
@@ -308,7 +323,8 @@ class SED:
         detector_type = detector_type.lower()
         if detector_type not in ["photon", "energy"]:
             galfind_logger.warning(
-                f"Cannot calculate bandpass-averaged flux for {detector_type=}, assuming 'photon'"
+                f"Cannot calculate bandpass-averaged flux for "
+                f"{detector_type=}, assuming 'photon'"
             )
             detector_type = "photon"
         wavs = funcs.convert_wav_units(self.wavs, u.AA).value
@@ -318,17 +334,21 @@ class SED:
         # update filter wavelengths to correct units
         filter_wavs = funcs.convert_wav_units(filter_wavs, u.AA).value
         # interpolate SED to be on same grid as filter_profile
-        sed_interp = interp1d(wavs, mags, fill_value="extrapolate")(filter_wavs) # in f_lambda
+        sed_interp = interp1d(wavs, mags, fill_value="extrapolate")(
+            filter_wavs
+        )  # in f_lambda
         if detector_type == "photon":
             # calculate integral(λ * f(λ) * T(λ) dλ)
-            numerator = np.trapz(filter_wavs * sed_interp * filter_trans, x = filter_wavs)
+            numerator = np.trapz(
+                filter_wavs * sed_interp * filter_trans, x=filter_wavs
+            )
             # calculate integral(λ * T(λ) dλ)
-            denominator = np.trapz(filter_wavs * filter_trans, x = filter_wavs)
-        else: # detector_type == "energy"
+            denominator = np.trapz(filter_wavs * filter_trans, x=filter_wavs)
+        else:  # detector_type == "energy"
             # calculate integral(f(λ) * T(λ) dλ)
-            numerator = np.trapz(sed_interp * filter_trans, x = filter_wavs)
+            numerator = np.trapz(sed_interp * filter_trans, x=filter_wavs)
             # calculate integral(T(λ) dλ)
-            denominator = np.trapz(filter_trans, x = filter_wavs)
+            denominator = np.trapz(filter_trans, x=filter_wavs)
         # calculate bandpass-averaged flux in Jy
         return numerator / denominator
 
@@ -382,7 +402,8 @@ class SED:
         else:
             raise (
                 Exception(
-                    "Attempted EW calculation in a class not containing 'rest' or 'obs' in the class name!"
+                    "Attempted EW calculation in a class not "
+                    "containing 'rest' or 'obs' in the class name!"
                 )
             )
         # mask everything but the line of interest
@@ -421,7 +442,8 @@ class SED:
             cont_flux, x=wavs_AA[feature_mask]
         )  # not 100% correct here in the case of cont > line flux
         # calculate line flux
-        # if line flux goes negative at any point, set to zero (only works for emission and not absorption)
+        # if line flux goes negative at any point, set to zero (only
+        # works for emission and not absorption)
         line_flux_integrand = (
             np.array(
                 [
@@ -437,7 +459,8 @@ class SED:
         )
         line_flux = np.trapz(
             line_flux_integrand, x=wavs_AA[feature_mask]
-        )  # (line_plus_cont_flux - cont_flux) * feature_width # emission == positive EW
+        )  # (line_plus_cont_flux - cont_flux) * feature_width
+        # emission == positive EW
         # calculate line EW
         line_EW = np.trapz(
             line_flux_integrand / cont_flux, x=wavs_AA[feature_mask]
@@ -453,10 +476,7 @@ class SED:
             self.line_cont[line_name] = mean_cont
         return line_EW
 
-    def calc_xi_ion(
-        self: Self,
-        line_name: str = "Halpha"
-    ) -> u.Quantity:
+    def calc_xi_ion(self: Self, line_name: str = "Halpha") -> u.Quantity:
         """Calculate the ionizing photon production efficiency, xi_ion.
 
         Derives xi_ion = L(line) / (L_UV * 1.36e-12) assuming case B
@@ -476,21 +496,28 @@ class SED:
             The ionizing photon production efficiency, in Hz / erg.
         """
         # Note that no dust correction is applied here
-        self.calc_line_EW(line_name, plot = False)
+        self.calc_line_EW(line_name, plot=False)
         Ha_flux = self.line_fluxes[line_name]
         # calculate mUV
         mUV = self.calc_mUV()
         # convert mUV to L_UV in erg/s/Hz
         dL = astropy_cosmo.luminosity_distance(self.z).to(u.cm)
-        L_UV = 4 * np.pi * dL ** 2 \
+        L_UV = (
+            4
+            * np.pi
+            * dL**2
             * funcs.convert_mag_units(
                 funcs.wav_rest_to_obs(1_500.0 * u.AA, self.z),
                 mUV,
-                u.erg / (u.s * u.Hz * u.cm**2)
-            ) * (1.0 + self.z)
+                u.erg / (u.s * u.Hz * u.cm**2),
+            )
+            * (1.0 + self.z)
+        )
         # convert Ha_flux to L_Ha in erg/s
-        L_Ha = 4 * np.pi * dL ** 2 * Ha_flux / (1.0 + self.z)
-        xi_ion = (L_Ha / (L_UV * 1.36e-12)).value * u.Hz / u.erg # assuming case B recombination, T = 10^4 K, n_e = 10^2 cm^-3
+        L_Ha = 4 * np.pi * dL**2 * Ha_flux / (1.0 + self.z)
+        xi_ion = (
+            (L_Ha / (L_UV * 1.36e-12)).value * u.Hz / u.erg
+        )  # assuming case B recombination, T = 10^4 K, n_e = 10^2 cm^-3
         return xi_ion
 
     def calc_UVJ_colours(self, resolution=1.0 * u.AA):
@@ -545,7 +572,9 @@ class SED:
                 "Wavelength": band_wavs,
                 "Transmission": np.ones(len(band_wavs)),
             }
-            bp_averaged_fluxes[i] = self.calc_bandpass_averaged_flux(filter_profile)
+            bp_averaged_fluxes[i] = self.calc_bandpass_averaged_flux(
+                filter_profile
+            )
         # convert bp_averaged_fluxes to Jy
         bp_averaged_fluxes_Jy = funcs.convert_mag_units(
             [UVJ_filters[band]["lam_eff"] for band in ["U", "V", "J"]],
@@ -588,8 +617,8 @@ class SED_rest(SED):
         self, wavs, mags, wav_units, mag_units, wav_range=[0, 10_000] * u.AA
     ):
         try:
-            wavs = wavs.value # if wavs is in Angstrom
-        except:
+            wavs = wavs.value  # if wavs is in Angstrom
+        except Exception:
             pass
         mags = mags[
             (wavs > wav_range.to(wav_units).value[0])
@@ -600,7 +629,7 @@ class SED_rest(SED):
             & (wavs < wav_range.to(wav_units).value[1])
         ]
         super().__init__(wavs, mags, wav_units, mag_units)
-    
+
     @classmethod
     def from_SED_obs(cls, SED_obs, out_wav_units=u.AA, out_mag_units=u.ABmag):
         """Construct a rest-frame SED from an observed-frame SED.
@@ -613,9 +642,11 @@ class SED_rest(SED):
         SED_obs : `SED_obs`
             The observed-frame SED to de-redshift.
         out_wav_units : `astropy.units.Unit`, optional
-            Wavelength units of the returned SED. Default is `astropy.units.AA`.
+            Wavelength units of the returned SED. Default is
+            `astropy.units.AA`.
         out_mag_units : `astropy.units.Unit`, optional
-            Magnitude/flux units of the returned SED. Default is `astropy.units.ABmag`.
+            Magnitude/flux units of the returned SED. Default is
+            `astropy.units.ABmag`.
 
         Returns
         -------
@@ -728,12 +759,15 @@ class SED_obs(SED):
         #     depths = [depth for (band, depth) in depths.items()]
         detector_types = [
             getattr(filt, "DetectorType").split(" ")[0]
-            if hasattr(filt, "DetectorType") else "photon" 
+            if hasattr(filt, "DetectorType")
+            else "photon"
             for filt in filterset
         ]
         bp_averaged_fluxes = (
             [
-                self.calc_bandpass_averaged_flux(filt.wav, filt.trans, detector_type)
+                self.calc_bandpass_averaged_flux(
+                    filt.wav, filt.trans, detector_type
+                )
                 for filt, detector_type in zip(filterset, detector_types)
             ]
             * u.erg
@@ -776,7 +810,7 @@ class SED_obs(SED):
         """
         assert type(filters) in [np.array, list]
         assert len(filters) == 2
-        if type(depths) == dict:
+        if isinstance(depths, dict):
             depths = [depth for (band, depth) in depths.items()]
         if (
             depths == []
@@ -784,22 +818,29 @@ class SED_obs(SED):
             depths = [99.0 for band in filters]
 
         if hasattr(filters[0], "DetectorType"):
-            blue_detector_type = getattr(filters[0], "DetectorType").split(" ")[0]
+            blue_detector_type = getattr(filters[0], "DetectorType").split(
+                " "
+            )[0]
         else:
             blue_detector_type = "photon"
         if hasattr(filters[1], "DetectorType"):
-            red_detector_type = getattr(filters[1], "DetectorType").split(" ")[0]
+            red_detector_type = getattr(filters[1], "DetectorType").split(" ")[
+                0
+            ]
         else:
             red_detector_type = "photon"
         if blue_detector_type != red_detector_type:
             galfind_logger.warning(
-                "Detector types for blue and red filters are different. Assuming photon counting for both."
+                "Detector types for blue and red filters are "
+                "different. Assuming photon counting for both."
             )
             blue_detector_type = "photon"
             red_detector_type = "photon"
 
         blue_flux = (
-            self.calc_bandpass_averaged_flux(filters[0].wav, filters[0].trans, blue_detector_type)
+            self.calc_bandpass_averaged_flux(
+                filters[0].wav, filters[0].trans, blue_detector_type
+            )
             * u.erg
             / (u.s * (u.cm**2) * u.AA)
         )
@@ -807,7 +848,9 @@ class SED_obs(SED):
             np.array(filters[0].WavelengthCen.value) * u.AA, blue_flux, u.ABmag
         )
         red_flux = (
-            self.calc_bandpass_averaged_flux(filters[1].wav, filters[1].trans, red_detector_type)
+            self.calc_bandpass_averaged_flux(
+                filters[1].wav, filters[1].trans, red_detector_type
+            )
             * u.erg
             / (u.s * (u.cm**2) * u.AA)
         )
@@ -846,16 +889,23 @@ class SED_obs(SED):
         AssertionError
             If `wav_range[0]` is not less than `wav_range[1]`.
         """
-        assert wav_range[0] < wav_range[1], \
-            galfind_logger.critical(
-                f"{wav_range[0]=}!<{wav_range[1]=}"
-            )
+        assert wav_range[0] < wav_range[1], galfind_logger.critical(
+            f"{wav_range[0]=}!<{wav_range[1]=}"
+        )
         # create tophat filter in rest frame
         from galfind import Tophat_Filter
-        obs_wav_range = wav_range * (1. + self.z)
-        #wavs = np.arange(obs_wav_range[0].value, obs_wav_range[1].value, wav_resolution.value) * wav_range.unit
-        mUV_filter = Tophat_Filter("mUV", obs_wav_range[0], obs_wav_range[1], wav_resolution)
-        UV_flux = self.calc_bandpass_averaged_flux(mUV_filter.wav, mUV_filter.trans) * u.erg / (u.s * (u.cm**2) * u.AA)
+
+        obs_wav_range = wav_range * (1.0 + self.z)
+        # wavs = np.arange(obs_wav_range[0].value,
+        # obs_wav_range[1].value, wav_resolution.value) * wav_range.unit
+        mUV_filter = Tophat_Filter(
+            "mUV", obs_wav_range[0], obs_wav_range[1], wav_resolution
+        )
+        UV_flux = (
+            self.calc_bandpass_averaged_flux(mUV_filter.wav, mUV_filter.trans)
+            * u.erg
+            / (u.s * (u.cm**2) * u.AA)
+        )
         # convert to m_AB
         return funcs.convert_mag_units(
             mUV_filter.WavelengthCen,
@@ -889,12 +939,15 @@ class SED_obs(SED):
         """
         mUV = self.calc_mUV(wav_range, wav_resolution)
         dL = astropy_cosmo.luminosity_distance(self.z).to(u.pc).value
-        MUV = mUV.value - 5 * np.log10(dL / 10.0) + 2.5 * np.log10(1.0 + self.z)
-        return MUV # * u.ABmag
+        MUV = (
+            mUV.value - 5 * np.log10(dL / 10.0) + 2.5 * np.log10(1.0 + self.z)
+        )
+        return MUV  # * u.ABmag
 
 
 class Mock_SED_rest(SED_rest):  # , Mock_SED):
-    """A rest-frame SED representing a mock/template (rather than fitted) spectrum.
+    """A rest-frame SED representing a mock/template (
+        rather than fitted) spectrum.
 
     Extends `SED_rest` with a template name and metadata, and adds
     classmethod loaders for various theoretical template libraries
@@ -943,9 +996,11 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
         mock_SED_obs : `Mock_SED_obs`
             The observed-frame mock SED to de-redshift.
         out_wav_units : `astropy.units.Unit`, optional
-            Wavelength units of the returned SED. Default is `astropy.units.AA`.
+            Wavelength units of the returned SED. Default is
+            `astropy.units.AA`.
         out_mag_units : `astropy.units.Unit`, optional
-            Magnitude/flux units of the returned SED. Default is `astropy.units.ABmag`.
+            Magnitude/flux units of the returned SED. Default is
+            `astropy.units.ABmag`.
         IGM : `galfind.IGM_attenuation.IGM`, optional
             Unused placeholder for future IGM un-attenuation support.
             Default is `None`.
@@ -969,12 +1024,17 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
             mock_SED_obs.template_name,
         )
         # if IGM_out == None:
-        #     mock_sed_rest_obj.un_attenuate_IGM(mock_SED_obs.z, mock_SED_obs.IGM)
+        #     mock_sed_rest_obj.un_attenuate_IGM(mock_SED_obs.z,
+        #     mock_SED_obs.IGM)
         # elif isinstance(IGM_out, IGM_attenuation.IGM):
         #     if IGM_out.prescription != mock_SED_obs.IGM.prescription:
-        #         raise(Exception("Not currently included the functionality to swap IGM attenuation whilst creating new Mock_SED_rest object from Mock_SED_obs object yet"))
+        #         raise(Exception("Not currently included the
+        #         functionality to swap IGM attenuation whilst creating
+        #         new Mock_SED_rest object from Mock_SED_obs object
+        #         yet"))
         # else:
-        #     raise(Exception(f"'IGM_out' = {IGM_out} must be either 'None' or 'IGM' class"))
+        #     raise(Exception(f"'IGM_out' = {IGM_out} must be either
+        #     'None' or 'IGM' class"))
         return mock_sed_rest_obj
 
     @classmethod
@@ -998,7 +1058,8 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
             Rest-frame wavelength range to construct the SED over.
             Default is `[912.0, 10_000.0] * astropy.units.AA`.
         wav_res : `astropy.units.Quantity`, optional
-            Wavelength resolution/step size. Default is `1.0 * astropy.units.AA`.
+            Wavelength resolution/step size. Default is `1.0 *
+            astropy.units.AA`.
         template_name : `str`, optional
             Name/identifier for the resulting SED. Default is `None`.
 
@@ -1070,7 +1131,8 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
         else:
             raise (
                 Exception(
-                    f"Rest frame template load in currently unavailable for code_name = {code_name}"
+                    "Rest frame template load in currently "
+                    f"unavailable for code_name = {code_name}"
                 )
             )
 
@@ -1103,8 +1165,11 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
             }
         }
         if isinstance(template_filename, int):
+            eazy_template_dir = config["EAZY"]["EAZY_TEMPLATE_DIR"].replace(
+                "/templates", ""
+            )
             template_labels = open(
-                f"{config['EAZY']['EAZY_TEMPLATE_DIR'].replace('/templates', '')}/{template_set}.txt",
+                f"{eazy_template_dir}/{template_set}.txt",
                 "r",
             )
             template_filename = template_labels.readlines()[
@@ -1201,7 +1266,10 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
             (from the file's metadata) attached as an attribute.
         """
         # print("Incorrect normalization for yggdrasil input templates!")
-        yggdrasil_dir = f"/Users/user/Documents/PGR/yggdrasil_grids/{imf}_fcov_{str(fcov)}_SFR_{sfh}_Spectra"
+        yggdrasil_dir = (
+            f"/Users/user/Documents/PGR/yggdrasil_grids/{imf}_fcov_"
+            f"{str(fcov)}_SFR_{sfh}_Spectra"
+        )
         # if isinstance(template_filename, int):
         #     SED_arr = glob.glob(yggdrasil_dir)
         #     print(SED_arr)
@@ -1230,7 +1298,8 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
         return template_obj
 
     def normalize_to_m_UV(self, m_UV):
-        """Rescale the SED in place so its flux at rest-frame 1500 AA matches m_UV.
+        """Rescale the SED in place so its flux at rest-frame 1500 AA
+        matches m_UV.
 
         Parameters
         ----------
@@ -1264,7 +1333,8 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
     def renorm_at_wav(
         self, wav, mag
     ):  # this mag can also be a flux, but must have astropy units
-        """Rescale the SED in place so its flux at a given wavelength matches `mag`.
+        """Rescale the SED in place so its flux at a given wavelength
+        matches `mag`.
 
         Parameters
         ----------
@@ -1375,27 +1445,30 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
         assert type(emission_lines) in [list, np.array]
         for emission_line in emission_lines:
             # update units
-            orig_wav_unit = self.wavs.unit
-            orig_mag_unit = self.mags.unit
             self.convert_wav_units(
                 emission_line.line_profile["wavs"].unit, update=True
             )
             self.convert_mag_units(
                 emission_line.line_profile["flux"].unit, update=True
             )
-            # interpolate emission line to be on the same wavelength grid as the spectrum
+            # interpolate emission line to be on the same wavelength
+            # grid as the spectrum
             interp_line_profile = interp1d(
                 emission_line.line_profile["wavs"],
                 emission_line.line_profile["flux"].value,
                 bounds_error=False,
                 fill_value=0.0,
             )(self.wavs)
-            # correct for line flux difference between interped and non-interped line profile
+            # correct for line flux difference between interped and
+            # non-interped line profile
             # self_copy = deepcopy(self)
             # self_copy.mags += interp_line_profile * self_copy.mags.unit
             # self_copy.calc_line_EW(emission_line.line_name)
-            # line_flux = (self_copy.line_fluxes[emission_line.line_name] / u.AA).to(u.erg / (u.s * u.AA * u.cm ** 2), \
-            #                 equivalencies = u.spectral_density(line_diagnostics[emission_line.line_name]["line_wav"])) * u.AA
+            # line_flux = (self_copy.line_fluxes[emission_line.line_name]
+            # / u.AA).to(u.erg / (u.s * u.AA * u.cm ** 2), \
+            #                 equivalencies = u.spectral_density(
+            #                 line_diagnostics[emission_line.line_name][
+            #                 "line_wav"])) * u.AA
             # add normalized line profile to spectrum
             self.mags += (
                 interp_line_profile * self.mags.unit
@@ -1427,13 +1500,15 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
         self.wavs = funcs.convert_wav_units(self.wavs, u.AA)
         self.mags = funcs.convert_mag_units(self.wavs, self.mags, u.Jy)
         # attenuate flux in Jy (named self.mags)
-        #print(dust_attenuation)
+        # print(dust_attenuation)
         self.mags *= 10 ** (
             -0.4 * dust_attenuation.attenuate(self.wavs, E_BminusV)
         )
 
+
 class Mock_SED_obs(SED_obs):
-    """An observed-frame SED representing a mock/template (rather than fitted) spectrum.
+    """An observed-frame SED representing a mock/template (rather than
+    fitted) spectrum.
 
     Extends `SED_obs` with a template name, metadata, and (optionally)
     IGM attenuation applied automatically at construction time.
@@ -1483,7 +1558,7 @@ class Mock_SED_obs(SED_obs):
         self.template_name = template_name
         self.meta = meta
         super().__init__(z, wavs, mags, wav_units, mag_units)
-        if IGM != None:
+        if IGM is not None:
             self.attenuate_IGM(IGM)
 
     @classmethod
@@ -1504,9 +1579,11 @@ class Mock_SED_obs(SED_obs):
         z : `float`
             Redshift to place the SED at.
         out_wav_units : `astropy.units.Unit`, optional
-            Wavelength units of the returned SED. Default is `astropy.units.AA`.
+            Wavelength units of the returned SED. Default is
+            `astropy.units.AA`.
         out_mag_units : `astropy.units.Unit`, optional
-            Magnitude/flux units of the returned SED. Default is `astropy.units.ABmag`.
+            Magnitude/flux units of the returned SED. Default is
+            `astropy.units.ABmag`.
         IGM : `galfind.IGM_attenuation.IGM`, optional
             IGM attenuation prescription to apply. Default is a new
             `IGM_attenuation.IGM()` instance.
@@ -1599,7 +1676,7 @@ class Mock_SED_obs(SED_obs):
         if not hasattr(self, "IGM"):
             self.IGM = None
         if isinstance(IGM, IGM_attenuation.IGM):
-            if self.IGM == None:  # not already been attenuated
+            if self.IGM is None:  # not already been attenuated
                 # attenuate SED for IGM absorption
                 IGM_transmission = IGM.interp_transmission(
                     self.z, self.wavs / (1 + self.z)
@@ -1679,13 +1756,20 @@ class Mock_SED_obs(SED_obs):
             for band in bands:
                 if band not in self.mock_photometry.filterset.filt_names:
                     galfind_logger.critical(
-                        f"self.mock_photometry includes the bands = {self.mock_photometry.filterset.filt_names}, and {band} is not included!"
+                        "self.mock_photometry includes the bands = "
+                        f"{self.mock_photometry.filterset.filt_names}, "
+                        f"and {band} is not included!"
                     )
                 assert self.mock_photometry[band].flux.unit == u.Jy
             # calculate colour in mags
-            colour = -2.5 * np.log10(
-                self.mock_photometry[bands[0]].flux / self.mock_photometry[bands[1]].flux
-            ) * u.ABmag
+            colour = (
+                -2.5
+                * np.log10(
+                    self.mock_photometry[bands[0]].flux
+                    / self.mock_photometry[bands[1]].flux
+                )
+                * u.ABmag
+            )
             # save colour in Mock_SED object
             if "colours" in self.__dict__:
                 self.colours = {**self.colours, **{colour_name: colour.value}}
@@ -1694,7 +1778,8 @@ class Mock_SED_obs(SED_obs):
             return colour.value
         else:
             galfind_logger.critical(
-                "self.mock_photometry does not exist! Please first create photometry from SED template!"
+                "self.mock_photometry does not exist! Please first "
+                "create photometry from SED template!"
             )
 
     def add_DLA(self, DLA_obj):
@@ -1899,7 +1984,10 @@ class Mock_SED_rest_template_set(Mock_SED_template_set):
             The loaded set of template SEDs (one per `.ecsv` file found).
         """
         mock_SED_rest_arr = []
-        yggdrasil_dir = f"/Users/user/Documents/PGR/yggdrasil_grids/{imf}_fcov_{str(fcov)}_SFR_{sfh}_Spectra"
+        yggdrasil_dir = (
+            f"/Users/user/Documents/PGR/yggdrasil_grids/{imf}_fcov_"
+            f"{str(fcov)}_SFR_{sfh}_Spectra"
+        )
         SED_filenames = glob.glob(f"{yggdrasil_dir}/*.ecsv")
         for name in SED_filenames:
             mock_SED_rest_arr.append(
@@ -1934,16 +2022,20 @@ class Mock_SED_rest_template_set(Mock_SED_template_set):
             `"bin"` for binary or `"sin"` for single-star models.
             Default is `"bin"`.
         alpha_enhancement : `str`, optional
-            Alpha enhancement identifier (BPASS v2.3 only). Default is `"a+06"`.
+            Alpha enhancement identifier (BPASS v2.3 only). Default is
+            `"a+06"`.
         log_ages : array-like or `str`, optional
             Array of log10(age / yr) values to load, or `"all"` to load
             every available age. Default is
             `np.linspace(6.0, 9.0, int(np.round(3 / 0.1)) + 1)`.
         bpass_version : `str`, optional
-            BPASS release version, `"2.3"` or `"2.2_cloudy"`. Default is `"2.3"`.
-        m_UV_norm : `astropy.units.Quantity` or `astropy.units.Magnitude`, optional
+            BPASS release version, `"2.3"` or `"2.2_cloudy"`. Default is
+            `"2.3"`.
+        m_UV_norm : `astropy.units.Quantity` or `astropy.units.Magnitude`,
+        optional
             Apparent UV magnitude to normalize each loaded template to.
-            If `None`, no normalization is applied. Default is `26.0 * astropy.units.ABmag`.
+            If `None`, no normalization is applied. Default is
+            `26.0 * astropy.units.ABmag`.
         grain_name : `str`, optional
             Dust grain type for `"2.2_cloudy"` models, `"ng"` or `"gr"`.
             Default is `"ng"`.
@@ -1975,7 +2067,8 @@ class Mock_SED_rest_template_set(Mock_SED_template_set):
             "2.2_cloudy": "BPASS_v2.2_cloudy/spec",
         }
         bpass_version_name_dict = {
-            "2.3": f"spectra-{model_type}-{imf}.{alpha_enhancement}.{metallicity}.dat",
+            "2.3": f"spectra-{model_type}-{imf}."
+            f"{alpha_enhancement}.{metallicity}.dat",
         }
         if bpass_version == "2.2_cloudy":
             assert grain_name in ["ng", "gr"]
@@ -2064,7 +2157,8 @@ class Mock_SED_obs_template_set(Mock_SED_template_set):
     def from_Mock_SED_rest_template_set(
         cls, Mock_SED_rest_template_set, z_arr
     ):
-        """Redshift every SED in a rest-frame template set to build an observed-frame set.
+        """Redshift every SED in a rest-frame template set to build an
+        observed-frame set.
 
         Parameters
         ----------
@@ -2154,7 +2248,8 @@ class Mock_SED_obs_template_set(Mock_SED_template_set):
         -------
         `None`
         """
-        # assumes the SEDs are already sorted by age, starting with the youngest
+        # assumes the SEDs are already sorted by age, starting with the
+        # youngest
         colour_x = np.array(
             [sed.colours[colour_x_name] for sed in self.SED_arr]
         )
@@ -2236,23 +2331,32 @@ class SED_2D:
         SED_arr: List[Type[SED]],
     ):
         sed_classes = np.unique([SED.__class__.__name__ for SED in SED_arr])
-        assert len(sed_classes) == 1, \
-            galfind_logger.critical(
-                f"SED_2D can only be created from a list of SEDs of the same class! Found {sed_classes}."
-            )
+        assert len(sed_classes) == 1, galfind_logger.critical(
+            "SED_2D can only be created from a list of SEDs of the "
+            f"same class! Found {sed_classes}."
+        )
         self.SED_arr = SED_arr
 
     def __repr__(self: Self) -> str:
-        """Return the official string representation of the SED_2D collection."""
+        """Return the official string representation of the SED_2D
+        collection."""
         return f"SED_2D({len(self)} SEDs)"
 
     def __str__(self: Self) -> str:
         """Return a detailed string representation of the SED_2D collection."""
-        output_str = f"SED_2D Collection:\n"
+        output_str = "SED_2D Collection:\n"
         output_str += f"  Number of SEDs: {len(self)}\n"
         if len(self) > 0:
-            first_sed = self.SED_arr[0] if isinstance(self.SED_arr, (list, np.ndarray)) else next(iter(self.SED_arr))
-            output_str += f"  First SED wavelength range: {first_sed.wavs.min():.1f} - {first_sed.wavs.max():.1f}\n"
+            first_sed = (
+                self.SED_arr[0]
+                if isinstance(self.SED_arr, (list, np.ndarray))
+                else next(iter(self.SED_arr))
+            )
+            output_str += (
+                "  First SED wavelength range: "
+                f"{first_sed.wavs.min():.1f} - "
+                f"{first_sed.wavs.max():.1f}\n"
+            )
         return output_str
 
     def __len__(self) -> int:
@@ -2269,7 +2373,7 @@ class SED_2D:
             sed = self[self.iter]
             self.iter += 1
             return sed
-        
+
     def __getitem__(self: Self, index: Any) -> Type[SED]:
         if len(self) == 0:
             raise IndexError(f"No SEDs in {self}!")
@@ -2277,9 +2381,10 @@ class SED_2D:
             return self.SED_arr[index]
         else:
             raise TypeError(
-                f"Indexing {self} with {type(index)} is not supported! Use an integer index."
+                f"Indexing {self} with {type(index)} is not "
+                "supported! Use an integer index."
             )
-        
+
     @property
     def frame(self: Self) -> Optional[str]:
         """Returns the frame of the SEDs in the SED_2D."""
@@ -2292,7 +2397,7 @@ class SED_2D:
 
     def plot(
         self: Self,
-        #fig: Optional[plt.Figure],
+        # fig: Optional[plt.Figure],
         ax: Optional[plt.Axes] = None,
         wav_units: u.Unit = u.AA,
         mag_units: u.Unit = u.ABmag,
@@ -2303,8 +2408,9 @@ class SED_2D:
         plot_chains: bool = False,
         plot_kwargs: Dict[str, Any] = {},
         legend_kwargs: Dict[str, Any] = {},
-    ): # -> plt.Axes: #Tuple[plt.Figure, plt.Axes]:
-        """Plot the median SED of the ensemble with a 16th-84th percentile band.
+    ):  # -> plt.Axes: #Tuple[plt.Figure, plt.Axes]:
+        """Plot the median SED of the ensemble with a 16th-84th
+        percentile band.
 
         Each draw in the ensemble generally has its own redshift, so the
         draws cannot simply be averaged point-by-point on a shared
@@ -2329,9 +2435,11 @@ class SED_2D:
             Axes to plot on. If `None`, a new figure and axes are created.
             Default is `None`.
         wav_units : `astropy.units.Unit`, optional
-            Units to convert the wavelength axis to. Default is `astropy.units.AA`.
+            Units to convert the wavelength axis to. Default is
+            `astropy.units.AA`.
         mag_units : `astropy.units.Unit`, optional
-            Units to convert the flux/magnitude axis to. Default is `astropy.units.ABmag`.
+            Units to convert the flux/magnitude axis to. Default is
+            `astropy.units.ABmag`.
         label : `str`, optional
             Legend label for the plotted median line. Overridden by
             `self.template_name` if the ensemble has one. Default is `None`.
@@ -2360,22 +2468,23 @@ class SED_2D:
             fig, ax = plt.subplots()
 
         wavs_arr = [
-            funcs.convert_wav_units(sed.wavs, wav_units)
-            for sed in self
+            funcs.convert_wav_units(sed.wavs, wav_units) for sed in self
         ]
         # floor zero/negative model flux (e.g. from near-total Lyman-limit/
         # IGM attenuation) to a tiny positive value; log10 of a <=0 flux
         # (via the AB mag conversion or log_scale_fluxes) gives +inf/nan
         sed_mags = [
             np.maximum(sed.mags.value, 1e-10) * sed.mags.unit
-            if sed.mags.unit != u.ABmag else sed.mags
+            if sed.mags.unit != u.ABmag
+            else sed.mags
             for sed in self
         ]
         mags_arr = [
             funcs.log_scale_fluxes(
                 funcs.convert_mag_units(sed.wavs, mags, mag_units)
-            ) if mag_units != u.ABmag and log_fluxes else
-            funcs.convert_mag_units(sed.wavs, mags, mag_units).value
+            )
+            if mag_units != u.ABmag and log_fluxes
+            else funcs.convert_mag_units(sed.wavs, mags, mag_units).value
             for sed, mags in zip(self, sed_mags)
         ]
 
@@ -2383,30 +2492,40 @@ class SED_2D:
             label = self.template_name
 
         # interpolate mags onto common wavelength grid
-        #all_wavs = np.concatenate([wavs_arr_ for wavs_arr_ in wavs_arr])
-        wavs_interp = wavs_arr[0] #np.linspace(np.min(all_wavs), np.max(all_wavs), 10_000)
+        # all_wavs = np.concatenate([wavs_arr_ for wavs_arr_ in wavs_arr])
+        wavs_interp = wavs_arr[
+            0
+        ]  # np.linspace(np.min(all_wavs), np.max(all_wavs), 10_000)
         # each draw generally has its own redshift, so its observed-frame
         # wavelength grid doesn't exactly span wavs_interp; don't extrapolate
         # past a draw's own coverage (extrapolating across the steep Lyman
         # break slope shoots to zero/negative flux, i.e. +inf/nan AB mag at
         # the edges) - mark those points nan instead and combine nan-safely
-        mags_interp = np.array([
-            interp1d(
-                wavs,
-                mags,
-                bounds_error=False,
-                fill_value=np.nan,
-            )(wavs_interp)
-            for wavs, mags in zip(wavs_arr, mags_arr)
-        ])
+        mags_interp = np.array(
+            [
+                interp1d(
+                    wavs,
+                    mags,
+                    bounds_error=False,
+                    fill_value=np.nan,
+                )(wavs_interp)
+                for wavs, mags in zip(wavs_arr, mags_arr)
+            ]
+        )
 
         # determine 16th, 50th and 84th percentiles of the interpolated mags
         mags_16 = np.nanpercentile(mags_interp, 16, axis=0)
         mags_50 = np.nanpercentile(mags_interp, 50, axis=0)
         mags_84 = np.nanpercentile(mags_interp, 84, axis=0)
-        #breakpoint()
+        # breakpoint()
         plot = ax.plot(wavs_interp.value, mags_50, label=label, **plot_kwargs)
-        ax.fill_between(wavs_interp.value, mags_16, mags_84, alpha=0.5, color=plot[0].get_color())
+        ax.fill_between(
+            wavs_interp.value,
+            mags_16,
+            mags_84,
+            alpha=0.5,
+            color=plot[0].get_color(),
+        )
 
         if annotate:
             ax.set_xlabel(
@@ -2418,7 +2537,8 @@ class SED_2D:
             )
             ax.set_ylabel(
                 funcs.label_fluxes(
-                    mag_units, True if mag_units != u.ABmag and log_fluxes else False
+                    mag_units,
+                    True if mag_units != u.ABmag and log_fluxes else False,
                 )
             )
             ax.legend(**legend_kwargs)
@@ -2463,27 +2583,54 @@ class SED_2D:
             If the per-draw mock photometry lengths, depths,
             `min_flux_pc_err`, or flux units are not all identical.
         """
-        mock_phot_arr = [sed.create_mock_photometry(*args, **kwargs) for sed in self.SED_arr]
-        assert all([len(mock_phot) == len(mock_phot_arr[0]) for mock_phot in mock_phot_arr]), \
-            galfind_logger.critical(
-                f"Mock photometry lengths are not the same for all SEDs in {self}!"
-            )
-        assert all([all([mock_phot.depths[i] == mock_phot_arr[0].depths[i] for i in range(len(mock_phot))]) for mock_phot in mock_phot_arr]), \
-            galfind_logger.critical(
-                f"Mock photometry depths are not the same for all SEDs in {self}!"
-            )
-        assert all([getattr(mock_phot, "min_flux_pc_err") == getattr(mock_phot_arr[0], "min_flux_pc_err") for mock_phot in mock_phot_arr]), \
-            galfind_logger.critical(
-                f"Mock photometry min_flux_pc_err are not the same for all SEDs in {self}!"
-            )
-        assert all([getattr(mock_phot, "flux").unit == getattr(mock_phot_arr[0], "flux").unit for mock_phot in mock_phot_arr]), \
-            galfind_logger.critical(
-                f"Mock photometry flux units are not the same for all SEDs in {self}!"
-            )
+        mock_phot_arr = [
+            sed.create_mock_photometry(*args, **kwargs) for sed in self.SED_arr
+        ]
+        assert all(
+            [
+                len(mock_phot) == len(mock_phot_arr[0])
+                for mock_phot in mock_phot_arr
+            ]
+        ), galfind_logger.critical(
+            f"Mock photometry lengths are not the same for all SEDs in {self}!"
+        )
+        assert all(
+            [
+                all(
+                    [
+                        mock_phot.depths[i] == mock_phot_arr[0].depths[i]
+                        for i in range(len(mock_phot))
+                    ]
+                )
+                for mock_phot in mock_phot_arr
+            ]
+        ), galfind_logger.critical(
+            f"Mock photometry depths are not the same for all SEDs in {self}!"
+        )
+        assert all(
+            [
+                getattr(mock_phot, "min_flux_pc_err")
+                == getattr(mock_phot_arr[0], "min_flux_pc_err")
+                for mock_phot in mock_phot_arr
+            ]
+        ), galfind_logger.critical(
+            f"Mock photometry min_flux_pc_err are not the same for "
+            f"all SEDs in {self}!"
+        )
+        assert all(
+            [
+                getattr(mock_phot, "flux").unit
+                == getattr(mock_phot_arr[0], "flux").unit
+                for mock_phot in mock_phot_arr
+            ]
+        ), galfind_logger.critical(
+            f"Mock photometry flux units are not the same for all "
+            f"SEDs in {self}!"
+        )
         # weighted stack of the mock photometry fluxes and errors
-        mock_phot_fluxes = np.array([
-            mock_phot.flux.value for mock_phot in mock_phot_arr
-        ])
+        mock_phot_fluxes = np.array(
+            [mock_phot.flux.value for mock_phot in mock_phot_arr]
+        )
         # make median flux array
         median_fluxes = np.median(mock_phot_fluxes, axis=0)
         self.mock_photometry = Mock_Photometry(
@@ -2493,4 +2640,3 @@ class SED_2D:
             mock_phot_arr[0].min_flux_pc_err,
         )
         return self.mock_photometry
-    

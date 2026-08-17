@@ -1,7 +1,6 @@
-
 import pytest
 
-from galfind import SED_code, Catalogue, Multiple_Filter, LePhare
+from galfind.catalogues import Catalogue
 
 # def test_sed_fitter_init(sed_fitter):
 #     assert isinstance(sed_fitter, SED_code)
@@ -17,6 +16,7 @@ from galfind import SED_code, Catalogue, Multiple_Filter, LePhare
 # def test_cat_lephare_loaded(cat_lephare_loaded):
 #     assert isinstance(cat_lephare_loaded, Catalogue)
 #     assert len(cat_lephare_loaded) > 0
+
 
 @pytest.mark.requires_data
 def test_cat_custom_lephare_loaded(cat_custom_lephare_loaded):

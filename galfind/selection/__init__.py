@@ -24,3 +24,29 @@ other derived quantities.
 from .grid import Grid_2D
 from .completeness import Completeness, Catalogue_Completeness, Completeness_2D
 from .contamination import Contamination
+from .Selector import (
+    Redshift_Bin_Selector,
+    EPOCHS_Selector,
+    Redwards_Lya_Detect_Selector,
+    Selector,
+    Depth_Region_Selector,
+    Brown_Dwarf_Selector,
+    Mask_Selector,
+    EPOCHS_unmasked_criteria,
+)
+
+__all__ = [
+    "Grid_2D",
+    "Completeness",
+    "Catalogue_Completeness",
+    "Completeness_2D",
+    "Contamination",
+    "Redshift_Bin_Selector",
+    "EPOCHS_Selector",
+    "Redwards_Lya_Detect_Selector",
+    "Selector",
+    "Depth_Region_Selector",
+    "Brown_Dwarf_Selector",
+    "Mask_Selector",
+    "EPOCHS_unmasked_criteria",
+]

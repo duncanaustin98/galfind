@@ -6,27 +6,46 @@ photometric bandpasses with SVO Filter Profile Service integration.
 
 from __future__ import annotations
 
-import astropy.units as u
-import numpy as np
-import os
-from astroquery.svo_fps import SvoFps
-from copy import deepcopy
 import json
-import matplotlib.pyplot as plt
-from matplotlib.colors import Normalize
-from typing import List, Tuple, Union, Optional, NoReturn, TYPE_CHECKING
+import os
+from copy import deepcopy
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    List,
+    NoReturn,
+    Optional,
+    Tuple,
+    Union,
+)
+
+import astropy.units as u
 import matplotlib.patheffects as pe
+import matplotlib.pyplot as plt
+import numpy as np
+from astroquery.svo_fps import SvoFps
+from matplotlib.colors import Normalize
 
 if TYPE_CHECKING:
-    from . import Facility, Instrument, Data
+    from . import Data, Facility, Instrument
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from .. import galfind_logger, config, instr_to_name_dict
+from .. import config, galfind_logger
 from ..utils import useful_funcs_austind as funcs
-from .Instrument import Facility, Instrument, ACS_WFC, WFC3_IR, NIRCam, MIRI, JWST, HST  # noqa: F401
+from .Instrument import (  # noqa: F401
+    ACS_WFC,
+    HST,
+    JWST,
+    MIRI,
+    WFC3_IR,
+    Facility,
+    Instrument,
+    NIRCam,
+)
 
 
 class Filter:
@@ -84,7 +103,8 @@ class Filter:
         assert len(wav) == len(trans)
         if isinstance(instrument, str):
             instrument = [
-                instr for instr in Instrument.__subclasses__()
+                instr
+                for instr in Instrument.__subclasses__()
                 if instr.__name__ == instrument
             ]
             assert len(instrument) == 1
@@ -147,29 +167,42 @@ class Filter:
         try:
             filter_profile = SvoFps.get_transmission_data(full_name)
         except Exception as e:
-            err_message = f"{full_name} is not a valid SvoFps filter! Exception={e}"
+            err_message = (
+                f"{full_name} is not a valid SvoFps filter! Exception={e}"
+            )
             galfind_logger.critical(err_message)
-            raise(Exception(err_message))
+            raise (Exception(err_message))
         wav = np.array(filter_profile["Wavelength"])
         trans = np.array(filter_profile["Transmission"])
         if SVO_facility_name is None or SVO_instr_name is None:
-            instr = [instr for instr in Instrument.__subclasses__() if instr.__name__ == instrument][0]()
+            instr = [
+                instr
+                for instr in Instrument.__subclasses__()
+                if instr.__name__ == instrument
+            ][0]()
             if SVO_facility_name is None:
                 SVO_facility_name = instr.facility.SVO_name
             if SVO_instr_name is None:
                 SVO_instr_name = instr.SVO_name
         try:
+            error_msg = (
+                f"'{SVO_facility_name}/{SVO_instr_name}' is not a valid "
+                "facility/instrument combination!"
+            )
             properties = SvoFps.data_from_svo(
                 query={
                     "Facility": SVO_facility_name,
                     "Instrument": SVO_instr_name,
                 },
-                error_msg=f"'{SVO_facility_name}/{SVO_instr_name}' is not a valid facility/instrument combination!",
+                error_msg=error_msg,
             )
         except Exception as e:
-            err_message = f"Could not retrieve properties for {SVO_facility_name}/{SVO_instr_name}! Exception={e}"
+            err_message = (
+                f"Could not retrieve properties for "
+                f"{SVO_facility_name}/{SVO_instr_name}! Exception={e}"
+            )
             galfind_logger.critical(err_message)
-            raise(Exception(err_message))
+            raise (Exception(err_message))
         properties = properties[properties["filterID"] == full_name]
         wav *= u.Unit(str(np.array(properties["WavelengthUnit"])[0]))
 
@@ -251,7 +284,7 @@ class Filter:
 
     def __eq__(self, other):
         # ensure types are the same
-        if type(self) != type(other):
+        if type(self) is not type(other):
             return False
         # ensure both have the same attribute keys
         elif not all(
@@ -307,12 +340,13 @@ class Filter:
 
     @property
     def facility_name(self) -> str:
-        """`str`: Class name of the facility this filter's instrument belongs to."""
+        """`str`: Class name of the facility this filter's instrument
+        belongs to."""
         return self.instrument.facility.__class__.__name__
 
     @staticmethod
     def _get_facility_instrument_filt(
-        filt_name: str
+        filt_name: str,
     ) -> Tuple[str, str, str, str, str]:
         # determine facility and instrument names of filter string
         split_str = filt_name.split("/")
@@ -334,15 +368,15 @@ class Filter:
                 for instr in [instr() for instr in Instrument.__subclasses__()]
                 if filt in instr.filt_names
             ]
-            assert len(instruments_with_filt) == 1, \
-                galfind_logger.critical(
-                    f"Could not determine unique instrument from band name {filt}"
-                )
+            assert len(instruments_with_filt) == 1, galfind_logger.critical(
+                f"Could not determine unique instrument from band name {filt}"
+            )
             instrument = instruments_with_filt[0]
             facility = instrument.facility.__class__.__name__
         if isinstance(instrument, str):
             instrument = [
-                instr for instr in Instrument.__subclasses__()
+                instr
+                for instr in Instrument.__subclasses__()
                 if instr.__name__ == instrument
             ]
             if len(instrument) != 1:
@@ -351,10 +385,16 @@ class Filter:
                 raise Exception(err_message)
             else:
                 instrument = instrument[0]()
-        # determine instrument and facility SVO names
+        # determine instrument and facility SVO names
         SVO_facility_name = instrument.facility.SVO_name
         SVO_instr_name = instrument.SVO_name
-        return facility, instrument.__class__.__name__, filt, SVO_facility_name, SVO_instr_name
+        return (
+            facility,
+            instrument.__class__.__name__,
+            filt,
+            SVO_facility_name,
+            SVO_instr_name,
+        )
 
     @staticmethod
     def _make_new_filt(
@@ -368,22 +408,23 @@ class Filter:
                 try:
                     filt = filt()
                 except Exception as e:
-                    err_message = f"Please instantiate filter class {repr(filt)}! Exception={e}"
+                    err_message = (
+                        f"Please instantiate filter class {repr(filt)}! "
+                        f"Exception={e}"
+                    )
                     galfind_logger.critical(err_message)
-                    raise(Exception(err_message))
+                    raise (Exception(err_message))
             else:
                 err_message = f"filt={repr(filt)} is not a Filter!"
                 galfind_logger.critical(err_message)
-                raise(Exception(err_message))
+                raise (Exception(err_message))
         elif isinstance(filt, Filter):
             pass
         else:
             raise TypeError()
         # print warning if filter already included
         if filt in current_filt:
-            already_included_warning = (
-                f"{repr(filt)} duplicated, not adding"
-            )
+            already_included_warning = f"{repr(filt)} duplicated, not adding"
             galfind_logger.warning(already_included_warning)
             # warnings.warn(UserWarning(already_included_warning))
             return None
@@ -468,7 +509,7 @@ class Filter:
         trans = np.concatenate(([0.0], self.trans, [0.0])) * trans_scaling
         # plot the filter profile
         ax.fill_between(wavs, 0.0, trans, color=colour, alpha=0.6)
-        line, = ax.plot(
+        (line,) = ax.plot(
             wavs, trans, color="black", lw=2, label=self.filt_name
         )  # cmap[np.where(self.bands == band)])
         if label:
@@ -477,7 +518,7 @@ class Filter:
                 np.max(trans) + label_offset,
                 self.filt_name,
                 ha="center",
-                fontsize = label_fontsize,
+                fontsize=label_fontsize,
                 path_effects=[pe.withStroke(linewidth=3, foreground="w")],
             )
         if annotate:
@@ -499,7 +540,7 @@ class Filter:
             )
         if save:
             if save_name is None:
-                save_name = title.replace(' ', '_')
+                save_name = title.replace(" ", "_")
             if not save_name.endswith(f".{fmt}"):
                 save_name += f".{fmt}"
             if save_dir is None:
@@ -567,7 +608,16 @@ class Tophat_Filter(Filter):
             .to(u.dimensionless_unscaled)
             .value
         )
-        wav = list(np.linspace(lower_wav.to(u.AA).value, upper_wav.to(u.AA).value, n_elements)) * u.AA
+        wav = (
+            list(
+                np.linspace(
+                    lower_wav.to(u.AA).value,
+                    upper_wav.to(u.AA).value,
+                    n_elements,
+                )
+            )
+            * u.AA
+        )
         trans = list(np.full(len(wav), throughput))
         properties = {
             **properties,
@@ -656,6 +706,7 @@ class J(Tophat_Filter):
             resolution=resolution,
         )
 
+
 class mUV(Tophat_Filter):
     def __init__(
         self, throughput: float = 1.0, resolution: u.Quantity = 1.0 * u.AA
@@ -704,7 +755,7 @@ class Multiple_Filter:
     @classmethod
     def from_facilities(
         cls: Type[Self],
-        facility_arr = List[Union[str, Facility]],
+        facility_arr=List[Union[str, Facility]],
         excl_bands: Union[
             str,
             Filter,
@@ -715,7 +766,8 @@ class Multiple_Filter:
         sort_order: str = "ascending",
         keep_suffix: str = "All",
     ) -> Self:
-        """Construct a `Multiple_Filter` combining filters from several facilities.
+        """Construct a `Multiple_Filter` combining filters from
+        several facilities.
 
         Parameters
         ----------
@@ -749,7 +801,6 @@ class Multiple_Filter:
             else:
                 filterset += filterset_
         return filterset
-
 
     @classmethod
     def from_facility(
@@ -838,7 +889,8 @@ class Multiple_Filter:
         sort_order: str = "ascending",
         keep_suffix: str = "All",
     ) -> Self:
-        """Construct a `Multiple_Filter` combining filters from several instruments.
+        """Construct a `Multiple_Filter` combining filters from
+        several instruments.
 
         Parameters
         ----------
@@ -888,7 +940,8 @@ class Multiple_Filter:
         sort_order: str = "ascending",
         keep_suffix: Union[str, List[str]] = "All",
     ) -> Self:
-        """Construct a `Multiple_Filter` containing all filters of an instrument.
+        """Construct a `Multiple_Filter` containing all filters of an
+        instrument.
 
         Retrieves the list of available filters for `instrument` from
         `origin`, excluding any named in `excl_bands` and keeping only
@@ -936,7 +989,8 @@ class Multiple_Filter:
             pass
         elif isinstance(instrument, str):
             instrument = [
-                instr for instr in Instrument.__subclasses__()
+                instr
+                for instr in Instrument.__subclasses__()
                 if instr.__name__ == instrument
             ]
             assert len(instrument) == 1
@@ -947,13 +1001,12 @@ class Multiple_Filter:
         # belonging to the specific instrument if not already
         excl_bands = cls._get_name_from_filt(excl_bands)
         excl_bands_facility_instrument_filt = [
-            Filter._get_facility_instrument_filt(filt)
-            for filt in excl_bands
+            Filter._get_facility_instrument_filt(filt) for filt in excl_bands
         ]
         excl_bands = [
-            excl_band_facility_instrument_filt[2]
-            for excl_band_facility_instrument_filt in excl_bands_facility_instrument_filt
-            if excl_band_facility_instrument_filt[1] == instrument.__class__.__name__
+            fif[2]
+            for fif in excl_bands_facility_instrument_filt
+            if fif[1] == instrument.__class__.__name__
         ]
         # make keep_suffix a list of strings if not already
         if isinstance(keep_suffix, str):
@@ -966,11 +1019,13 @@ class Multiple_Filter:
                     instrument=instrument.SVO_name,
                 )
             except Exception as e:
-                err_message = "Could not retrieve filter list from SVO for " + \
-                    f"{instrument.facility.SVO_name}/{instrument.SVO_name}! " + \
-                    f"Exception={e}"
+                err_message = (
+                    "Could not retrieve filter list from SVO for "
+                    + f"{instrument.facility.SVO_name}/{instrument.SVO_name}! "
+                    + f"Exception={e}"
+                )
                 galfind_logger.critical(err_message)
-                raise(Exception(err_message))
+                raise (Exception(err_message))
             # only include filters from the requested instrument
             filter_list = filter_list[
                 np.array(
@@ -981,22 +1036,33 @@ class Multiple_Filter:
                 )
                 == instrument.__class__.__name__
             ]
-            # only include filters without an underscore in the name
+            # only include filters without an underscore in the name
             filter_list = filter_list[
-                ~np.array(["_" in filt_name.split("/")[-1].split(".")[-1]
-                for filt_name in filter_list["filterID"]])
+                ~np.array(
+                    [
+                        "_" in filt_name.split("/")[-1].split(".")[-1]
+                        for filt_name in filter_list["filterID"]
+                    ]
+                )
             ]
             filters = np.array(
                 [
                     Filter.from_SVO(
                         instrument.facility.__class__.__name__,
                         instrument.__class__.__name__,
-                        filt_ID.replace(f"{instrument.facility.__class__.__name__}/{instrument.__class__.__name__}.", ""),
-                        SVO_facility_name = instrument.facility.SVO_name,
-                        SVO_instr_name = instrument.SVO_name,
+                        filt_ID.replace(
+                            f"{instrument.facility.__class__.__name__}/{instrument.__class__.__name__}.",
+                            "",
+                        ),
+                        SVO_facility_name=instrument.facility.SVO_name,
+                        SVO_instr_name=instrument.SVO_name,
                     )
                     for filt_ID in np.array(filter_list["filterID"])
-                    if filt_ID.replace(f"{instrument.facility.__class__.__name__}/{instrument.__class__.__name__}.", "") not in excl_bands
+                    if filt_ID.replace(
+                        f"{instrument.facility.__class__.__name__}/{instrument.__class__.__name__}.",
+                        "",
+                    )
+                    not in excl_bands
                     and (
                         any(filt_ID.endswith(suffix) for suffix in keep_suffix)
                         or "All" in keep_suffix
@@ -1023,25 +1089,37 @@ class Multiple_Filter:
             self.iter += 1
             return band
 
-    def __getitem__(self, i: Union[int, slice, str, list, np.ndarray]) -> Union[Filter, List[Filter]]:
+    def __getitem__(
+        self, i: Union[int, slice, str, list, np.ndarray]
+    ) -> Union[Filter, List[Filter]]:
         if isinstance(i, (int, slice)):
             return self.filters[i]
         elif isinstance(i, str):
-            return list(np.array(self.filters)[[index for index, filt in enumerate(self) if filt.filt_name == i]])[0]
+            return list(
+                np.array(self.filters)[
+                    [
+                        index
+                        for index, filt in enumerate(self)
+                        if filt.filt_name == i
+                    ]
+                ]
+            )[0]
         elif isinstance(i, (list, np.ndarray)):
             # if all(isinstance(j, int) for j in i):
             #     # convert to boolean array
 
             if isinstance(i, list):
-                return Multiple_Filter(list(np.array(self.filters)[np.array(i)]))
+                return Multiple_Filter(
+                    list(np.array(self.filters)[np.array(i)])
+                )
             else:
                 return Multiple_Filter(list(np.array(self.filters)[i]))
         else:
             raise (
                 TypeError(
-                    f"i={i} in {self.__class__.__name__}.__getitem__" + \
-                    f" has type={type(i)} which is not in " + \
-                    "[int, slice, str, list, np.ndarray]"
+                    f"i={i} in {self.__class__.__name__}.__getitem__"
+                    + f" has type={type(i)} which is not in "
+                    + "[int, slice, str, list, np.ndarray]"
                 )
             )
 
@@ -1075,7 +1153,8 @@ class Multiple_Filter:
         if not isinstance(other, list):
             other = [other]
         # if list elements include Multiple_Filter objects,
-        # flatten the Multiple_Filter objects to make a list of types (Filter, str)
+        # flatten the Multiple_Filter objects to make a list of types
+        (Filter, str)
         other = self._flatten_multi_filters(other)
         # populate array of filters to remove
         remove_filt_names = []
@@ -1083,9 +1162,13 @@ class Multiple_Filter:
             remove = True
             if isinstance(filt, str):
                 # extract facility, instrument and filter name from string
-                facility, instrument, filt, SVO_facility_name, SVO_instr_name = (
-                    Filter._get_facility_instrument_filt(filt)
-                )
+                (
+                    facility,
+                    instrument,
+                    filt,
+                    SVO_facility_name,
+                    SVO_instr_name,
+                ) = Filter._get_facility_instrument_filt(filt)
                 if filt not in self.filt_names or filt in remove_filt_names:
                     remove = False
                 else:
@@ -1135,18 +1218,27 @@ class Multiple_Filter:
         """Function to print summary of Instrument class
 
         Returns:
-            str: Summary containing facility, instrument name and filter set included in the instrument
+            str: Summary containing facility, instrument name and filter
+                set included in the instrument
         """
         output_str = funcs.line_sep
         output_str += "MULTIPLE_FILTER\n"
         output_str += funcs.band_sep
+        instr_to_name_dict = {
+            name: globals()[name]()
+            for name in self.instrument_name.split("+")
+            if name != "UserDefined"
+        }
         for i, instrument in enumerate(self.instrument_name.split("+")):
             if i != 0:
                 output_str += funcs.band_sep
             if instrument != "UserDefined":
-                output_str += f"FACILITY: {instr_to_name_dict[instrument].facility.__class__.__name__}\n"
+                facility_name = instr_to_name_dict[
+                    instrument
+                ].facility.__class__.__name__
+                output_str += f"FACILITY: {facility_name}\n"
             else:
-                output_str += f"FACILITY: UserDefined\n"
+                output_str += "FACILITY: UserDefined\n"
             output_str += f"INSTRUMENT: {instrument}\n"
             instr_filt = []
             for filt in self:
@@ -1157,7 +1249,8 @@ class Multiple_Filter:
                         continue
                 elif filt.instrument.__class__.__name__ == instrument:
                     instr_filt.extend([filt])
-            output_str += f"FILTERS: {str([f'{band.filt_name}' for band in instr_filt])}\n"
+            filt_names = [f"{band.filt_name}" for band in instr_filt]
+            output_str += f"FILTERS: {str(filt_names)}\n"
         # could also include PSF path and correction factors here
         output_str += funcs.line_sep
         return output_str
@@ -1185,14 +1278,18 @@ class Multiple_Filter:
     @property
     def instrument_name(self) -> str:
         """
-        Returns the name of the instrument(s) associated with the bands in the current object.
+        Returns the name of the instrument(s) associated with the bands in
+        the current object.
 
-        This method retrieves all possible instrument names from the configuration,
-        identifies the unique instrument names from the bands in the current object,
+        This method retrieves all possible instrument names from the
+        configuration,
+        identifies the unique instrument names from the bands in the
+        current object,
         and returns a concatenated string of these names in ascending order.
 
         Returns:
-            str: A concatenated string of unique instrument names in ascending wavelength order.
+            str: A concatenated string of unique instrument names in
+                ascending wavelength order.
 
         Raises:
             NotImplementedError: If the sort order is not "ascending".
@@ -1231,14 +1328,18 @@ class Multiple_Filter:
     @property
     def facility_name(self) -> str:
         """
-        Returns the name of the facility/facilities associated with the bands in the current object.
+        Returns the name of the facility/facilities associated with the
+        bands in the current object.
 
-        This method retrieves all possible facility names from the configuration,
-        identifies the unique facility names from the bands in the current object,
+        This method retrieves all possible facility names from the
+        configuration,
+        identifies the unique facility names from the bands in the current
+        object,
         and returns a concatenated string of these names in ascending order.
 
         Returns:
-            str: A concatenated string of unique facility names in ascending wavelength order.
+            str: A concatenated string of unique facility names in
+                ascending wavelength order.
 
         Raises:
             NotImplementedError: If the sort order is not "ascending".
@@ -1279,17 +1380,20 @@ class Multiple_Filter:
 
     @property
     def instrument_names(self) -> List[str]:
-        """`list` of `str`: Instrument class name for each filter in this filter set."""
+        """`list` of `str`: Instrument class name for each filter in
+        this filter set."""
         return [band.instrument_name for band in self]
 
     @property
     def facility_names(self) -> List[str]:
-        """`list` of `str`: Facility class name for each filter in this filter set."""
+        """`list` of `str`: Facility class name for each filter in this
+        filter set."""
         return [band.facility_name for band in self]
 
     @property
     def band_wavelengths(self):
-        """`astropy.units.Quantity`: Central wavelengths of the filters in this filter set, in Angstrom."""
+        """`astropy.units.Quantity`: Central wavelengths of the filters
+        in this filter set, in Angstrom."""
         # Central wavelengths
         return (
             np.array(
@@ -1328,7 +1432,8 @@ class Multiple_Filter:
     def _flatten_multi_filters(
         filters: List[Union[str, Filter, Multiple_Filter]],
     ) -> List[Filter]:
-        # if list elements include Multiple_Filter objects, flatten the Multiple_Filter objects to make a list of (Filter, str)
+        # if list elements include Multiple_Filter objects, flatten
+        # the Multiple_Filter objects to make a list of (Filter, str)
         _other = [
             filt for filt in filters if not isinstance(filt, Multiple_Filter)
         ]
@@ -1353,14 +1458,13 @@ class Multiple_Filter:
         if not isinstance(other, list):
             other = [other]
         # if list elements include Multiple_Filter objects,
-        # flatten the Multiple_Filter objects to make a list of types (Filter, str)
+        # flatten the Multiple_Filter objects to make a list of types
+        (Filter, str)
         other = Multiple_Filter._flatten_multi_filters(other)
         # populate array of new filters
         new_filters = []
         for i, val in enumerate(other):
-            new_filt = Filter._make_new_filt(
-                current_bands + new_filters, val
-            )
+            new_filt = Filter._make_new_filt(current_bands + new_filters, val)
             if new_filt is not None:
                 new_filters.extend([new_filt])
         # print warning if no new filters to add
@@ -1464,14 +1568,14 @@ class Multiple_Filter:
         for i, (band, colour) in enumerate(zip(self, colours)):
             band.plot(
                 ax,
-                wav_units = wav_units,
-                trans_scaling = trans_scaling,
+                wav_units=wav_units,
+                trans_scaling=trans_scaling,
                 colour=colour,
                 label=label,
-                label_offset = label_offset + (label_offset / 2) * (-1) ** i,
-                label_fontsize = label_fontsize,
+                label_offset=label_offset + (label_offset / 2) * (-1) ** i,
+                label_fontsize=label_fontsize,
                 show=False,
-                save=False
+                save=False,
             )
         if annotate:
             ax.set_title(f"{self.instrument_name} filters")
@@ -1503,7 +1607,8 @@ class Multiple_Filter:
 
 
 class UVJ(Multiple_Filter):
-    """`Multiple_Filter` filter set of the rest-frame U, V and J top-hat filters.
+    """`Multiple_Filter` filter set of the rest-frame U,
+    V and J top-hat filters.
 
     Convenience filter set combining `U`, `V` and `J`, used e.g. to
     compute rest-frame UVJ colours for galaxy classification.
@@ -1515,11 +1620,5 @@ class UVJ(Multiple_Filter):
         ``"ascending"``.
     """
 
-    def __init__(
-        self: Self,
-        sort_order: str = "ascending"
-    ):
-        super().__init__(
-            [U(), V(), J()],
-            sort_order=sort_order
-        )
+    def __init__(self: Self, sort_order: str = "ascending"):
+        super().__init__([U(), V(), J()], sort_order=sort_order)

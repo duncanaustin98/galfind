@@ -3,20 +3,23 @@
 """Photometry across a set of filters.
 
 Stores per-filter flux densities, flux uncertainties and optional depths, with
-utilities for indexing, error propagation, Monte Carlo flux scattering, and plotting.
+utilities for indexing, error propagation, Monte Carlo flux scattering,
+and plotting.
 """
 
 from __future__ import annotations
 
-from copy import deepcopy
-import matplotlib.pyplot as plt
 from abc import ABC
+from copy import deepcopy
+from typing import TYPE_CHECKING, Any, Dict, List, NoReturn, Optional, Union
+
 import astropy.units as u
-from astropy.utils.masked import Masked
 import matplotlib.patheffects as pe
+import matplotlib.pyplot as plt
 import numpy as np
+from astropy.utils.masked import Masked
 from numpy.typing import NDArray
-from typing import TYPE_CHECKING, Union, Optional, List, Dict, Any, NoReturn
+
 if TYPE_CHECKING:
     pass
 try:
@@ -25,8 +28,8 @@ except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
 from .. import galfind_logger
-from ..utils import useful_funcs_austind as funcs
 from ..imaging.Filter import Filter, Multiple_Filter
+from ..utils import useful_funcs_austind as funcs
 
 
 class Photometry:
@@ -45,7 +48,8 @@ class Photometry:
         `filterset`.
     flux_errs : `astropy.units.Quantity` or `astropy.utils.masked.Masked`
         Uncertainty on `flux` for each filter.
-    depths : `dict` of {`str`: `astropy.units.Magnitude`}, `astropy.units.Magnitude`, or `None`
+    depths : `dict` of {`str`: `astropy.units.Magnitude`},
+        `astropy.units.Magnitude`, or `None`
         Limiting depth for each filter, in ABmag. If given as a `dict`
         keyed by filter name, it is converted internally to an array
         ordered to match `filterset`. May be `None` if depths are not
@@ -85,34 +89,38 @@ class Photometry:
         self.flux = flux
         self.flux_errs = flux_errs
         if isinstance(depths, dict):
-            assert all(filt_name in depths.keys() for filt_name in filterset.filt_names), \
-                galfind_logger.critical(
-                    f"not all {filterset.filt_names} in {depths.keys()=}"
-                )
-           
+            assert all(
+                filt_name in depths.keys()
+                for filt_name in filterset.filt_names
+            ), galfind_logger.critical(
+                f"not all {filterset.filt_names} in {depths.keys()=}"
+            )
+
             depths = [depths[filt.filt_name] for filt in filterset]
-            assert all(depth.unit == u.ABmag for depth in depths), \
-                galfind_logger.critical(
-                    f"not all depths are in ABmag: {depths=}"
-                )
+            assert all(
+                depth.unit == u.ABmag for depth in depths
+            ), galfind_logger.critical(
+                f"not all depths are in ABmag: {depths=}"
+            )
             depths = np.array([depth.value for depth in depths]) * u.ABmag
-            
+
         self.depths = depths
         if self.depths is not None:
-            assert self.depths.unit == u.ABmag, \
-                galfind_logger.critical(
-                    f"{depths.unit=} != 'ABmag'"
-                )
+            assert self.depths.unit == u.ABmag, galfind_logger.critical(
+                f"{depths.unit=} != 'ABmag'"
+            )
         assert all(
             len(self.filterset) == len(getattr(self, name))
-            for name in ["flux", "flux_errs", "depths"] 
-            if getattr(self, name) is not None), \
-                galfind_logger.critical(
-                    f"Not all ['flux', 'flux_errs', 'depths'] are {len(self.filterset)=} or None!"
-                )
+            for name in ["flux", "flux_errs", "depths"]
+            if getattr(self, name) is not None
+        ), galfind_logger.critical(
+            "Not all ['flux', 'flux_errs', 'depths'] are "
+            f"{len(self.filterset)=} or None!"
+        )
 
     def __repr__(self) -> str:
-        """Return the official string representation of the Photometry object."""
+        """Return the official string representation of the Photometry
+        object."""
         n_bands = len(self.filterset)
         return f"{self.__class__.__name__}({n_bands} bands)"
 
@@ -124,7 +132,7 @@ class Photometry:
             output_str += funcs.band_sep
         else:
             output_str += funcs.band_sep
-        #if print_instrument:
+        # if print_instrument:
         if hasattr(self, "instrument"):
             output_str += str(self.instrument)
         # Show brief summary for speed - avoid expensive min/max operations
@@ -141,14 +149,20 @@ class Photometry:
             indices = np.array(i)
         elif isinstance(i, str):
             i = i.split("+")
-            indices = np.sort(np.array([np.where( \
-                np.array(self.filterset.filt_names) \
-                == i_)[0][0] for i_ in i]))
-        else:
-            raise (
-                TypeError(
-                    f"{i=} in {__class__.__name__}.__getitem__ has invalid {type(i)=}"
+            indices = np.sort(
+                np.array(
+                    [
+                        np.where(np.array(self.filterset.filt_names) == i_)[0][
+                            0
+                        ]
+                        for i_ in i
+                    ]
                 )
+            )
+        else:
+            raise TypeError(
+                f"{i=} in {__class__.__name__}.__getitem__ has invalid "
+                f"{type(i)=}"
             )
         copy = deepcopy(self)
         copy.filterset = copy.filterset[indices]
@@ -243,7 +257,8 @@ class Photometry:
     #                         return self.depths[index]
     #             else:
     #                 err_message = (
-    #                     f"{property_name=} not available in Photometry object!"
+    #                     f"{property_name=} not available in "
+    #                     "Photometry object!"
     #                 )
     #                 galfind_logger.critical(err_message)
     #                 raise AttributeError(err_message)
@@ -252,7 +267,9 @@ class Photometry:
     #     else:  # origin == "instrument":
     #         return self.instrument.__getattr__(property_name, origin)
     #         # elif name == "full_mask":
-    #         #     return np.array([getattr(gal, "phot").mask for gal in self])
+    #         #     return np.array(
+    #         #         [getattr(gal, "phot").mask for gal in self]
+    #         #     )
 
     @property
     def wav(self):
@@ -263,8 +280,12 @@ class Photometry:
         `astropy.units.Quantity`
             Array of per-filter central wavelengths, in Angstrom.
         """
-        return np.array([filt.WavelengthCen.to(u.AA).value \
-            for filt in self.filterset]) * u.AA
+        return (
+            np.array(
+                [filt.WavelengthCen.to(u.AA).value for filt in self.filterset]
+            )
+            * u.AA
+        )
 
     # @classmethod
     # def from_fits_cat(cls, fits_cat_row, instrument, cat_creator):
@@ -309,10 +330,14 @@ class Photometry:
             List[Union[str, Filter, Multiple_Filter, Self]],
         ],
     ) -> Self:
-        if isinstance(other, tuple(Filter.__subclasses__())) or isinstance(other, Filter):
+        if isinstance(other, tuple(Filter.__subclasses__())) or isinstance(
+            other, Filter
+        ):
             filterset_copy = deepcopy(self.filterset)
             filterset_copy -= other
-            old_index = np.where(np.array(self.filterset.filt_names) == other.filt_name)[0][0]
+            old_index = np.where(
+                np.array(self.filterset.filt_names) == other.filt_name
+            )[0][0]
             self.filterset = filterset_copy
             new_fluxes = np.delete(self.flux, old_index)
             new_flux_errs = np.delete(self.flux_errs, old_index)
@@ -322,7 +347,9 @@ class Photometry:
             self.depths = new_depths
         return self
 
-    def crop(self: Type[Self], indices: Union[List[int], NDArray[int]]) -> Self:
+    def crop(
+        self: Type[Self], indices: Union[List[int], NDArray[int]]
+    ) -> Self:
         """Remove the filters at the given indices from the photometry.
 
         Builds a deep copy of `filterset` with the specified indices
@@ -355,7 +382,7 @@ class Photometry:
         wav_units: u.Unit = u.AA,
         mag_units: u.Unit = u.Jy,
         plot_errs: Dict[str, bool] = {"x": False, "y": True},
-        #annotate=True,
+        # annotate=True,
         uplim_sigma: Optional[float] = 2.0,
         auto_scale: bool = True,
         errorbar_kwargs: Dict[str, Any] = {
@@ -372,7 +399,7 @@ class Photometry:
         return_extra: bool = False,
         log_scale: bool = False,
     ):
-        """Plot the photometry as an errorbar plot of flux (or magnitude) vs. wavelength.
+        """Plot photometry as errorbar plot of flux/magnitude vs wavelength.
 
         Converts the stored flux and central wavelengths to the requested
         plotting units, optionally treats low-significance bands as upper
@@ -446,7 +473,7 @@ class Photometry:
             `astropy.units.ABmag`, or if the fixed upper-limit arrow
             size (in sigma) is not smaller than `uplim_sigma`.
         """
-        #breakpoint()
+        # breakpoint()
         if log_scale:
             assert mag_units != u.ABmag, galfind_logger.critical(
                 f"Cannot log scale {mag_units=} == 'ABmag'"
@@ -461,14 +488,17 @@ class Photometry:
         if uplim_sigma is None:
             uplims = list(np.full(len(self.flux), False))
             if plot_errs["y"]:
-                yerr = np.array(
-                    funcs.convert_mag_err_units(
-                        self.wav,
-                        self.flux,
-                        [self.flux_errs, self.flux_errs],
-                        mag_units,
+                yerr = (
+                    np.array(
+                        funcs.convert_mag_err_units(
+                            self.wav,
+                            self.flux,
+                            [self.flux_errs, self.flux_errs],
+                            mag_units,
+                        )
                     )
-                ) * mag_units
+                    * mag_units
+                )
             else:
                 yerr = None
         else:
@@ -482,14 +512,17 @@ class Photometry:
                     "spectral flux density": 1.5,
                 }[str(u.get_physical_type(mag_units))]
             assert uplim_sigma_arrow < uplim_sigma, galfind_logger.critical(
-                f"uplim_sigma_arrow = {uplim_sigma_arrow} < uplim_sigma = {uplim_sigma}"
+                f"uplim_sigma_arrow = {uplim_sigma_arrow} < uplim_sigma = "
+                f"{uplim_sigma}"
             )
             # calculate upper limits based on depths
             galfind_logger.warning(
-                f"This will not work if {self.__class__.__name__ =} != 'Photometry_obs'"
+                f"This will not work if {self.__class__.__name__ =} != "
+                "'Photometry_obs'"
             )
             uplims = [True if SNR < uplim_sigma else False for SNR in self.SNR]
-            # set photometry to uplim_sigma for the data to be plotted as upper limits
+            # set photometry to uplim_sigma for data to be plotted as
+            # upper limits
             uplim_indices = [
                 i for i, is_uplim in enumerate(uplims) if is_uplim
             ]
@@ -631,7 +664,7 @@ class Photometry:
                         upper_ylim = np.max(mags_to_plot) * 1.05
             try:
                 ax.set_ylim(lower_ylim, upper_ylim)
-            except:
+            except Exception:
                 pass
 
         if mag_units == u.ABmag:
@@ -653,7 +686,7 @@ class Photometry:
             return plot, wavs_to_plot, mags_to_plot, yerr, uplims
         else:
             return plot
-    
+
     def scatter_fluxes(
         self: Self,
         n_scatter: int = 1,
@@ -684,17 +717,19 @@ class Photometry:
         AssertionError
             If `flux` is in ABmag units.
         """
-        assert self.flux.unit != u.ABmag, \
-            galfind_logger.critical(
-                f"{self.flux.unit=} == 'ABmag'"
-            )
+        assert self.flux.unit != u.ABmag, galfind_logger.critical(
+            f"{self.flux.unit=} == 'ABmag'"
+        )
         galfind_logger.debug("Finished assertion")
-        scattered_fluxes = np.array(
-            [
-                np.random.normal(flux, err, n_scatter)
-                for flux, err in zip(self.flux.value, self.flux_errs.value)
-            ]
-        ).T * self.flux.unit
+        scattered_fluxes = (
+            np.array(
+                [
+                    np.random.normal(flux, err, n_scatter)
+                    for flux, err in zip(self.flux.value, self.flux_errs.value)
+                ]
+            ).T
+            * self.flux.unit
+        )
         if update:
             self.flux = scattered_fluxes[0]
         return scattered_fluxes
@@ -722,7 +757,9 @@ class Photometry:
         """
         scattered_fluxes = self.scatter_fluxes(n_scatter)
         galfind_logger.debug("Made phot matrix")
-        scattered_phot = self._make_phot_from_scattered_fluxes(scattered_fluxes, n_scatter)
+        scattered_phot = self._make_phot_from_scattered_fluxes(
+            scattered_fluxes, n_scatter
+        )
         galfind_logger.debug("Constructed Photometry objects")
         if len(scattered_phot) == 1:
             return scattered_phot[0]
@@ -730,9 +767,7 @@ class Photometry:
             return scattered_phot
 
     def _make_phot_from_scattered_fluxes(
-        self: Self,
-        scattered_fluxes: Masked[NDArray[float]], 
-        n_scatter: int
+        self: Self, scattered_fluxes: Masked[NDArray[float]], n_scatter: int
     ) -> List[Photometry]:
         return [
             Photometry(
@@ -743,7 +778,7 @@ class Photometry:
             )
             for i in range(n_scatter)
         ]
-    
+
     def _update_errs_from_depths(
         self: Self,
         min_flux_pc_err: float,
@@ -751,21 +786,29 @@ class Photometry:
         # calculate 1σ depths and convert to Jy
         one_sig_depths_Jy = self.depths.to(u.Jy) / 5
 
-        assert min_flux_pc_err >= 0., galfind_logger.critical(f"Negative {min_flux_pc_err=}<0")
+        assert min_flux_pc_err >= 0.0, galfind_logger.critical(
+            f"Negative {min_flux_pc_err=}<0"
+        )
         # apply min_flux_pc_err criteria
         # TODO: Retain the flux mask in flux errors if there is one
-        self.flux_errs = np.array(
-            [
-                depth
-                if depth > flux * min_flux_pc_err / 100
-                else flux * min_flux_pc_err / 100
-                for flux, depth in zip(self.flux.value, one_sig_depths_Jy.value)
-            ]
-        ) * u.Jy
+        self.flux_errs = (
+            np.array(
+                [
+                    depth
+                    if depth > flux * min_flux_pc_err / 100
+                    else flux * min_flux_pc_err / 100
+                    for flux, depth in zip(
+                        self.flux.value, one_sig_depths_Jy.value
+                    )
+                ]
+            )
+            * u.Jy
+        )
 
 
 class Multiple_Photometry(ABC):
-    """Collection of `Photometry` objects built from parallel per-source input arrays.
+    """Collection of `Photometry` objects built from parallel
+    per-source input arrays.
 
     Parameters
     ----------
@@ -834,7 +877,7 @@ class Multiple_Photometry(ABC):
 
 
 class Mock_Photometry(Photometry):
-    """Simulated (mock) photometry for a single source, with flux errors derived from specified depths.
+    """Mock photometry with flux errors from specified depths.
 
     Parameters
     ----------
@@ -842,7 +885,7 @@ class Mock_Photometry(Photometry):
         The set of filters the mock photometry is defined in.
     flux : `astropy.units.Quantity` or `astropy.units.Magnitude`
         Input (noiseless) flux for each filter.
-    depths : `list` of `float`, `numpy.ndarray` of `float`, or `astropy.units.Magnitude`
+    depths : `list` of `float`, `numpy.ndarray`, or `astropy.units.Magnitude`
         5σ limiting depths for each filter. Assumed to be in ABmag; if
         not already an `astropy.units.Magnitude` in ABmag, ABmag units
         are applied directly.
@@ -874,7 +917,7 @@ class Mock_Photometry(Photometry):
         # add astropy units of ABmag if depths are not already
         try:
             assert depths.unit == u.ABmag
-        except:
+        except Exception:
             depths *= u.ABmag
         # calculate errors from ABmag depths
         flux_errs = self.flux_errs_from_depths(flux, depths, min_flux_pc_err)
@@ -883,7 +926,7 @@ class Mock_Photometry(Photometry):
 
     @staticmethod
     def flux_errs_from_depths(flux, depths, min_flux_pc_err):
-        """Derive per-filter flux errors from 5σ ABmag depths, with a minimum fractional error floor.
+        """Derive flux errors from 5σ ABmag depths with minimum error floor.
 
         Parameters
         ----------

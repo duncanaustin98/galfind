@@ -142,187 +142,34 @@ from .utils import useful_funcs_austind
 from .utils import utils
 from .visualization import figs
 from .utils import decorators
-from .photometry import SExtractor, Photutils
-from .utils import Masking, Depths
 
-from .imaging.PSF import PSF_Base, PSF_Cutout
-from .imaging.Instrument import (
-    Facility, JWST, HST, Paranal, Spitzer, Euclid, CFHT, Subaru,
-    Instrument, ACS_SBC, ACS_WFC, WFC3_IR, NIRCam, MIRI, VISTA, NISP, VIS, IRAC, MegaCam, HSC
-)
-instr_to_name_dict = {name: globals()[name]() for name in json.loads(config.get("Other", "INSTRUMENT_NAMES"))}
-from .imaging.Filter import Filter, Multiple_Filter, Tophat_Filter, U, V, J
+# all_filt_names will be computed at the end of this file after all imports
 
-# sort bands blue -> red based on central wavelength
-all_filt_names = [filt.filt_name for filt in sorted(Multiple_Filter.from_instruments \
-    (list(instr_to_name_dict.values())), \
-    key=lambda band: band.WavelengthCen.to(u.AA).value)]
-config.set("Other", "ALL_BANDS", json.dumps(all_filt_names))
+# Package-level exports:
+# Import classes from their respective subpackages, e.g.:
+#   from galfind.catalogues import Catalogue
+#   from galfind.sed_fitting import EAZY, SED_code
+#   from galfind.selection import Redshift_Bin_Selector
+__all__ = [
+    "config",
+    "galfind_logger",
+    "astropy_cosmo",
+    "wav_lyman_lim",
+    "all_filt_names",
+    "useful_funcs_austind",
+    "utils",
+    "figs",
+    "decorators",
+]
 
-from .visualization.PDF import PDF, SED_fit_PDF, Redshift_PDF, PDF_nD
-
-from .imaging.Data import Band_Data_Base, Band_Data, Stacked_Band_Data, Multiple_Band_Data_Base, Data
-from .visualization.Cutout import Cutout_Base, Band_Cutout, Band_Cutout_Base, Stacked_Band_Cutout, RGB, Stacked_RGB, Multiple_Band_Cutout, Multiple_RGB, Catalogue_Cutouts
-
-from .photometry.Photometry import Photometry, Multiple_Photometry, Mock_Photometry
-from .photometry.Photometry_obs import Photometry_obs, Multiple_Photometry_obs
-from .photometry.Photometry_rest import Photometry_rest
-from .sed_fitting.SED_result import SED_result, Galaxy_SED_results, Catalogue_SED_results
-
-from .sed_fitting.SED_codes import SED_code
-from .sed_fitting.LePhare import LePhare
-from .sed_fitting.EAZY import EAZY # Failed to `import dust_attenuation`
-from .sed_fitting.Bagpipes import Bagpipes
-from .sed_fitting.Brown_Dwarf_Fitter import Template_Fitter, Brown_Dwarf_Fitter
-
-# don't do Bagpipes or LePhare for now
-# sed_code_to_name_dict = {
-#     sed_code_name: globals()[sed_code_name]()
-#     for sed_code_name in [subcls.__name__ for subcls in SED_code.__subclasses__()]
-#     if sed_code_name not in ["LePhare", "Bagpipes"]
-# }
-
-from .galaxy.Galaxy import Galaxy
-
-from .catalogues.Catalogue_Base import Catalogue_Base
-from .catalogues.Multiple_Catalogue import Combined_Catalogue
-#from .imaging.Multiple_Data import Multiple_Data
-from .catalogues.Catalogue import Catalogue, Catalogue_Creator
-from .galaxy.Galaxy_Creator import Galaxy_Creator
-from .spectra.SED import (
-    SED,
-    SED_rest,
-    SED_obs,
-    Mock_SED_rest,
-    Mock_SED_obs,
-    SED_2D,
-    Mock_SED_template_set,
-    Mock_SED_rest_template_set,
-    Mock_SED_obs_template_set,
-)
-
-from .selection.Selector import (
-    Selector,
-    ID_Selector,
-    Multiple_Selector,
-    Data_Selector,
-    Photometry_Selector,
-    SED_fit_Selector,
-    Morphology_Selector,
-    Region_Selector,
-    Ds9_Region_Selector,
-    Depth_Region_Selector,
-    Multiple_Data_Selector,
-    Multiple_Photometry_Selector,
-    Multiple_SED_fit_Selector,
-    Unmasked_Band_Selector,
-    Unmasked_Bands_Selector,
-    Unmasked_Instrument_Selector,
-    Min_Band_Selector,
-    Min_Unmasked_Band_Selector,
-    Min_Instrument_Unmasked_Band_Selector,
-    Mask_Selector,
-    Multiple_Mask_Selector,
-    Sextractor_Band_Radius_Selector,
-    Sextractor_Bands_Radius_Selector,
-    Sextractor_Instrument_Radius_Selector,
-    Band_SNR_Selector,
-    Colour_Selector,
-    Kokorev24_LRD_red1_Selector,
-    Kokorev24_LRD_red2_Selector,
-    Kokorev24_LRD_Selector,
-    Bluewards_Lya_Non_Detect_Selector,
-    Bluewards_LyLim_Non_Detect_Selector,
-    Redwards_Lya_Detect_Selector,
-    Lya_Band_Selector,
-    Chi_Sq_Lim_Selector,
-    Chi_Sq_Diff_Selector,
-    Robust_zPDF_Selector,
-    Re_Selector,
-    EPOCHS_Selector,
-    EPOCHS_unmasked_criteria,
-    Redshift_Limit_Selector,
-    Redshift_Bin_Selector,
-    Rest_Frame_Property_Limit_Selector,
-    Rest_Frame_Property_Bin_Selector,
-    Rest_Frame_Property_Kwarg_Selector,
-    Brown_Dwarf_Selector,
-    Hainline24_TY_Brown_Dwarf_Selector_1,
-    Hainline24_TY_Brown_Dwarf_Selector_2,
-    Redshift_Selector,
-    Stacked_Blue_Lya_Non_Detect_Selector,
-    Compactness_Selector,
-)
-
-from .spectra.Emission_lines import Emission_line, wav_lyman_alpha, line_diagnostics
-from .spectra import IGM_attenuation
-from .utils import lyman_alpha_damping_wing
-from .spectra.DLA import DLA
-from .spectra.Dust_Attenuation import Dust_Law, Calzetti00, SMC, Reddy15, Salim18, Modified_Calzetti00, Power_Law_Dust, M99, Reddy18, AUV_from_beta
-from .spectra.Spectrum import (
-    Spectral_Catalogue,
-    Spectrum,
-    NIRSpec,
-    Spectral_Instrument,
-    Spectral_Filter,
-    Spectral_Grating,
-)
-from .utils.MCMC import (
-    Prior,
-    Flat_Prior,
-    Gaussian_Prior,
-    Priors,
-    MCMC_Fitter,
-    Schechter_Mag_Fitter,
-    Schechter_Lum_Fitter,
-    DPL_Mag_Fitter,
-    DPL_Lum_Fitter,
-    Linear_Fitter,
-    Power_Law_Fitter,
-)
-from .number_density_functions.ndf import (
-    Base_Number_Density_Function,
-    Number_Density_Function,
-)  # UVLFs, mass functions, etc
-
-from .properties.Property_calculator import (
-    Property_Calculator_Base,
-    Property_Calculator,
-    Photometry_Property_Loader,
-    Band_SNR_Loader,
-    Redshift_Extractor,
-    Ext_Src_Property_Calculator,
-    Custom_SED_Property_Extractor,
-    Custom_Morphology_Property_Extractor,
-    Property_Multiplier,
-    Property_Divider,
-    Re_kpc_Calculator,
-    Surface_Density_Calculator,
-)
-
-from .properties.Rest_frame_properties import (
-    Rest_Frame_Property_Calculator,
-    UV_Beta_Calculator,
-    UV_Dust_Attenuation_Calculator,
-    Lya_Break_Strength_Calculator,
-    mUV_Calculator,
-    MUV_Calculator,
-    LUV_Calculator,
-    SFR_UV_Calculator,
-    Fesc_From_Beta_Calculator,
-    Optical_Continuum_Calculator,
-    Optical_Line_EW_Calculator,
-    Dust_Attenuation_From_UV_Calculator,
-    Line_Dust_Attenuation_From_UV_Calculator,
-    Optical_Line_Flux_Calculator,
-    Optical_Line_Luminosity_Calculator,
-    Ndot_Ion_Calculator,
-    Xi_Ion_Calculator,
-    SFR_Halpha_Calculator,
-)
-
-from .properties.Morphology import Morphology_Result, Morphology_Fitter, Galfit_Fitter
-
-from .SFH import SFH
-
-from .imaging.NIRCam_reduction import Raw_JWST_Data
+# Compute all_filt_names from available Instrument subclasses (after all imports)
+from .imaging.Instrument import Instrument
+all_filt_names = []
+for instr_cls in useful_funcs_austind.all_subclasses(Instrument):
+    try:
+        instr_inst = instr_cls()
+        if hasattr(instr_inst, 'filt_names'):
+            all_filt_names.extend(instr_inst.filt_names)
+    except Exception:
+        pass
+all_filt_names = list(set(all_filt_names))

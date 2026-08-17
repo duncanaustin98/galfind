@@ -2,74 +2,81 @@
 # -*- coding: utf-8 -*-
 """Galaxy catalogue with FITS I/O and catalogue-level operations.
 
-Provides Catalogue class as a collection of Galaxy objects with FITS read/write,
+Provides Catalogue class as a collection of Galaxy objects with FITS
+read/write,
 cropping, cross-matching, concatenation, and visualization capabilities.
 """
 
 from __future__ import annotations
 
 import glob
+import itertools
 import json
+import logging
 import os
 from copy import deepcopy
 from pathlib import Path
-import logging
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    List,
+    NoReturn,
+    Optional,
+    Tuple,
+    Union,
+)
 
 import astropy.units as u
 import h5py
 import numpy as np
-from astropy.table import Table
 from astropy.coordinates import SkyCoord
-from numpy.typing import NDArray
 from astropy.io import fits
 from astropy.table import Table, join, vstack
-import itertools
 from astropy.utils.masked import Masked
+from numpy.typing import NDArray
 from tqdm import tqdm
-from typing import Union, Tuple, Any, List, Dict, Callable, Optional, NoReturn, TYPE_CHECKING
 
 from galfind.imaging.PSF import PSF_Base
+
 if TYPE_CHECKING:
     from . import (
-        Filter,
-        Band_Data_Base,
-        Selector,
-        Multiple_Filter,
-        Data,
-        Band_Cutout_Base,
         Band_Cutout,
-        Region_Selector,
+        Band_Cutout_Base,
+        Band_Data_Base,
+        Data,
+        Filter,
         Mask_Selector,
+        Multiple_Filter,
+        Region_Selector,
+        Selector,
     )
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from .. import (
-    EAZY,  # noqa F501
-    Depths,
-    NIRCam,
-    MIRI,
-    Multiple_Filter,
-    Photometry_obs,
-    config,
-    galfind_logger,
+from .. import config, galfind_logger
+from ..galaxy.Galaxy import Galaxy
+from ..imaging.Data import Data
+from ..imaging.Filter import Multiple_Filter
+from ..imaging.Instrument import MIRI, NIRCam
+from ..photometry.Photometry_obs import Photometry_obs
+from ..sed_fitting.EAZY import EAZY  # noqa F501
+from ..sed_fitting.SED_codes import SED_code
+from ..spectra.Spectrum import Spectral_Catalogue
+from ..utils import Depths
+from ..utils import useful_funcs_austind as funcs
+from ..visualization.Cutout import (
+    Multiple_Band_Cutout,
+    Multiple_RGB,
+    Stacked_RGB,
 )
 from .Catalogue_Base import Catalogue_Base
-from ..utils import useful_funcs_austind as funcs
-from ..sed_fitting.SED_codes import SED_code
-from ..visualization.Cutout import Multiple_Band_Cutout, Multiple_RGB, Stacked_RGB
-from ..imaging.Data import Data
-from ..galaxy.Galaxy import Galaxy
-from ..spectra.Spectrum import Spectral_Catalogue
 
 
-def load_IDs_Table(
-    cat: Table,
-    ID_label: str,
-    **kwargs
-) -> List[int]:
+def load_IDs_Table(cat: Table, ID_label: str, **kwargs) -> List[int]:
     """Extract the galaxy ID column from a catalogue table.
 
     Parameters
@@ -88,11 +95,12 @@ def load_IDs_Table(
     """
     return list(cat[ID_label])
 
+
 def load_skycoords_Table(
     cat: Table,
     skycoords_labels: Dict[str, str],
     skycoords_units: Dict[str, u.Unit],
-    **kwargs
+    **kwargs,
 ) -> SkyCoord:
     """Build a `SkyCoord` array from RA/Dec columns of a catalogue table.
 
@@ -104,10 +112,12 @@ def load_skycoords_Table(
         Mapping with keys ``"RA"`` and ``"DEC"`` giving the names of the
         right ascension and declination columns in `cat`.
     skycoords_units : `dict`
-        Mapping with keys ``"RA"`` and ``"DEC"`` giving the `astropy.units.Unit`
+        Mapping with keys ``"RA"`` and ``"DEC"`` giving the
+        `astropy.units.Unit`
         of the corresponding columns.
     **kwargs
-        Unused, accepted for a consistent ``load_skycoords_func`` call signature.
+        Unused, accepted for a consistent ``load_skycoords_func`` call
+        signature.
 
     Returns
     -------
@@ -120,10 +130,11 @@ def load_skycoords_Table(
     dec_unit = skycoords_units["DEC"]
     return SkyCoord(ra=ra, dec=dec, unit=(ra_unit, dec_unit))
 
+
 # def load_phot_Table(
-#     cat: Table, 
-#     phot_labels: List[str], 
-#     err_labels: List[str], 
+#     cat: Table,
+#     phot_labels: List[str],
+#     err_labels: List[str],
 #     **kwargs
 # ) -> Tuple[np.ndarray, np.ndarray]:
 #     assert "ZP" in kwargs.keys(), \
@@ -134,12 +145,12 @@ def load_skycoords_Table(
 #     phot_err = funcs.flux_image_to_Jy(err_cat, kwargs["ZP"])
 #     return phot, phot_err
 
+
 def phot_property_from_galfind_tab(
-    cat: Table,
-    labels: Dict[u.Quantity, List[str]],
-    **kwargs
+    cat: Table, labels: Dict[u.Quantity, List[str]], **kwargs
 ) -> np.ndarray:
-    """Load a per-band, per-aperture-diameter property from a GALFIND-format table.
+    """Load a per-band,
+    per-aperture-diameter property from a GALFIND-format table.
 
     GALFIND catalogues store one column per band with all aperture diameters
     stacked together in a single array-valued cell. This unpacks those
@@ -174,33 +185,47 @@ def phot_property_from_galfind_tab(
         )
         return {}
     else:
-        aper_diams = [label.value for label in labels.keys()] * list(labels.keys())[0].unit
+        aper_diams = [label.value for label in labels.keys()] * list(
+            labels.keys()
+        )[0].unit
         if "cat_aper_diams" not in kwargs.keys():
             galfind_logger.warning(
-                f"cat_aper_diams not in {kwargs.keys()=}! " + \
-                f"Setting to {aper_diams=}"
+                f"cat_aper_diams not in {kwargs.keys()=}! "
+                + f"Setting to {aper_diams=}"
             )
             kwargs["cat_aper_diams"] = aper_diams
         else:
-            assert isinstance(kwargs["cat_aper_diams"], u.Quantity), \
-                galfind_logger.critical(f"{type(kwargs['cat_aper_diams'])=} != u.Quantity!")
-            assert isinstance(kwargs["cat_aper_diams"].value, (list, np.ndarray)), \
-                galfind_logger.critical(f"{type(kwargs['cat_aper_diams'])=} != list!")
+            assert isinstance(
+                kwargs["cat_aper_diams"], u.Quantity
+            ), galfind_logger.critical(
+                f"{type(kwargs['cat_aper_diams'])=} != u.Quantity!"
+            )
+            assert isinstance(
+                kwargs["cat_aper_diams"].value, (list, np.ndarray)
+            ), galfind_logger.critical(
+                f"{type(kwargs['cat_aper_diams'])=} != list!"
+            )
         # load aperture diameter indices
-        aper_diam_indices = [i for i, aper_diam in enumerate(
-            kwargs["cat_aper_diams"]) if aper_diam in aper_diams]
-        assert len(aper_diam_indices) > 0, \
-            galfind_logger.critical("len(aper_diam_indices) <= 0")
+        aper_diam_indices = [
+            i
+            for i, aper_diam in enumerate(kwargs["cat_aper_diams"])
+            if aper_diam in aper_diams
+        ]
+        assert len(aper_diam_indices) > 0, galfind_logger.critical(
+            "len(aper_diam_indices) <= 0"
+        )
         # ensure labels are formatted properly
-        assert all(label == labels[aper_diams[0]] for label in labels.values()), \
-            galfind_logger.critical("All phot_labels not equal!")
+        assert all(
+            label == labels[aper_diams[0]] for label in labels.values()
+        ), galfind_logger.critical("All phot_labels not equal!")
         properties = {}
-        if "reshape_by_aper_diams" in kwargs.keys() and \
-                isinstance(kwargs["reshape_by_aper_diams"], bool):
+        if "reshape_by_aper_diams" in kwargs.keys() and isinstance(
+            kwargs["reshape_by_aper_diams"], bool
+        ):
             _properties = funcs.fits_cat_to_np(
                 cat,
                 labels[aper_diams[0]],
-                reshape_by_aper_diams = kwargs["reshape_by_aper_diams"]
+                reshape_by_aper_diams=kwargs["reshape_by_aper_diams"],
             )
         else:
             _properties = funcs.fits_cat_to_np(
@@ -212,10 +237,9 @@ def phot_property_from_galfind_tab(
             properties[aper_diam] = _properties[:, :, aper_diam_index]
         return properties
 
+
 def phot_property_from_fits(
-    cat: Table,
-    labels: Dict[u.Quantity, List[str]],
-    **kwargs
+    cat: Table, labels: Dict[u.Quantity, List[str]], **kwargs
 ) -> np.ndarray:
     """Load a per-band property from a plain (non-GALFIND) FITS table.
 
@@ -241,23 +265,33 @@ def phot_property_from_fits(
         Mapping from aperture diameter (`u.Quantity`) to `np.ndarray` of the
         requested property for that aperture diameter.
     """
-    aper_diams = [label.value for label in labels.keys()] * list(labels.keys())[0].unit
-    assert len(aper_diams) > 0, \
-        galfind_logger.critical(f"{len(aper_diams)=} <= 0")
+    aper_diams = [label.value for label in labels.keys()] * list(
+        labels.keys()
+    )[0].unit
+    assert len(aper_diams) > 0, galfind_logger.critical(
+        f"{len(aper_diams)=} <= 0"
+    )
     if "cat_aper_diams" not in kwargs.keys():
         galfind_logger.warning(
-            f"cat_aper_diams not in {kwargs.keys()=}! " + \
-            f"Setting to {aper_diams=}"
+            f"cat_aper_diams not in {kwargs.keys()=}! "
+            + f"Setting to {aper_diams=}"
         )
         kwargs["cat_aper_diams"] = aper_diams
     else:
-        assert isinstance(kwargs["cat_aper_diams"], u.Quantity), \
-            galfind_logger.critical(f"{type(kwargs['cat_aper_diams'])=} != u.Quantity!")
-        assert isinstance(kwargs["cat_aper_diams"].value, (list, np.ndarray)), \
-            galfind_logger.critical(f"{type(kwargs['cat_aper_diams'])=} != list!")
+        assert isinstance(
+            kwargs["cat_aper_diams"], u.Quantity
+        ), galfind_logger.critical(
+            f"{type(kwargs['cat_aper_diams'])=} != u.Quantity!"
+        )
+        assert isinstance(
+            kwargs["cat_aper_diams"].value, (list, np.ndarray)
+        ), galfind_logger.critical(
+            f"{type(kwargs['cat_aper_diams'])=} != list!"
+        )
     # ensure labels are formatted properly
-    assert all(label == labels[aper_diams[0]] for label in labels.values()), \
-        galfind_logger.critical("All phot_labels not equal!")
+    assert all(
+        label == labels[aper_diams[0]] for label in labels.values()
+    ), galfind_logger.critical("All phot_labels not equal!")
     # extract properties from fits table
     properties = {}
     for aper_diam in aper_diams:
@@ -265,12 +299,13 @@ def phot_property_from_fits(
             cat[labels[aper_diams[0]]].as_array()
         )
     return properties
-    
+
+
 def load_galfind_phot(
     cat: Table,
     phot_labels: Dict[u.Quantity, List[str]],
     err_labels: Dict[u.Quantity, List[str]],
-    **kwargs
+    **kwargs,
 ) -> Tuple[Dict[u.Quantity, np.ndarray], Dict[u.Quantity, np.ndarray]]:
     """Load photometric fluxes and errors from a GALFIND-format table, in Jy.
 
@@ -280,7 +315,8 @@ def load_galfind_phot(
         Catalogue table to load photometry from.
     phot_labels : `dict`
         Mapping from aperture diameter (`u.Quantity`) to the `list` of `str`
-        flux column names (one per band), as returned by e.g. `galfind_phot_labels`.
+        flux column names (one per band), as returned by e.g.
+        `galfind_phot_labels`.
     err_labels : `dict`
         Mapping from aperture diameter (`u.Quantity`) to the `list` of `str`
         flux error column names (one per band). Must have the same keys as
@@ -296,21 +332,30 @@ def load_galfind_phot(
         ``(phot, phot_err)``, each a mapping from aperture diameter
         (`u.Quantity`) to `np.ndarray` fluxes/errors in Jy.
     """
-    assert phot_labels.keys() == err_labels.keys(), \
-        galfind_logger.critical(f"{phot_labels.keys()=} != {err_labels.keys()=}!")
-    assert "ZP" in kwargs.keys(), \
-        galfind_logger.critical("ZP not in kwargs!")
-    phot = {aper_diam: funcs.flux_image_to_Jy(_phot, kwargs["ZP"]) for aper_diam, _phot \
-        in phot_property_from_galfind_tab(cat, phot_labels, **kwargs).items()}
-    phot_err = {aper_diam: funcs.flux_image_to_Jy(_phot_err, kwargs["ZP"]) for aper_diam, _phot_err \
-        in phot_property_from_galfind_tab(cat, err_labels, **kwargs).items()}
+    assert phot_labels.keys() == err_labels.keys(), galfind_logger.critical(
+        f"{phot_labels.keys()=} != {err_labels.keys()=}!"
+    )
+    assert "ZP" in kwargs.keys(), galfind_logger.critical("ZP not in kwargs!")
+    phot = {
+        aper_diam: funcs.flux_image_to_Jy(_phot, kwargs["ZP"])
+        for aper_diam, _phot in phot_property_from_galfind_tab(
+            cat, phot_labels, **kwargs
+        ).items()
+    }
+    phot_err = {
+        aper_diam: funcs.flux_image_to_Jy(_phot_err, kwargs["ZP"])
+        for aper_diam, _phot_err in phot_property_from_galfind_tab(
+            cat, err_labels, **kwargs
+        ).items()
+    }
     return phot, phot_err
+
 
 def load_phot(
     cat: Table,
     phot_labels: Dict[u.Quantity, List[str]],
     err_labels: Dict[u.Quantity, List[str]],
-    **kwargs
+    **kwargs,
 ) -> Tuple[Dict[u.Quantity, np.ndarray], Dict[u.Quantity, np.ndarray]]:
     """Load photometric fluxes and errors from a plain FITS table, in Jy.
 
@@ -337,24 +382,34 @@ def load_phot(
         ``(phot, phot_err)``, each a mapping from aperture diameter
         (`u.Quantity`) to `np.ndarray` fluxes/errors in Jy.
     """
-    assert phot_labels.keys() == err_labels.keys(), \
-        galfind_logger.critical(f"{phot_labels.keys()=} != {err_labels.keys()=}!")
-    assert "ZP" in kwargs.keys(), \
-        galfind_logger.critical("ZP not in kwargs!")
-    phot = {aper_diam: funcs.flux_image_to_Jy(_phot, kwargs["ZP"]) for aper_diam, _phot \
-        in phot_property_from_fits(cat, phot_labels, **kwargs).items()}
+    assert phot_labels.keys() == err_labels.keys(), galfind_logger.critical(
+        f"{phot_labels.keys()=} != {err_labels.keys()=}!"
+    )
+    assert "ZP" in kwargs.keys(), galfind_logger.critical("ZP not in kwargs!")
+    phot = {
+        aper_diam: funcs.flux_image_to_Jy(_phot, kwargs["ZP"])
+        for aper_diam, _phot in phot_property_from_fits(
+            cat, phot_labels, **kwargs
+        ).items()
+    }
     if "incl_errs" in kwargs.keys():
         if not kwargs["incl_errs"]:
-            phot_err = {aper_diam: np.array(list(itertools.repeat(None, len(cat)))) for aper_diam in phot_labels.keys()}
+            phot_err = {
+                aper_diam: np.array(list(itertools.repeat(None, len(cat))))
+                for aper_diam in phot_labels.keys()
+            }
             return phot, phot_err
-    phot_err = {aper_diam: funcs.flux_image_to_Jy(_phot_err, kwargs["ZP"]) for aper_diam, _phot_err \
-        in phot_property_from_fits(cat, err_labels, **kwargs).items()}
+    phot_err = {
+        aper_diam: funcs.flux_image_to_Jy(_phot_err, kwargs["ZP"])
+        for aper_diam, _phot_err in phot_property_from_fits(
+            cat, err_labels, **kwargs
+        ).items()
+    }
     return phot, phot_err
 
+
 def load_galfind_mask(
-    cat: Table,
-    mask_labels: List[str],
-    **kwargs
+    cat: Table, mask_labels: List[str], **kwargs
 ) -> np.ndarray:
     """Load a per-band masked-out flag array from a GALFIND-format table.
 
@@ -375,16 +430,13 @@ def load_galfind_mask(
         is masked out in a given band (i.e. the inverse of `mask_labels`).
     """
     mask = np.invert(
-        funcs.fits_cat_to_np(
-            cat, mask_labels, reshape_by_aper_diams=False
-        )
+        funcs.fits_cat_to_np(cat, mask_labels, reshape_by_aper_diams=False)
     )
     return mask
 
+
 def load_galfind_depths(
-    cat: Table,
-    depth_labels: Dict[u.Quantity, List[str]],
-    **kwargs
+    cat: Table, depth_labels: Dict[u.Quantity, List[str]], **kwargs
 ) -> Dict[u.Quantity, np.ndarray]:
     """Load per-band local depths from a GALFIND-format table, in AB mag.
 
@@ -394,7 +446,8 @@ def load_galfind_depths(
         Catalogue table to load depths from.
     depth_labels : `dict`
         Mapping from aperture diameter (`u.Quantity`) to the `list` of `str`
-        depth column names (one per band), as returned by e.g. `galfind_depth_labels`.
+        depth column names (one per band), as returned by e.g.
+        `galfind_depth_labels`.
     **kwargs
         Forwarded to `phot_property_from_galfind_tab`.
 
@@ -404,15 +457,21 @@ def load_galfind_depths(
         Mapping from aperture diameter (`u.Quantity`) to `np.ndarray` of
         depths in `u.ABmag` for each band.
     """
-    return {aper_diam: depth * u.ABmag for aper_diam, depth in \
-        phot_property_from_galfind_tab(cat, depth_labels, **kwargs).items()}
+    return {
+        aper_diam: depth * u.ABmag
+        for aper_diam, depth in phot_property_from_galfind_tab(
+            cat, depth_labels, **kwargs
+        ).items()
+    }
+
 
 # def load_cols_Table(
-#     cat: Table, 
-#     labels: List[str], 
+#     cat: Table,
+#     labels: List[str],
 #     **kwargs
 # ) -> np.ndarray:
 #     return funcs.fits_cat_to_np(cat, labels)
+
 
 def check_hdu_exists(cat_path: str, hdu: str) -> bool:
     """Check whether a named HDU extension exists in a FITS file.
@@ -433,11 +492,13 @@ def check_hdu_exists(cat_path: str, hdu: str) -> bool:
     hdul = fits.open(cat_path)
     return any(hdu_.name == hdu.upper() for hdu_ in hdul)
 
+
 def open_galfind_cat(
     cat_path: str,
     cat_type: str,
 ) -> Optional[Table]:
-    """Open a single extension of a GALFIND-format multi-extension FITS catalogue.
+    """Open a single extension of a GALFIND-format multi-extension
+    FITS catalogue.
 
     Parameters
     ----------
@@ -459,23 +520,26 @@ def open_galfind_cat(
     if cat_type in first_ext_keys:
         tab = Table.read(
             cat_path,
-            character_as_bytes = False,
-            memmap = True,
+            character_as_bytes=False,
+            memmap=True,
         )
     elif check_hdu_exists(cat_path, cat_type):
         tab = Table.read(
             cat_path,
-            character_as_bytes = False,
-            memmap = True,
-            hdu = cat_type,
+            character_as_bytes=False,
+            memmap=True,
+            hdu=cat_type,
         )
     else:
-        err_message = f"{cat_type=} not in {first_ext_keys} and " + \
-            f"not a valid HDU extension in {cat_path}!"
+        err_message = (
+            f"{cat_type=} not in {first_ext_keys} and "
+            + f"not a valid HDU extension in {cat_path}!"
+        )
         galfind_logger.warning(err_message)
         return None
-        
+
     return tab
+
 
 def open_galfind_hdr(cat_path: str, cat_type: str) -> Dict[str, str]:
     """Load the FITS header (metadata) of a GALFIND catalogue extension.
@@ -495,12 +559,14 @@ def open_galfind_hdr(cat_path: str, cat_type: str) -> Dict[str, str]:
     """
     return open_galfind_cat(cat_path, cat_type).meta
 
+
 def galfind_phot_labels(
-    filterset: Multiple_Filter, #Union[Multiple_Filter, List[Type[Band_Data_Base]]],
+    filterset: Multiple_Filter,
     aper_diams: u.Quantity,
-    **kwargs
+    **kwargs,
 ) -> Tuple[Dict[str, str], Dict[str, str]]:
-    """Construct GALFIND-format flux/error column names for each band and aperture diameter.
+    """Construct GALFIND-format flux/error column names for each band
+    and aperture diameter.
 
     Parameters
     ----------
@@ -519,18 +585,30 @@ def galfind_phot_labels(
         (`u.Quantity`) to the `list` of `str` flux/error column names (one
         per band in `filterset`).
     """
-    assert "min_flux_pc_err" in kwargs.keys(), \
-        galfind_logger.critical("min_flux_pc_err not in kwargs!")
-    phot_labels = {aper_diam * aper_diams.unit: [f"FLUX_APER_{filt.filt_name}_aper_corr_Jy" for filt in filterset] for aper_diam in aper_diams.value}
-    err_labels = {aper_diam * aper_diams.unit: [f"FLUXERR_APER_{filt.filt_name}_loc_depth_{str(int(kwargs['min_flux_pc_err']))}pc_Jy" for filt in filterset] for aper_diam in aper_diams.value}
+    assert "min_flux_pc_err" in kwargs.keys(), galfind_logger.critical(
+        "min_flux_pc_err not in kwargs!"
+    )
+    phot_labels = {
+        aper_diam * aper_diams.unit: [
+            f"FLUX_APER_{filt.filt_name}_aper_corr_Jy" for filt in filterset
+        ]
+        for aper_diam in aper_diams.value
+    }
+    err_labels = {
+        aper_diam * aper_diams.unit: [
+            f"FLUXERR_APER_{filt.filt_name}_loc_depth_{str(int(kwargs['min_flux_pc_err']))}pc_Jy"
+            for filt in filterset
+        ]
+        for aper_diam in aper_diams.value
+    }
     return phot_labels, err_labels
 
+
 def jaguar_phot_labels(
-    filterset: Multiple_Filter,
-    aper_diams: u.Quantity,
-    **kwargs
+    filterset: Multiple_Filter, aper_diams: u.Quantity, **kwargs
 ) -> Tuple[Dict[str, str], Dict[str, str]]:
-    """Construct JAGUAR-format flux column names for each band and aperture diameter.
+    """Construct JAGUAR-format flux column names for each band and
+    aperture diameter.
 
     Instrument-specific column-name prefixes (``NRC_``, ``MIRI_``, ``HST_``)
     are used depending on each filter's instrument. JAGUAR simulated
@@ -553,25 +631,28 @@ def jaguar_phot_labels(
         (`u.Quantity`) to the `list` of `str` flux column names (one per
         band in `filterset`) and to an empty `list` respectively.
     """
-    assert "min_flux_pc_err" in kwargs.keys(), \
-        galfind_logger.critical("min_flux_pc_err not in kwargs!")
+    assert "min_flux_pc_err" in kwargs.keys(), galfind_logger.critical(
+        "min_flux_pc_err not in kwargs!"
+    )
     phot_labels = {
         aper_diam * aper_diams.unit: [
-                f"NRC_{filt.filt_name}_fnu" if \
-                isinstance(filt.instrument, NIRCam) \
-                else f"MIRI_{filt.filt_name}_fnu" if \
-                isinstance(filt.instrument, MIRI) \
-                else f"HST_{filt.filt_name}_fnu" \
-                for filt in filterset
-            ] for aper_diam in aper_diams.value
+            f"NRC_{filt.filt_name}_fnu"
+            if isinstance(filt.instrument, NIRCam)
+            else f"MIRI_{filt.filt_name}_fnu"
+            if isinstance(filt.instrument, MIRI)
+            else f"HST_{filt.filt_name}_fnu"
+            for filt in filterset
+        ]
+        for aper_diam in aper_diams.value
     }
-    err_labels = {aper_diam * aper_diams.unit: [] for aper_diam in aper_diams.value}
+    err_labels = {
+        aper_diam * aper_diams.unit: [] for aper_diam in aper_diams.value
+    }
     return phot_labels, err_labels
 
+
 def scattered_phot_labels(
-    filterset: Multiple_Filter,
-    aper_diams: u.Quantity,
-    **kwargs
+    filterset: Multiple_Filter, aper_diams: u.Quantity, **kwargs
 ) -> Tuple[Dict[str, str], Dict[str, str]]:
     """Construct flux/error column names for scattered-photometry catalogues.
 
@@ -590,13 +671,28 @@ def scattered_phot_labels(
     `tuple` of `dict`
         ``(phot_labels, err_labels)``, each mapping aperture diameter
         (`u.Quantity`) to the `list` of `str` ``<instrument>.<band>_scattered``
-        / ``<instrument>.<band>_err`` column names (one per band in `filterset`).
+        / ``<instrument>.<band>_err`` column names (one per band in
+        `filterset`).
     """
-    assert "min_flux_pc_err" in kwargs.keys(), \
-        galfind_logger.critical("min_flux_pc_err not in kwargs!")
-    phot_labels = {aper_diam * aper_diams.unit: [f"{filt.instrument_name}.{filt.filt_name}_scattered" for filt in filterset] for aper_diam in aper_diams.value}
-    err_labels = {aper_diam * aper_diams.unit: [f"{filt.instrument_name}.{filt.filt_name}_err" for filt in filterset] for aper_diam in aper_diams.value}
+    assert "min_flux_pc_err" in kwargs.keys(), galfind_logger.critical(
+        "min_flux_pc_err not in kwargs!"
+    )
+    phot_labels = {
+        aper_diam * aper_diams.unit: [
+            f"{filt.instrument_name}.{filt.filt_name}_scattered"
+            for filt in filterset
+        ]
+        for aper_diam in aper_diams.value
+    }
+    err_labels = {
+        aper_diam * aper_diams.unit: [
+            f"{filt.instrument_name}.{filt.filt_name}_err"
+            for filt in filterset
+        ]
+        for aper_diam in aper_diams.value
+    }
     return phot_labels, err_labels
+
 
 # def scattered_phot_labels(
 #     filterset: Multiple_Filter,
@@ -605,14 +701,22 @@ def scattered_phot_labels(
 # ) -> Tuple[Dict[str, str], Dict[str, str]]:
 #     assert "min_flux_pc_err" in kwargs.keys(), \
 #         galfind_logger.critical("min_flux_pc_err not in kwargs!")
-#     phot_labels = {aper_diam * aper_diams.unit: [f"{filt.filt_name}_scattered" for filt in filterset] for aper_diam in aper_diams.value}
-#     err_labels = {aper_diam * aper_diams.unit: [f"{filt.filt_name}_err" for filt in filterset] for aper_diam in aper_diams.value}
+#     phot_labels = {
+#         aper_diam * aper_diams.unit: [
+#             f"{filt.filt_name}_scattered" for filt in filterset
+#         ]
+#         for aper_diam in aper_diams.value
+#     }
+#     err_labels = {
+#         aper_diam * aper_diams.unit: [
+#             f"{filt.filt_name}_err" for filt in filterset
+#         ]
+#         for aper_diam in aper_diams.value
+#     }
 #     return phot_labels, err_labels
 
-def galfind_mask_labels(
-    filterset: Multiple_Filter,
-    **kwargs
-) -> List[str]:
+
+def galfind_mask_labels(filterset: Multiple_Filter, **kwargs) -> List[str]:
     """Construct GALFIND-format ``unmasked_<band>`` column names.
 
     Parameters
@@ -629,12 +733,12 @@ def galfind_mask_labels(
     """
     return [f"unmasked_{filt_name}" for filt_name in filterset.filt_names]
 
+
 def galfind_depth_labels(
-    filterset: Multiple_Filter,
-    aper_diams: u.Quantity,
-    **kwargs
+    filterset: Multiple_Filter, aper_diams: u.Quantity, **kwargs
 ) -> Dict[str, str]:
-    """Construct GALFIND-format ``loc_depth_<band>`` column names per aperture diameter.
+    """Construct GALFIND-format ``loc_depth_<band>`` column names per
+    aperture diameter.
 
     Parameters
     ----------
@@ -651,16 +755,19 @@ def galfind_depth_labels(
         Mapping from aperture diameter (`u.Quantity`) to the `list` of `str`
         ``loc_depth_<band>`` column names (one per band in `filterset`).
     """
-    return {aper_diam * aper_diams.unit: [f"loc_depth_{filt_name}" \
-        for filt_name in filterset.filt_names] \
-        for aper_diam in aper_diams.value}
+    return {
+        aper_diam * aper_diams.unit: [
+            f"loc_depth_{filt_name}" for filt_name in filterset.filt_names
+        ]
+        for aper_diam in aper_diams.value
+    }
+
 
 def scattered_depth_labels(
-    filterset: Multiple_Filter,
-    aper_diams: u.Quantity,
-    **kwargs
+    filterset: Multiple_Filter, aper_diams: u.Quantity, **kwargs
 ) -> Dict[str, str]:
-    """Construct ``loc_depth_<instrument>.<band>`` column names per aperture diameter.
+    """Construct ``loc_depth_<instrument>.<band>`` column names per
+    aperture diameter.
 
     Parameters
     ----------
@@ -675,21 +782,20 @@ def scattered_depth_labels(
     -------
     `dict`
         Mapping from aperture diameter (`u.Quantity`) to the `list` of `str`
-        ``loc_depth_<instrument>.<band>`` column names (one per band in `filterset`).
+        ``loc_depth_<instrument>.<band>`` column names (one per band in
+        `filterset`).
     """
     return {
-        aper_diam * aper_diams.unit:
-        [
+        aper_diam * aper_diams.unit: [
             f"loc_depth_{filt.instrument_name}.{filt.filt_name}"
             for filt in filterset
         ]
         for aper_diam in aper_diams.value
     }
 
+
 def load_bool_Table(
-    tab: Table,
-    select_names: List[str],
-    **kwargs
+    tab: Table, select_names: List[str], **kwargs
 ) -> Dict[str, List[bool]]:
     """Load a set of boolean selection-flag columns from a table.
 
@@ -700,7 +806,8 @@ def load_bool_Table(
     select_names : `list` of `str`
         Names of the boolean columns to load.
     **kwargs
-        Unused, accepted for a consistent ``load_selection_func`` call signature.
+        Unused, accepted for a consistent ``load_selection_func`` call
+        signature.
 
     Returns
     -------
@@ -709,10 +816,8 @@ def load_bool_Table(
     """
     return {name: list(tab[name]) for name in select_names}
 
-def galfind_selection_labels(
-    tab: Table,
-    **kwargs
-) -> List[str]:
+
+def galfind_selection_labels(tab: Table, **kwargs) -> List[str]:
     """Get the names of all boolean (selection-flag) columns in a table.
 
     Parameters
@@ -720,7 +825,8 @@ def galfind_selection_labels(
     tab : `Table`
         Table (typically the ``SELECTION`` extension) to inspect.
     **kwargs
-        Unused, accepted for a consistent ``get_selection_labels`` call signature.
+        Unused, accepted for a consistent ``get_selection_labels`` call
+        signature.
 
     Returns
     -------
@@ -728,14 +834,18 @@ def galfind_selection_labels(
         Names of the columns in `tab` with a `bool`/`np.bool_` dtype.
     """
     # load selection names dict from header
-    return [name for name in tab.colnames if tab[name].dtype in (bool, np.bool_)]
+    return [
+        name for name in tab.colnames if tab[name].dtype in (bool, np.bool_)
+    ]
+
 
 def galfind_snr_labels(
     filterset: Multiple_Filter,
     aper_diams: u.Quantity,
     **kwargs,
 ):
-    """Construct per-band, per-aperture-diameter stacked-detection SNR column names.
+    """Construct per-band,
+    per-aperture-diameter stacked-detection SNR column names.
 
     Parameters
     ----------
@@ -750,16 +860,21 @@ def galfind_snr_labels(
     -------
     `dict`
         Mapping from aperture diameter (`u.Quantity`) to the `list` of `str`
-        (truncated) ``sigma_<band>`` column names, one per band in `filterset`.
+        (truncated) ``sigma_<band>`` column names, one per band in
+        `filterset`.
     """
     return {
         aper_diam * aper_diams.unit: [
-            funcs.truncate_colname(f"sigma_{filt.filt_name}") for filt in filterset
-        ] for aper_diam in aper_diams.value
+            funcs.truncate_colname(f"sigma_{filt.filt_name}")
+            for filt in filterset
+        ]
+        for aper_diam in aper_diams.value
     }
 
+
 class Catalogue_Creator:
-    """Factory that builds a `Catalogue` (or a single `Galaxy`) from a catalogue FITS file.
+    """Factory that builds a `Catalogue` (or a single `Galaxy`) from a
+    catalogue FITS file.
 
     Encapsulates everything needed to open a multi-extension catalogue FITS
     file and turn its rows into `Galaxy`/`Photometry_obs` objects: which
@@ -806,7 +921,8 @@ class Catalogue_Creator:
         Mapping of ``"RA"``/``"DEC"`` to their `astropy.units.Unit`. Default
         is ``{"RA": u.deg, "DEC": u.deg}``.
     load_skycoords_kwargs : `dict`, optional
-        Extra keyword arguments passed to `load_skycoords_func`. Default is ``{}``.
+        Extra keyword arguments passed to `load_skycoords_func`. Default is
+        ``{}``.
     load_phot_func : `Callable`, optional
         Function used to load photometric fluxes/errors from the ``"phot"``
         extension. Default is `load_galfind_phot`.
@@ -839,7 +955,8 @@ class Catalogue_Creator:
         Function returning the names of the selection-flag columns. Default
         is `galfind_selection_labels`.
     load_selection_kwargs : `dict`, optional
-        Extra keyword arguments passed to `load_selection_func`. Default is ``{}``.
+        Extra keyword arguments passed to `load_selection_func`. Default is
+        ``{}``.
     load_SED_result_func : `Callable`, optional
         Function used to load SED fitting results. Default is `None`.
     apply_gal_instr_mask : `bool`, optional
@@ -899,27 +1016,44 @@ class Catalogue_Creator:
         ID_label: str = "NUMBER",
         load_ID_kwargs: Dict[str, Any] = {},
         load_skycoords_func: Optional[Callable] = load_skycoords_Table,
-        skycoords_labels: Dict[str, str] = {"RA": "ALPHA_J2000", "DEC": "DELTA_J2000"},
+        skycoords_labels: Dict[str, str] = {
+            "RA": "ALPHA_J2000",
+            "DEC": "DELTA_J2000",
+        },
         skycoords_units: Dict[str, u.Unit] = {"RA": u.deg, "DEC": u.deg},
         load_skycoords_kwargs: Dict[str, Any] = {},
         load_phot_func: Callable = load_galfind_phot,
-        get_phot_labels: Callable[[Multiple_Filter], Dict[str, str]] = galfind_phot_labels,
-        load_phot_kwargs: Dict[str, Any] = {"ZP": u.Jy.to(u.ABmag), "min_flux_pc_err": 10.},
+        get_phot_labels: Callable[
+            [Multiple_Filter], Dict[str, str]
+        ] = galfind_phot_labels,
+        load_phot_kwargs: Dict[str, Any] = {
+            "ZP": u.Jy.to(u.ABmag),
+            "min_flux_pc_err": 10.0,
+        },
         load_mask_func: Optional[Callable] = load_galfind_mask,
-        get_mask_labels: Callable[[Multiple_Filter], Dict[str, str]] = galfind_mask_labels,
+        get_mask_labels: Callable[
+            [Multiple_Filter], Dict[str, str]
+        ] = galfind_mask_labels,
         load_mask_kwargs: Dict[str, Any] = {},
         load_depth_func: Optional[Callable] = load_galfind_depths,
-        get_depth_labels: Callable[[Multiple_Filter], Dict[str, str]] = galfind_depth_labels,
+        get_depth_labels: Callable[
+            [Multiple_Filter], Dict[str, str]
+        ] = galfind_depth_labels,
         load_depth_kwargs: Dict[str, Any] = {},
-        load_selection_func: Optional[Callable[[], Dict[u.Quantity, Dict[str, List[Any]]]]] = load_bool_Table,
-        get_selection_labels: Callable[[Table, List[str]], List[str]] = galfind_selection_labels,
+        load_selection_func: Optional[
+            Callable[[], Dict[u.Quantity, Dict[str, List[Any]]]]
+        ] = load_bool_Table,
+        get_selection_labels: Callable[
+            [Table, List[str]], List[str]
+        ] = galfind_selection_labels,
         load_selection_kwargs: Dict[str, Any] = {},
         load_SED_result_func: Optional[Callable] = None,
         apply_gal_instr_mask: bool = True,
         cache_fits_handle: bool = True,
         simulated: bool = False,
     ):
-        """Initialize the Catalogue_Creator with configuration for loading catalogues.
+        """Initialize the Catalogue_Creator with configuration for
+        loading catalogues.
 
         See the class docstring for detailed parameter descriptions.
         """
@@ -927,10 +1061,12 @@ class Catalogue_Creator:
         self.version = version
         self.cat_path = cat_path
         self.filterset = filterset
-        assert isinstance(aper_diams, u.Quantity), \
-            galfind_logger.critical(f"{type(aper_diams)=} != u.Quantity!")
-        assert isinstance(aper_diams.value, (list, np.ndarray)), \
-            galfind_logger.critical(f"{type(aper_diams.value)=} != list!")
+        assert isinstance(aper_diams, u.Quantity), galfind_logger.critical(
+            f"{type(aper_diams)=} != u.Quantity!"
+        )
+        assert isinstance(
+            aper_diams.value, (list, np.ndarray)
+        ), galfind_logger.critical(f"{type(aper_diams.value)=} != list!")
         self.aper_diams = aper_diams
         self.open_cat = open_cat
         self.open_hdr = open_hdr
@@ -966,15 +1102,13 @@ class Catalogue_Creator:
         # in primary header which stores the IDs
         hdr = self.open_hdr(self.cat_path, "ID")
         if "SURVEY" in hdr.keys():
-            assert hdr["SURVEY"] == self.survey, \
-                galfind_logger.critical(
-                    f"{hdr['SURVEY']=} != {self.survey=}"
-                )
+            assert hdr["SURVEY"] == self.survey, galfind_logger.critical(
+                f"{hdr['SURVEY']=} != {self.survey=}"
+            )
         if "VERSION" in hdr.keys():
-            assert hdr["VERSION"] == self.version, \
-                galfind_logger.critical(
-                    f"{hdr['VERSION']=} != {self.version=}"
-                )
+            assert hdr["VERSION"] == self.version, galfind_logger.critical(
+                f"{hdr['VERSION']=} != {self.version=}"
+            )
 
     def __del__(self: Self) -> None:
         """Close the cached FITS file handle when the object is destroyed."""
@@ -1019,7 +1153,7 @@ class Catalogue_Creator:
             data._get_phot_cat_path(),
             data.filterset,
             data.aper_diams,
-            crops = crops,
+            crops=crops,
             **kwargs,
         )
         cat_creator.data = data
@@ -1043,7 +1177,8 @@ class Catalogue_Creator:
     ) -> Catalogue:
         """Load and construct a Catalogue from the configured FITS file.
 
-        Reads the catalogue table(s), applies any configured crops, and constructs
+        Reads the catalogue table(s), applies any configured crops, and
+        constructs
         a Catalogue object with Galaxy instances. Applies PSF information and
         selection flags if available.
 
@@ -1063,22 +1198,22 @@ class Catalogue_Creator:
         `Catalogue`
             The loaded catalogue, possibly empty if load_gals is False.
         """
-        galfind_logger.info(
-            f"Making {repr(self)} catalogue!"
-        )
+        galfind_logger.info(f"Making {repr(self)} catalogue!")
         if load_gals:
-            # make array of Photometry_obs for each aperture diameter
-            galfind_logger.debug(
-                f"Loading {repr(self)} photometry!"
-            )
+            # make array of Photometry_obs for each aperture diameter
+            galfind_logger.debug(f"Loading {repr(self)} photometry!")
             # if len(extra_crops) > 0:
             #     self.load_crops(self.crops, extra_crops = extra_crops)
             IDs = self.load_IDs(cropped)
             sky_coords = self.load_skycoords(cropped)
             phot, phot_err = self.load_phot(cropped)
             depths = self.load_depths(cropped)
-            selection_flags_arr, selection_kwargs_arr = self.load_selection_flags_kwargs(cropped)
-            filterset_arr = self.load_gal_filtersets(length = len(IDs), cropped = cropped)
+            selection_flags_arr, selection_kwargs_arr = (
+                self.load_selection_flags_kwargs(cropped)
+            )
+            filterset_arr = self.load_gal_filtersets(
+                length=len(IDs), cropped=cropped
+            )
             SED_results = {}
             phot_obs_arr = [
                 {
@@ -1088,40 +1223,58 @@ class Catalogue_Creator:
                         phot_err[aper_diam][i],
                         depths[aper_diam][i],
                         aper_diam,
-                        SED_results = SED_results,
-                        psfs = psfs,
-                        simulated = self.simulated,
-                    ) for aper_diam in self.aper_diams
-                } for i in range(len(filterset_arr))
+                        SED_results=SED_results,
+                        psfs=psfs,
+                        simulated=self.simulated,
+                    )
+                    for aper_diam in self.aper_diams
+                }
+                for i in range(len(filterset_arr))
             ]
-            assert len(IDs) == len(sky_coords) == len(phot_obs_arr), \
-                galfind_logger.critical(
-                    f"{len(IDs)=} != {len(sky_coords)=} != {len(phot_obs_arr)=}!"
-                )
+            assert (
+                len(IDs) == len(sky_coords) == len(phot_obs_arr)
+            ), galfind_logger.critical(
+                f"{len(IDs)=} != {len(sky_coords)=} "
+                f"!= {len(phot_obs_arr)=}!"
+            )
             # make an array of galaxy objects to be stored in the catalogue
             galfind_logger.debug(
-                f"Loading {self.survey} {self.version} {self.cat_name} galaxies!"
+                f"Loading {self.survey} {self.version} "
+                f"{self.cat_name} galaxies!"
             )
-            #, origin_survey = self.survey
+            # , origin_survey = self.survey
             gals = [
                 Galaxy(
                     ID,
                     sky_coord,
                     phot_obs,
-                    selection_flags = selection_flags,
-                    selection_kwargs = selection_kwargs,
-                    cat_filterset = self.filterset,
-                    survey = self.survey,
-                    version = self.version,
-                    simulated = self.simulated
-                ) for ID, sky_coord, phot_obs, selection_flags, selection_kwargs in
-                zip(IDs, sky_coords, phot_obs_arr, selection_flags_arr, selection_kwargs_arr)
+                    selection_flags=selection_flags,
+                    selection_kwargs=selection_kwargs,
+                    cat_filterset=self.filterset,
+                    survey=self.survey,
+                    version=self.version,
+                    simulated=self.simulated,
+                )
+                for (
+                    ID,
+                    sky_coord,
+                    phot_obs,
+                    selection_flags,
+                    selection_kwargs,
+                ) in zip(
+                    IDs,
+                    sky_coords,
+                    phot_obs_arr,
+                    selection_flags_arr,
+                    selection_kwargs_arr,
+                )
             ]
             # if len(extra_crops) > 0:
             #     self.load_crops(self.crops)
         else:
             galfind_logger.info(
-                f"Not loading galaxies for {self.survey} {self.version} {self.cat_name} catalogue!"
+                f"Not loading galaxies for {self.survey} {self.version} "
+                f"{self.cat_name} catalogue!"
             )
             gals = []
         cat = Catalogue(gals, self)
@@ -1132,7 +1285,7 @@ class Catalogue_Creator:
             crops_performed = set()
             for crop in self._crops_to_perform:
                 galfind_logger.info(f"Performing {repr(crop)}!")
-                crop(cat, return_copy = False)
+                crop(cat, return_copy=False)
                 crops_performed.add(id(crop))
             # Only recurse if there are new crops to perform
             self.load_crops(self.crops)
@@ -1140,9 +1293,9 @@ class Catalogue_Creator:
                 id(c) in crops_performed for c in self._crops_to_perform
             ):
                 cat = self(
-                    psfs = psfs,
-                    cropped = True,
-                    load_gals = load_gals,
+                    psfs=psfs,
+                    cropped=True,
+                    load_gals=load_gals,
                 )
             else:
                 # point to data if provided
@@ -1158,12 +1311,6 @@ class Catalogue_Creator:
 
     @property
     def cat_name(self) -> str:
-        """`str`: Base name of the catalogue FITS file (no directory or extension)."""
-        #f"{meta['SURVEY']}_{meta['VERSION']}_{meta['INSTR']}"
-        return ".".join(self.cat_path.split("/")[-1].split(".")[:-1])
-
-    @property
-    def crop_name(self: Self) -> List[str]:
         """`str`: Name describing the crop(s) currently applied via `crops`."""
         return funcs.get_crop_name(self.crops)
 
@@ -1187,12 +1334,21 @@ class Catalogue_Creator:
             if self.cache_fits_handle:
                 try:
                     from astropy.io import fits
+
                     # Open FITS file once and keep it open
                     if self._fits_handle is None:
-                        self._fits_handle = fits.open(self.cat_path, memmap=True)
+                        self._fits_handle = fits.open(
+                            self.cat_path, memmap=True
+                        )
 
                     # Read the requested extension from the open handle
-                    first_ext_keys = ["ID", "sky_coord", "phot", "mask", "depths"]
+                    first_ext_keys = [
+                        "ID",
+                        "sky_coord",
+                        "phot",
+                        "mask",
+                        "depths",
+                    ]
                     if cat_type in first_ext_keys:
                         # These are typically in the primary HDU
                         hdu = self._fits_handle[0]
@@ -1201,17 +1357,21 @@ class Catalogue_Creator:
                         hdu = self._fits_handle[cat_type]
 
                     # Read with Table.read() to preserve metadata
-                    self._tab_cache[cat_type] = Table.read(hdu, format='fits')
+                    self._tab_cache[cat_type] = Table.read(hdu, format="fits")
                 except Exception as e:
                     # Fall back to default behavior if caching fails
                     galfind_logger.warning(
                         f"FITS handle caching failed for {cat_type}: {e}. "
                         f"Falling back to standard catalogue reading."
                     )
-                    self._tab_cache[cat_type] = self.open_cat(self.cat_path, cat_type)
+                    self._tab_cache[cat_type] = self.open_cat(
+                        self.cat_path, cat_type
+                    )
             else:
                 # Use the original open_cat function (default behavior)
-                self._tab_cache[cat_type] = self.open_cat(self.cat_path, cat_type)
+                self._tab_cache[cat_type] = self.open_cat(
+                    self.cat_path, cat_type
+                )
 
         return self._tab_cache[cat_type]
 
@@ -1220,7 +1380,8 @@ class Catalogue_Creator:
         cat_type: str,
         cropped: bool = True,
     ) -> Table:
-        """Load (and cache) a named extension of the catalogue, optionally cropped.
+        """Load (and cache) a named extension of the catalogue,
+        optionally cropped.
 
         Parameters
         ----------
@@ -1245,7 +1406,7 @@ class Catalogue_Creator:
                 return tab[self.crop_mask]
             else:
                 return tab
-    
+
     def load_crops(
         self: Self,
         crops: Optional[Union[Type[Selector], List[Type[Selector]]]] = None,
@@ -1254,7 +1415,8 @@ class Catalogue_Creator:
         #     List[Type[Selector]]
         # ] = [],
     ) -> None:
-        """Set the crop selector(s) to apply and (re)compute the resulting row mask.
+        """Set the crop selector(s) to apply and (
+            re)compute the resulting row mask.
 
         Normalises `crops` into `self.crops`, recomputes `self.crop_mask`
         (via `_get_crop_mask`), and, if `apply_gal_instr_mask` is `True`,
@@ -1272,7 +1434,7 @@ class Catalogue_Creator:
             self.crops = [crops]
         else:
             self.crops = crops
-        self._get_crop_mask() #extra_crops = extra_crops)
+        self._get_crop_mask()  # extra_crops = extra_crops)
         if self.apply_gal_instr_mask:
             self.make_gal_instr_mask()
 
@@ -1280,8 +1442,10 @@ class Catalogue_Creator:
     def _get_selection_kwarg_colnames(selector: Type[Selector]) -> List[str]:
         """Extract selection keyword argument column names from a Selector.
 
-        Recursively retrieves the names of all columns storing selector parameters,
-        handling both single selectors and compound Multiple_Selector instances.
+        Recursively retrieves the names of all columns storing selector
+        parameters,
+        handling both single selectors and compound Multiple_Selector
+        instances.
 
         Parameters
         ----------
@@ -1293,16 +1457,25 @@ class Catalogue_Creator:
         `list` of `str`
             Column names of format ``<selector_name>__<kwarg_name>``.
         """
-        from galfind import Multiple_Selector
+        from ..selection.Selector import Multiple_Selector
+
         kwarg_colnames = []
         if isinstance(selector, funcs.all_subclasses(Multiple_Selector)):
             for sub_selector in selector:
-                kwarg_colnames.extend(Catalogue_Creator._get_selection_kwarg_colnames(sub_selector))
+                kwarg_colnames.extend(
+                    Catalogue_Creator._get_selection_kwarg_colnames(
+                        sub_selector
+                    )
+                )
         else:
-            kwarg_colnames.extend([
-                f"{selector.name}__{kwarg_name}"
-                for kwarg_name, kwarg_dtype in zip(*selector.select_kwarg_names_dtypes)
-            ])
+            kwarg_colnames.extend(
+                [
+                    f"{selector.name}__{kwarg_name}"
+                    for kwarg_name, kwarg_dtype in zip(
+                        *selector.select_kwarg_names_dtypes
+                    )
+                ]
+            )
         return kwarg_colnames
 
     def _get_crop_mask(
@@ -1315,13 +1488,16 @@ class Catalogue_Creator:
         """Compute the boolean row mask for configured crops.
 
         Reads selection-flag columns from the SELECTION extension and computes
-        a boolean mask indicating which rows satisfy all configured crop selectors.
-        Stores crops that are not yet in the selection table for deferred application.
+        a boolean mask indicating which rows satisfy all configured crop
+        selectors.
+        Stores crops that are not yet in the selection table for deferred
+        application.
 
         Returns
         -------
         `np.ndarray` of `bool` or `None`
-            Boolean mask of shape (n_rows,) where `True` indicates rows that pass
+            Boolean mask of shape (n_rows,) where `True` indicates rows
+            that pass
             all crops. `None` if deferred crops remain.
         """
         # from . import Selector
@@ -1331,11 +1507,11 @@ class Catalogue_Creator:
         if tab is None:
             tab = self._open_tab("ID")
             self._crops_to_perform = self.crops
-        elif len(self.crops) > 0: #  + extra_crops
-            # crop table using crop dict
+        elif len(self.crops) > 0:  #  + extra_crops
+            # crop table using crop dict
             self._crops_to_perform = []
             keep_arr = []
-            for selector in self.crops: # + extra_crops:
+            for selector in self.crops:  # + extra_crops:
                 # iterate through selectors, appending all kwarg colnames
                 kwarg_colnames = self._get_selection_kwarg_colnames(selector)
                 kwarg_colnames = [
@@ -1348,13 +1524,18 @@ class Catalogue_Creator:
                         for kwarg_colname in kwarg_colnames
                     ]
                 ):
-                    keep_arr.extend([np.array(tab[selector.name]).astype(bool)])
+                    keep_arr.extend(
+                        [np.array(tab[selector.name]).astype(bool)]
+                    )
                     galfind_logger.info(
                         f"Catalogue cropped by {selector.name}"
                     )
                 else:
                     # if selector in id_crop:
-                    #     err_message = f"extra_crop = {selector.name} not in {tab.colnames=}!"
+                    #     err_message = (
+                    #         f"extra_crop = {selector.name} not "
+                    #         f"in {tab.colnames=}!"
+                    #     )
                     #     galfind_logger.critical(err_message)
                     #     raise Exception(err_message)
                     # else:
@@ -1362,7 +1543,9 @@ class Catalogue_Creator:
                     self._crops_to_perform.append(selector)
             # crop table if required
             if len(keep_arr) > 0 and len(self._crops_to_perform) == 0:
-                self.crop_mask = np.array(np.logical_and.reduce(keep_arr)).astype(bool)
+                self.crop_mask = np.array(
+                    np.logical_and.reduce(keep_arr)
+                ).astype(bool)
                 return self.crop_mask
         else:
             self._crops_to_perform = []
@@ -1372,10 +1555,7 @@ class Catalogue_Creator:
             self.crop_mask = None
         return self.crop_mask
 
-    def load_IDs(
-        self: Self,
-        cropped: bool = True
-    ) -> List[int]:
+    def load_IDs(self: Self, cropped: bool = True) -> List[int]:
         """Load the galaxy IDs from the catalogue's ``"ID"`` extension.
 
         Parameters
@@ -1391,11 +1571,9 @@ class Catalogue_Creator:
         tab = self.load_tab("ID", cropped)
         return self.load_ID_func(tab, self.ID_label, **self.load_ID_kwargs)
 
-    def load_skycoords(
-        self: Self,
-        cropped: bool = True
-    ) -> SkyCoord:
-        """Load the sky coordinates from the catalogue's ``"sky_coord"`` extension.
+    def load_skycoords(self: Self, cropped: bool = True) -> SkyCoord:
+        """Load the sky coordinates from the catalogue's
+        ``"sky_coord"`` extension.
 
         Parameters
         ----------
@@ -1410,13 +1588,18 @@ class Catalogue_Creator:
             `load_skycoords_func`.
         """
         tab = self.load_tab("sky_coord", cropped)
-        return self.load_skycoords_func(tab, self.skycoords_labels, self.skycoords_units, **self.load_skycoords_kwargs)
+        return self.load_skycoords_func(
+            tab,
+            self.skycoords_labels,
+            self.skycoords_units,
+            **self.load_skycoords_kwargs,
+        )
 
     def load_phot(
-        self: Self,
-        cropped: bool = True
+        self: Self, cropped: bool = True
     ) -> Tuple[np.ndarray, np.ndarray]:
-        """Load photometric fluxes and errors from the catalogue's ``"phot"`` extension.
+        """Load photometric fluxes and errors from the catalogue's
+        ``"phot"`` extension.
 
         Loads fluxes/errors via `load_phot_func`, optionally restricts each
         galaxy's bands to those with data (via `gal_instr_mask`, if
@@ -1437,31 +1620,49 @@ class Catalogue_Creator:
             (`u.Quantity`) to a per-galaxy list of flux/error arrays in Jy.
         """
         tab = self.load_tab("phot", cropped)
-        # load the photometric fluxes and errors in units of Jy
-        phot_labels, err_labels = self.get_phot_labels(self.filterset, self.aper_diams, **self.load_phot_kwargs)
-        phot, phot_err = self.load_phot_func(tab, phot_labels, err_labels, **self.load_phot_kwargs)
+        # load the photometric fluxes and errors in units of Jy
+        phot_labels, err_labels = self.get_phot_labels(
+            self.filterset, self.aper_diams, **self.load_phot_kwargs
+        )
+        phot, phot_err = self.load_phot_func(
+            tab, phot_labels, err_labels, **self.load_phot_kwargs
+        )
         if self.apply_gal_instr_mask:
             if cropped and self.crop_mask is not None:
                 gal_instr_mask = self.gal_instr_mask[self.crop_mask]
             else:
                 gal_instr_mask = self.gal_instr_mask
-            phot = {aper_diam: self._apply_gal_instr_mask(_phot, gal_instr_mask) for aper_diam, _phot in phot.items()}
-            phot_err = {aper_diam: self._apply_gal_instr_mask(_phot_err, gal_instr_mask) for aper_diam, _phot_err in phot_err.items()}
+            phot = {
+                aper_diam: self._apply_gal_instr_mask(_phot, gal_instr_mask)
+                for aper_diam, _phot in phot.items()
+            }
+            phot_err = {
+                aper_diam: self._apply_gal_instr_mask(
+                    _phot_err, gal_instr_mask
+                )
+                for aper_diam, _phot_err in phot_err.items()
+            }
         mask = self.load_mask(cropped)
         if mask is not None:
-            phot = {aper_diam: [Masked(gal_phot, mask=gal_mask)
-                for gal_phot, gal_mask in zip(_phot, mask)]
-                for aper_diam, _phot in phot.items()}
-            phot_err = {aper_diam: [Masked(gal_phot_err, mask=gal_mask)
-                for gal_phot_err, gal_mask in zip(_phot_err, mask)]
-                for aper_diam, _phot_err in phot_err.items()}
+            phot = {
+                aper_diam: [
+                    Masked(gal_phot, mask=gal_mask)
+                    for gal_phot, gal_mask in zip(_phot, mask)
+                ]
+                for aper_diam, _phot in phot.items()
+            }
+            phot_err = {
+                aper_diam: [
+                    Masked(gal_phot_err, mask=gal_mask)
+                    for gal_phot_err, gal_mask in zip(_phot_err, mask)
+                ]
+                for aper_diam, _phot_err in phot_err.items()
+            }
         return phot, phot_err
-    
-    def load_mask(
-        self: Self,
-        cropped: bool = True
-    ) -> Optional[NDArray[bool]]:
-        """Load the per-galaxy, per-band mask from the catalogue's ``"mask"`` extension.
+
+    def load_mask(self: Self, cropped: bool = True) -> Optional[NDArray[bool]]:
+        """Load the per-galaxy, per-band mask from the catalogue's
+        ``"mask"`` extension.
 
         Parameters
         ----------
@@ -1491,11 +1692,13 @@ class Catalogue_Creator:
         if self.load_mask_func is not None:
             mask_labels = self.get_mask_labels(self.filterset)
             try:
-                mask = self.load_mask_func(tab, mask_labels, **self.load_mask_kwargs)
+                mask = self.load_mask_func(
+                    tab, mask_labels, **self.load_mask_kwargs
+                )
             except Exception as e:
                 err_message = f"Error loading mask: {e}"
                 galfind_logger.critical(err_message)
-                raise(Exception(err_message))
+                raise (Exception(err_message))
             if self.apply_gal_instr_mask:
                 if cropped and self.crop_mask is not None:
                     gal_instr_mask = self.gal_instr_mask[self.crop_mask]
@@ -1507,10 +1710,13 @@ class Catalogue_Creator:
             galfind_logger.warning(
                 "Either load mask or mask label function not provided!"
             )
-            return None #{aper_diam: list(itertools.repeat(None, len(tab))) for aper_diam in self.aper_diams}
+            return None
+            # {aper_diam: list(itertools.repeat(None, len(tab)))
+            # for aper_diam in self.aper_diams}
 
     def load_depths(self, cropped: bool = True) -> np.ndarray:
-        """Load per-galaxy, per-band local depths from the catalogue's ``"depths"`` extension.
+        """Load per-galaxy, per-band local depths from the catalogue's
+        ``"depths"`` extension.
 
         Parameters
         ----------
@@ -1533,21 +1739,30 @@ class Catalogue_Creator:
             If `load_depth_func` raises while loading the depths.
         """
         tab = self.load_tab("depths", cropped)
-        if self.load_depth_func is not None and self.get_depth_labels is not None:
-            depth_labels = self.get_depth_labels(self.filterset, self.aper_diams)
+        if (
+            self.load_depth_func is not None
+            and self.get_depth_labels is not None
+        ):
+            depth_labels = self.get_depth_labels(
+                self.filterset, self.aper_diams
+            )
             try:
-                depths = self.load_depth_func(tab, depth_labels, **self.load_depth_kwargs)
+                depths = self.load_depth_func(
+                    tab, depth_labels, **self.load_depth_kwargs
+                )
             except Exception as e:
                 err_message = f"Error loading depths: {e}"
                 galfind_logger.critical(err_message)
-                raise(Exception(err_message))
+                raise (Exception(err_message))
             if self.apply_gal_instr_mask:
                 if cropped and self.crop_mask is not None:
                     gal_instr_mask = self.gal_instr_mask[self.crop_mask]
                 else:
                     gal_instr_mask = self.gal_instr_mask
                 depths = {
-                    aper_diam: self._apply_gal_instr_mask(_depths, gal_instr_mask) \
+                    aper_diam: self._apply_gal_instr_mask(
+                        _depths, gal_instr_mask
+                    )
                     for aper_diam, _depths in depths.items()
                 }
             return depths
@@ -1555,13 +1770,17 @@ class Catalogue_Creator:
             galfind_logger.warning(
                 "Either load depth or depth label function not provided!"
             )
-            return {aper_diam: list(itertools.repeat(None, len(tab))) for aper_diam in self.aper_diams}
-        
+            return {
+                aper_diam: list(itertools.repeat(None, len(tab)))
+                for aper_diam in self.aper_diams
+            }
+
     def load_selection_flags_kwargs(
         self: Self,
         cropped: bool = True,
     ) -> Tuple[List[Dict[str, bool]], List[Dict[str, Dict[str, Any]]]]:
-        """Load per-galaxy selection flags and the keyword arguments used to make them.
+        """Load per-galaxy selection flags and the keyword arguments used
+        to make them.
 
         Reads the boolean selection-flag columns from the catalogue's
         ``"SELECTION"`` extension along with any accompanying
@@ -1591,29 +1810,55 @@ class Catalogue_Creator:
             `load_selection_func`/`get_selection_labels` is provided.
         """
         tab = self.load_tab("SELECTION", cropped)
-        if self.load_selection_func is not None and self.get_selection_labels is not None and tab is not None:
-            select_labels = self.get_selection_labels(tab, **self.load_selection_kwargs)
-            select_dict = self.load_selection_func(tab, select_labels, **self.load_selection_kwargs)
-            # ensure all selection dict values are the same length as the catalogue
-            assert all(len(selection) == len(tab) for selection in select_dict.values()), \
-                galfind_logger.critical("Not all selection values are the same length as the catalogue!")
-            selection_flags = [{key: bool(values[i]) for key, values in select_dict.items()} for i in range(len(tab))]
+        if (
+            self.load_selection_func is not None
+            and self.get_selection_labels is not None
+            and tab is not None
+        ):
+            select_labels = self.get_selection_labels(
+                tab, **self.load_selection_kwargs
+            )
+            select_dict = self.load_selection_func(
+                tab, select_labels, **self.load_selection_kwargs
+            )
+            # ensure all selection dict values are the same length as
+            # the catalogue
+            assert all(
+                len(selection) == len(tab)
+                for selection in select_dict.values()
+            ), galfind_logger.critical(
+                "Not all selection values are the same length "
+                "as the catalogue!"
+            )
+            selection_flags = [
+                {key: bool(values[i]) for key, values in select_dict.items()}
+                for i in range(len(tab))
+            ]
             # TODO: Generalize for non galfind-like tables
             selection_kwarg_colnames = {
                 select_label: [
-                    colname.split('__')[1] for colname in tab.colnames
-                    if colname.startswith(select_label) and not tab[colname].dtype in (bool, np.bool_)
-                ] for select_label in select_labels
+                    colname.split("__")[1]
+                    for colname in tab.colnames
+                    if colname.startswith(select_label)
+                    and tab[colname].dtype not in (bool, np.bool_)
+                ]
+                for select_label in select_labels
             }
-            # TODO: Cast fits values to None instead of the numpy default (e.g. 'None', np.nan, etc.)
+            # TODO: Cast fits values to None instead of the numpy
+            # default (e.g. 'None', np.nan, etc.)
             selection_kwargs = [
                 {
                     select_label: {
                         kwarg_name: tab[f"{select_label}__{kwarg_name}"][i]
-                        for kwarg_name in selection_kwarg_colnames[select_label]
-                        if tab[f"{select_label}__{kwarg_name}"].dtype not in (bool, np.bool_)
-                    } for select_label in select_labels
-                } for i in range(len(tab))
+                        for kwarg_name in selection_kwarg_colnames[
+                            select_label
+                        ]
+                        if tab[f"{select_label}__{kwarg_name}"].dtype
+                        not in (bool, np.bool_)
+                    }
+                    for select_label in select_labels
+                }
+                for i in range(len(tab))
             ]
         elif tab is None:
             galfind_logger.warning("'SELECTION' tab is None!")
@@ -1624,7 +1869,7 @@ class Catalogue_Creator:
             err_message = "Selection function not provided!"
             galfind_logger.critical(err_message)
             raise Exception(err_message)
-        
+
         return selection_flags, selection_kwargs
 
     # current bottleneck
@@ -1632,7 +1877,7 @@ class Catalogue_Creator:
         self,
         null_data_vals: List[Union[float, np.nan]] = [0.0],
         overwrite: bool = False,
-        timed: bool = True
+        timed: bool = True,
     ) -> NoReturn:
         """Compute (or load a cached) per-galaxy, per-band "has data" mask.
 
@@ -1669,20 +1914,34 @@ class Catalogue_Creator:
         meta = self.open_hdr(self.cat_path, "ID")
         req_metakeys = ["SURVEY", "INSTR", "APERDIAM"]
         if all(name in meta.keys() for name in req_metakeys):
-            save_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{meta['SURVEY']}/" + \
-                f"has_data_mask/{meta['INSTR']}/{meta['APERDIAM']}"
-        elif self.survey is not None and self.filterset is not None and self.aper_diams is not None:
+            save_dir = (
+                f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{meta['SURVEY']}/"
+                + f"has_data_mask/{meta['INSTR']}/{meta['APERDIAM']}"
+            )
+        elif (
+            self.survey is not None
+            and self.filterset is not None
+            and self.aper_diams is not None
+        ):
             if len(self.aper_diams) != 1:
-                galfind_logger.warning(f"len({self.aper_diams=}) != 1! Using {self.aper_diams[0]} for gal_instr_mask!")
-            save_dir = f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{self.survey}/" + \
-                f"has_data_mask/{self.filterset.instrument_name}/" + \
-                f"{self.aper_diams[0].to(u.arcsec).value}as"
+                galfind_logger.warning(
+                    f"len({self.aper_diams=}) != 1! Using "
+                    f"{self.aper_diams[0]} for gal_instr_mask!"
+                )
+            save_dir = (
+                f"{config['DEFAULT']['GALFIND_WORK']}/Masks/{self.survey}/"
+                + f"has_data_mask/{self.filterset.instrument_name}"
+            )
         else:
-            err_message = f"Not all of {req_metakeys} in {self.cat_path} " + \
-                "nor 'survey', 'filterset', and 'aper_diams' provided in self!"
+            err_message = (
+                f"Not all of {req_metakeys} in {self.cat_path} "
+                + "nor 'survey', 'filterset', and 'aper_diams' "
+                "provided in self!"
+            )
             galfind_logger.critical(err_message)
             raise Exception(err_message)
-        save_path = f"{save_dir}/{self.cat_name}.h5"
+        cat_basename = Path(self.cat_path).stem
+        save_path = f"{save_dir}/{cat_basename}.h5"
         funcs.make_dirs(save_path)
         if Path(save_path).is_file() or overwrite:
             # load in gal_instr_mask from .h5
@@ -1691,21 +1950,31 @@ class Catalogue_Creator:
             galfind_logger.info(f"Loaded 'has_data_mask' from {save_path}")
         else:
             galfind_logger.info(f"Making 'has_data_mask' for {self.cat_name}!")
-            # calculate the mask that is used to crop photometry to only bands including data
-            tab = self.load_tab("phot", cropped = False)
-            phot_labels, err_labels = self.get_phot_labels(self.filterset, self.aper_diams, **self.load_phot_kwargs)
-            phot = self.load_phot_func(tab, phot_labels, err_labels, **self.load_phot_kwargs)[0]
+            # calculate the mask that is used to crop photometry to
+            # only bands including data
+            tab = self.load_tab("phot", cropped=False)
+            phot_labels, err_labels = self.get_phot_labels(
+                self.filterset, self.aper_diams, **self.load_phot_kwargs
+            )
+            phot = self.load_phot_func(
+                tab, phot_labels, err_labels, **self.load_phot_kwargs
+            )[0]
             phot = list(phot.values())[0]
             if timed:
                 gal_instr_mask = np.array(
                     [
                         [
-                            True if val not in null_data_vals and np.isfinite(val) else False
+                            True
+                            if val not in null_data_vals and np.isfinite(val)
+                            else False
                             for val in gal_phot
                         ]
                         for gal_phot in tqdm(
-                            phot, desc="Making has_data_mask", total=len(phot),
-                            disable = galfind_logger.getEffectiveLevel() > logging.INFO,
+                            phot,
+                            desc="Making has_data_mask",
+                            total=len(phot),
+                            disable=galfind_logger.getEffectiveLevel()
+                            > logging.INFO,
                         )
                     ]
                 )
@@ -1713,7 +1982,9 @@ class Catalogue_Creator:
                 gal_instr_mask = np.array(
                     [
                         [
-                            True if val not in null_data_vals and np.isfinite(val) else False
+                            True
+                            if val not in null_data_vals and np.isfinite(val)
+                            else False
                             for val in gal_phot
                         ]
                         for gal_phot in phot
@@ -1726,7 +1997,7 @@ class Catalogue_Creator:
         hf.close()
         if not hasattr(self, "gal_instr_mask"):
             self.gal_instr_mask = gal_instr_mask
-    
+
     @staticmethod
     def _apply_gal_instr_mask(
         arr: np.ndarray,
@@ -1735,22 +2006,25 @@ class Catalogue_Creator:
         """Mask out bands with no data for each galaxy.
 
         Applies a per-galaxy, per-band boolean mask to filter out bands where
-        data is unavailable, returning only data for bands with valid measurements.
+        data is unavailable, returning only data for bands with valid
+        measurements.
 
         Parameters
         ----------
         arr : `np.ndarray`
             Per-galaxy array of per-band values to mask.
         gal_instr_mask : `np.ndarray`
-            Boolean mask of shape (n_galaxies, n_bands), `True` where data exists.
+            Boolean mask of shape (n_galaxies, n_bands), `True` where data
+            exists.
 
         Returns
         -------
         `list` of `np.ndarray`
             Masked arrays, one per galaxy, containing only bands with data.
         """
-        assert len(gal_instr_mask) == len(arr), \
-            galfind_logger.critical(f"{len(gal_instr_mask)} != {len(arr)}!")
+        assert len(gal_instr_mask) == len(arr), galfind_logger.critical(
+            f"{len(gal_instr_mask)} != {len(arr)}!"
+        )
         return [ele[mask] for ele, mask in zip(arr, gal_instr_mask)]
 
     def load_gal_filtersets(
@@ -1758,7 +2032,8 @@ class Catalogue_Creator:
         length: int,
         cropped: bool = True,
     ) -> List[Multiple_Filter]:
-        """Build the per-galaxy `Multiple_Filter` set of bands with available data.
+        """Build the per-galaxy `Multiple_Filter` set of bands with
+        available data.
 
         If `apply_gal_instr_mask` is `True`, each galaxy is assigned the
         subset of `filterset` for which `gal_instr_mask` indicates data is
@@ -1779,19 +2054,23 @@ class Catalogue_Creator:
             Filterset for each of the `length` galaxies.
         """
         if self.apply_gal_instr_mask:
-            # create set of filtersets to be pointed to by sources with these bands available
+            # create set of filtersets to be pointed to by sources
+            # with these bands available
             galfind_logger.debug(f"Making {self.cat_name} unique filtersets!")
             if cropped and self.crop_mask is not None:
                 gal_instr_mask = self.gal_instr_mask[self.crop_mask]
             else:
                 gal_instr_mask = self.gal_instr_mask
             unique_filt_comb = np.unique(gal_instr_mask, axis=0)
-            unique_filtersets = [deepcopy(self.filterset)[data_comb] for data_comb in unique_filt_comb]
+            unique_filtersets = [
+                deepcopy(self.filterset)[data_comb]
+                for data_comb in unique_filt_comb
+            ]
             filterset_arr = [
                 unique_filtersets[
-                    np.where(
-                        np.all(unique_filt_comb == data_comb, axis=1)
-                    )[0][0]
+                    np.where(np.all(unique_filt_comb == data_comb, axis=1))[0][
+                        0
+                    ]
                 ]
                 for data_comb in gal_instr_mask
             ]
@@ -1800,8 +2079,10 @@ class Catalogue_Creator:
             filterset_arr = list(itertools.repeat(self.filterset, length))
         return filterset_arr
 
+
 class Catalogue(Catalogue_Base):
-    """A galaxy catalogue, storing a list of `Galaxy` objects for a single survey/version.
+    """A galaxy catalogue, storing a list of `Galaxy` objects for a
+    single survey/version.
 
     The central catalogue-level class in GALFIND: a thin, list-like wrapper
     around a collection of `Galaxy` objects (see `Catalogue_Base` for
@@ -1862,14 +2143,15 @@ class Catalogue(Catalogue_Base):
         forced_phot_band: Optional[
             Union[str, List[str], Type[Band_Data_Base]]
         ] = None,
-        min_flux_pc_err: Union[int, float] = 10.,
+        min_flux_pc_err: Union[int, float] = 10.0,
         crops: Optional[Union[Type[Selector], List[Type[Selector]]]] = None,
         load_gals: bool = True,
         mask_method: str = "auto",
         psf_method: Optional[str] = "empirical",
         psf_homog_filt: Optional[str] = "F444W",
     ) -> Catalogue:
-        """Run the full galfind data-reduction pipeline and load the resulting catalogue.
+        """Run the full galfind data-reduction pipeline and load the
+        resulting catalogue.
 
         Convenience wrapper that runs `Data.pipeline` to reduce the imaging
         for a survey/version into a photometric catalogue, then loads that
@@ -1887,7 +2169,8 @@ class Catalogue(Catalogue_Base):
         pix_scales : `astropy.units.Quantity` or `dict`, optional
             Pixel scale to use, either a single value or one per
             instrument. Default is
-            ``{"ACS_WFC": 0.03, "WFC3_IR": 0.03, "NIRCam": 0.03, "MIRI": 0.09} * u.arcsec``.
+            ``{"ACS_WFC": 0.03, "WFC3_IR": 0.03, "NIRCam": 0.03,
+            "MIRI": 0.09} * u.arcsec``.
         im_str : `list` of `str`, optional
             Filename substrings identifying science images. Default is
             ``["_sci", "_i2d", "_drz"]``.
@@ -1911,7 +2194,8 @@ class Catalogue(Catalogue_Base):
             ``"WHT"``.
         aper_diams : `astropy.units.Quantity`, optional
             Aperture diameters to use for photometry. Default is `None`.
-        forced_phot_band : `str`, `list` of `str`, or `Band_Data_Base`, optional
+        forced_phot_band : `str`, `list` of `str`, or `Band_Data_Base`,
+        optional
             Band(s) to use for detection/forced photometry. Default is
             `None`.
         min_flux_pc_err : `int` or `float`, optional
@@ -1957,7 +2241,7 @@ class Catalogue(Catalogue_Base):
             psf_method=psf_method,
             psf_homog_filt=psf_homog_filt,
         )
-        return cls.from_data(data, crops, load_gals = load_gals)
+        return cls.from_data(data, crops, load_gals=load_gals)
 
     @classmethod
     def from_data(
@@ -1983,7 +2267,8 @@ class Catalogue(Catalogue_Base):
             Whether to load `Galaxy` objects into the returned catalogue.
             Default is `True`.
         **cat_creator_kwargs
-            Additional keyword arguments forwarded to `Catalogue_Creator.from_data`.
+            Additional keyword arguments forwarded to
+            `Catalogue_Creator.from_data`.
 
         Returns
         -------
@@ -1992,13 +2277,13 @@ class Catalogue(Catalogue_Base):
         """
         cat_creator = Catalogue_Creator.from_data(
             data,
-            crops = crops,
+            crops=crops,
             **cat_creator_kwargs,
         )
         return cat_creator(
-            psfs = data.psfs,
-            cropped = True,
-            load_gals = load_gals,
+            psfs=data.psfs,
+            cropped=True,
+            load_gals=load_gals,
         )
 
     def __repr__(self):
@@ -2023,11 +2308,14 @@ class Catalogue(Catalogue_Base):
 
     def load_stacked_band_data_snrs(
         self: Self,
-        get_snr_colnames: Callable[[Multiple_Filter, u.Quantity], Dict[u.Quantity, str]] = galfind_snr_labels,
-        #filterset_arr: Union[Multiple_Filter, List[Multiple_Filter]],
+        get_snr_colnames: Callable[
+            [Multiple_Filter, u.Quantity], Dict[u.Quantity, str]
+        ] = galfind_snr_labels,
+        # filterset_arr: Union[Multiple_Filter, List[Multiple_Filter]],
         overwrite: bool = False,
     ) -> None:
-        """Load stacked-band-detection-image SNRs into each galaxy's aperture photometry.
+        """Load stacked-band-detection-image SNRs into each galaxy's
+        aperture photometry.
 
         Reads per-band, per-aperture-diameter SNR columns (named via
         `get_snr_colnames`) from the ``"phot"`` extension for each of
@@ -2051,57 +2339,83 @@ class Catalogue(Catalogue_Base):
         `None`
         """
         if len(self) == 0:
-            galfind_logger.warning("Catalogue is empty! Cannot load stacked band data!")
+            galfind_logger.warning(
+                "Catalogue is empty! Cannot load stacked band data!"
+            )
             return
         if not hasattr(self, "data"):
-            galfind_logger.warning("No data attribute to load stacked band data from!")
+            galfind_logger.warning(
+                "No data attribute to load stacked band data from!"
+            )
             return
         if not hasattr(self.data, "stacked_band_data_arr"):
             galfind_logger.warning("No stacked band data to load!")
             return
-        
+
         # if isinstance(filterset_arr, Multiple_Filter):
         #     filterset_arr = [filterset_arr]
-        phot_tab = self.cat_creator.load_tab("phot", cropped = True)
-        mask_tab = self.cat_creator.load_tab("mask", cropped = True)
-        assert len(phot_tab) == len(mask_tab) == len(self), \
-            galfind_logger.critical(
-                f"{len(phot_tab)=} != {len(mask_tab)=} != {len(self)=}!"
-            )
-        snr_labels = get_snr_colnames(self.data.stacked_band_data_arr, self.aper_diams)
+        phot_tab = self.cat_creator.load_tab("phot", cropped=True)
+        mask_tab = self.cat_creator.load_tab("mask", cropped=True)
+        assert (
+            len(phot_tab) == len(mask_tab) == len(self)
+        ), galfind_logger.critical(
+            f"{len(phot_tab)=} != {len(mask_tab)=} != {len(self)=}!"
+        )
+        snr_labels = get_snr_colnames(
+            self.data.stacked_band_data_arr, self.aper_diams
+        )
         snrs = {
             aper_diam: {
-                band_data.filt_name: np.array(phot_tab[snr_labels_[i]]).astype(float)
+                band_data.filt_name: np.array(phot_tab[snr_labels_[i]]).astype(
+                    float
+                )
                 for i, band_data in enumerate(self.data.stacked_band_data_arr)
             }
             for aper_diam, snr_labels_ in snr_labels.items()
         }
         # add snrs to galaxy aperture photometry objects
-        galfind_logger.info(f"Loading {self.data.stacked_band_data_arr=} SNRs into {repr(self)}!")
+        galfind_logger.info(
+            f"Loading {self.data.stacked_band_data_arr=} SNRs "
+            f"into {repr(self)}!"
+        )
         for i, gal in tqdm(
             enumerate(self),
             total=len(self),
-            desc=f"Loading {self.data.stacked_band_data_arr} SNRs into {repr(self)}",
-            disable = galfind_logger.getEffectiveLevel() > logging.INFO,
+            desc=f"Loading {self.data.stacked_band_data_arr} SNRs "
+            f"into {repr(self)}",
+            disable=galfind_logger.getEffectiveLevel() > logging.INFO,
         ):
             if not hasattr(gal, "stacked_band_snrs") or overwrite:
                 for aper_diam in self.aper_diams:
                     if aper_diam in gal.aper_phot.keys():
-                        setattr(gal.aper_phot[aper_diam], "stacked_band_snrs", {
-                                band_data.filt_name: snrs[aper_diam][band_data.filt_name][i]
-                                for band_data in self.data.stacked_band_data_arr
-                            }
+                        setattr(
+                            gal.aper_phot[aper_diam],
+                            "stacked_band_snrs",
+                            {
+                                band_data.filt_name: snrs[aper_diam][
+                                    band_data.filt_name
+                                ][i]
+                                for band_data in (
+                                    self.data.stacked_band_data_arr
+                                )
+                            },
                         )
                     else:
                         galfind_logger.warning(
-                            f"{repr(gal)} does not have photometry for {aper_diam=}! " + \
-                            f"Cannot load {self.data.stacked_band_data_arr=} SNRs for this aperture diameter!"
+                            f"{repr(gal)} does not have photometry "
+                            f"for {aper_diam=}! " + f"Cannot load "
+                            f"{self.data.stacked_band_data_arr=} SNRs "
+                            f"for this aperture diameter!"
                         )
             else:
-                galfind_logger.debug(f"{repr(gal)} already has 'stacked_band_snrs' attribute! Not overwriting!")
+                galfind_logger.debug(
+                    f"{repr(gal)} already has 'stacked_band_snrs' "
+                    f"attribute! Not overwriting!"
+                )
 
     def save_phot_PDF_paths(self, PDF_paths, SED_fit_params):
-        """Store the paths to saved SED-fitting redshift/property PDFs for this catalogue.
+        """Store the paths to saved SED-fitting redshift/property PDFs
+        for this catalogue.
 
         Parameters
         ----------
@@ -2110,7 +2424,9 @@ class Catalogue(Catalogue_Base):
         SED_fit_params : `dict`
             SED fitting parameters, must contain a ``"code"`` key (an
             `SED_code` instance/subclass) used to derive the storage label
-            via ``SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)``.
+            via
+            ``SED_fit_params["code"].label_from_SED_fit_params(
+                SED_fit_params)``.
         """
         if "phot_PDF_paths" not in self.__dict__.keys():
             self.phot_PDF_paths = {}
@@ -2128,7 +2444,9 @@ class Catalogue(Catalogue_Base):
         SED_fit_params : `dict`
             SED fitting parameters, must contain a ``"code"`` key (an
             `SED_code` instance/subclass) used to derive the storage label
-            via ``SED_fit_params["code"].label_from_SED_fit_params(SED_fit_params)``.
+            via
+            ``SED_fit_params["code"].label_from_SED_fit_params(
+                SED_fit_params)``.
         """
         if "phot_SED_paths" not in self.__dict__.keys():
             self.phot_SED_paths = {}
@@ -2148,24 +2466,26 @@ class Catalogue(Catalogue_Base):
             Unused (accepted for a stable call signature); a progress bar is
             always shown unless logging is suppressed. Default is `True`.
         """
-        assert (
-            len(cat_SED_results) == len(self)
-        )  # if this is not the case then instead should cross match IDs between self and gal_SED_result
-        galfind_logger.info(
-            "Updating SED results in galfind catalogue object"
-        )
+        assert len(cat_SED_results) == len(
+            self
+        )  # if this is not the case then instead should cross match
+        # IDs between self and gal_SED_result
+        galfind_logger.info("Updating SED results in galfind catalogue object")
         [
             gal.update_SED_results(gal_SED_result)
             for gal, gal_SED_result in tqdm(
                 zip(self, cat_SED_results),
                 desc="Updating galaxy SED results",
                 total=len(self),
-                disable = galfind_logger.getEffectiveLevel() > logging.INFO
+                disable=galfind_logger.getEffectiveLevel() > logging.INFO,
             )
         ]
-    
-    def update_SED_result_lowz_zmax_info(self, aper_diam, SED_result_key, zmax_info_arr):
-        """Update each galaxy's low-redshift-solution zmax information for a given SED fit.
+
+    def update_SED_result_lowz_zmax_info(
+        self, aper_diam, SED_result_key, zmax_info_arr
+    ):
+        """Update each galaxy's low-redshift-solution zmax information
+        for a given SED fit.
 
         Parameters
         ----------
@@ -2178,20 +2498,21 @@ class Catalogue(Catalogue_Base):
             Per-galaxy low-z zmax info, in the same order as `self`. Must be
             the same length as `self`.
         """
-        assert len(zmax_info_arr) == len(self), \
-            galfind_logger.critical(
-                "Length of zmax_info_dict must be the same as the catalogue!"
-            )
+        assert len(zmax_info_arr) == len(self), galfind_logger.critical(
+            "Length of zmax_info_dict must be the same as the catalogue!"
+        )
         galfind_logger.info(
             "Updating low-z zmax info in galfind catalogue object"
         )
         [
-            gal.update_SED_result_lowz_zmax_info(aper_diam, SED_result_key, zmax_info_arr[i])
+            gal.update_SED_result_lowz_zmax_info(
+                aper_diam, SED_result_key, zmax_info_arr[i]
+            )
             for i, gal in tqdm(
                 enumerate(self),
                 desc="Updating galaxy low-z zmax info",
                 total=len(self),
-                disable = galfind_logger.getEffectiveLevel() > logging.INFO
+                disable=galfind_logger.getEffectiveLevel() > logging.INFO,
             )
         ]
 
@@ -2200,7 +2521,8 @@ class Catalogue(Catalogue_Base):
         versions: List[str] = ["v1", "v2", "v3", "v4_2"],
         **match_kwargs: Dict[str, Any],
     ) -> Self:
-        """Cross-match with available spectra from JWST DJA spectroscopic releases.
+        """Cross-match with available spectra from JWST DJA
+        spectroscopic releases.
 
         Queries and cross-matches this photometric catalogue with spectroscopic
         observations from specified JWST DJA data release versions.
@@ -2208,7 +2530,8 @@ class Catalogue(Catalogue_Base):
         Parameters
         ----------
         versions : `list` of `str`, optional
-            DJA release versions to query. Default is ["v1", "v2", "v3", "v4_2"].
+            DJA release versions to query. Default is ["v1", "v2", "v3",
+            "v4_2"].
         **match_kwargs
             Additional keyword arguments passed to cross-matching functions.
 
@@ -2231,19 +2554,21 @@ class Catalogue(Catalogue_Base):
                 DJA_cat += DJA_cat_
         # cross match this catalogue
         cross_matched_cat = self * DJA_cat
-        #print(str(cross_matched_cat))
+        # print(str(cross_matched_cat))
         return cross_matched_cat
 
         # # calculate aperture corrections if not already
         # # calculate and save dict of ext_src_corrs for each galaxy in self
         # galfind_logger.debug(
-        #     "Photometry_obs.calc_ext_src_corrs takes 2min 20s for JOF with 16,000 galaxies. Fairly slow!"
+        #     "Photometry_obs.calc_ext_src_corrs takes 2min 20s for "
+        #     "JOF with 16,000 galaxies. Fairly slow!"
         # )
         # [
         #     gal.phot.calc_ext_src_corrs(aper_corrs=aper_corrs)
         #     for gal in tqdm(
         #         self,
-        #         desc=f"Calculating extended source corrections for {self.survey} {self.version}",
+        #         desc=f"Calculating extended source corrections "
+        #         f"for {self.survey} {self.version}",
         #         total=len(self),
         #     )
         # ]
@@ -2258,7 +2583,8 @@ class Catalogue(Catalogue_Base):
     #     # calculate pre-requisites
     #     self.calc_ext_src_corrs()
     #     # make extended source correction for given property
-    #     [aper_phot_.make_ext_src_corrs(gal_property, origin) for gal in self for aper_phot_ in gal.aper_phot.values()]
+    #     [aper_phot_.make_ext_src_corrs(gal_property, origin)
+    #     for gal in self for aper_phot_ in gal.aper_phot.values()]
     #     # save properties to fits table
     #     #property_name = f"{gal_property}{funcs.ext_src_label}"
     #     #self._append_property_to_tab(property_name, origin)
@@ -2284,7 +2610,8 @@ class Catalogue(Catalogue_Base):
     #     # breakpoint()
     #     [
     #         self._append_property_to_tab(property_name, origin)
-    #         for origin, property_names in unique_properties_origins_dict.items()
+    #         for origin, property_names in
+    #         unique_properties_origins_dict.items()
     #         for property_name in property_names
     #     ]
 
@@ -2297,7 +2624,8 @@ class Catalogue(Catalogue_Base):
     ) -> None:
         """Append a computed galaxy property to a FITS catalogue table.
 
-        Computes a property from all galaxies in the catalogue and joins it with
+        Computes a property from all galaxies in the catalogue and joins it
+        with
         the existing FITS table at the specified HDU extension.
 
         Parameters
@@ -2313,16 +2641,23 @@ class Catalogue(Catalogue_Base):
             Whether to overwrite an existing column with the same name.
             Default is `False`.
         """
-        from . import Selector
+        from ..selection.Selector import Selector
+
         save_property_name = Selector.shorten_kwarg_colname(property_name)
         if hdu in ["OBJECTS", "SELECTION"]:
             ID_label = self.cat_creator.ID_label
-        elif any([True for code in funcs.all_subclasses(SED_code) if hdu.find(code.__name__) != -1]):
+        elif any(
+            [
+                True
+                for code in funcs.all_subclasses(SED_code)
+                if hdu.find(code.__name__) != -1
+            ]
+        ):
             raise NotImplementedError
         else:
             raise NotImplementedError
         # TODO: Need to attach self.open_cat to catalogue_creator.open_cat
-        append_tab = self.open_cat(cropped = False, hdu = hdu)
+        append_tab = self.open_cat(cropped=False, hdu=hdu)
         # append to .fits table only if not already
         if append_tab is not None:
             if save_property_name in append_tab.colnames:
@@ -2330,8 +2665,10 @@ class Catalogue(Catalogue_Base):
                     # remove old column that already exists
                     append_tab.remove_column(save_property_name)
                 else:
-                    err_message = f"{save_property_name=} already appended to " + \
-                        f"{hdu=} .fits table, not overwriting!"
+                    err_message = (
+                        f"{save_property_name=} already appended to "
+                        + f"{hdu=} .fits table, not overwriting!"
+                    )
                     galfind_logger.debug(err_message)
                     return
         # return None
@@ -2349,10 +2686,11 @@ class Catalogue(Catalogue_Base):
         # while property_type is None:
         #     property_type = type(gal_properties[i])
         #     i += 1
-        #gal_properties = MaskedColumn(gal_properties, mask=np.isnan(gal_properties), dtype = property_type)
+        # gal_properties = MaskedColumn(gal_properties,
+        # mask=np.isnan(gal_properties), dtype = property_type)
         new_tab = Table(
             {"ID_temp": gal_IDs, save_property_name: gal_properties},
-            dtype = [int, type(gal_properties[0])]
+            dtype=[int, type(gal_properties[0])],
         )
         if append_tab is None:
             out_tab = new_tab
@@ -2370,7 +2708,8 @@ class Catalogue(Catalogue_Base):
         # save multi-extension table
         self.write_hdu(out_tab, hdu=hdu)
 
-    # def calc_new_property(self, func: Callable[..., float], arg_names: Union[list, np.array]):
+    # def calc_new_property(self, func: Callable[..., float],
+    # arg_names: Union[list, np.array]):
     #     pass
 
     def load_sextractor_Re(self) -> None:
@@ -2386,14 +2725,21 @@ class Catalogue(Catalogue_Base):
         """
         if hasattr(self, "data"):
             # load Re from SExtractor
-            pix_to_as_dict = {band_data.filt_name: band_data.pix_scale for band_data in self.data}
-            self.load_band_properties_from_cat("FLUX_RADIUS", "sex_Re", multiply_factor = pix_to_as_dict)
+            pix_to_as_dict = {
+                band_data.filt_name: band_data.pix_scale
+                for band_data in self.data
+            }
+            self.load_band_properties_from_cat(
+                "FLUX_RADIUS", "sex_Re", multiply_factor=pix_to_as_dict
+            )
         else:
-            err_message = "Loading SExtractor Re from catalogue " + \
-                f"only works when hasattr({repr(self)}, data)!"
+            err_message = (
+                "Loading SExtractor Re from catalogue "
+                + f"only works when hasattr({repr(self)}, data)!"
+            )
             galfind_logger.critical(err_message)
             raise Exception(err_message)
-        
+
     def load_sextractor_auto_mags(self) -> None:
         """Load SExtractor AUTO magnitudes for all galaxies and bands.
 
@@ -2401,19 +2747,22 @@ class Catalogue(Catalogue_Base):
         """
         if hasattr(self, "data"):
             # load Re from SExtractor
-            self.load_band_properties_from_cat("MAG_AUTO", "sex_MAG_AUTO", multiply_factor = u.ABmag)
+            self.load_band_properties_from_cat(
+                "MAG_AUTO", "sex_MAG_AUTO", multiply_factor=u.ABmag
+            )
             for gal in self:
                 for aper_diam in gal.aper_phot.keys():
                     gal.aper_phot[aper_diam].sex_MAG_AUTO = gal.sex_MAG_AUTO
         else:
-            err_message = "Loading SExtractor auto mags from catalogue " + \
-                f"only works when hasattr({repr(self)}, data)!"
+            err_message = (
+                "Loading SExtractor auto mags from catalogue "
+                + f"only works when hasattr({repr(self)}, data)!"
+            )
             galfind_logger.critical(err_message)
             raise Exception(err_message)
 
     def load_sextractor_auto_fluxes(
-        self: Self,
-        multiply_factor: Optional[Dict[str, float]] = None
+        self: Self, multiply_factor: Optional[Dict[str, float]] = None
     ) -> None:
         """Load SExtractor AUTO fluxes for all galaxies and bands.
 
@@ -2434,39 +2783,44 @@ class Catalogue(Catalogue_Base):
         if hasattr(self, "data") or multiply_factor is not None:
             # load Re from SExtractor
             if multiply_factor is None:
-                assert hasattr(self, "data"), \
-                    galfind_logger.critical(
-                        "Either provide multiply_factor or have self.data!"
-                    )
+                assert hasattr(self, "data"), galfind_logger.critical(
+                    "Either provide multiply_factor or have self.data!"
+                )
                 multiply_factor = {
-                    band_data.filt_name: \
-                    funcs.flux_image_to_Jy(1.0, band_data.ZP) \
+                    band_data.filt_name: funcs.flux_image_to_Jy(
+                        1.0, band_data.ZP
+                    )
                     for band_data in self.data
                 }
             else:
-                assert isinstance(multiply_factor, dict), \
-                    galfind_logger.critical(
-                        f"{type(multiply_factor)=} != dict!"
-                    )
-                assert all([key in self.filterset.filt_names for key in multiply_factor.keys()]), \
-                    galfind_logger.critical(
-                        f"{len(multiply_factor)=} != " + \
-                        f"{len(self.filterset)=}!"
-                    )
+                assert isinstance(
+                    multiply_factor, dict
+                ), galfind_logger.critical(
+                    f"{type(multiply_factor)=} != dict!"
+                )
+                assert all(
+                    [
+                        key in self.filterset.filt_names
+                        for key in multiply_factor.keys()
+                    ]
+                ), galfind_logger.critical(
+                    f"{len(multiply_factor)=} != " + f"{len(self.filterset)=}!"
+                )
             self.load_band_properties_from_cat(
-                "FLUX_AUTO", 
-                "sex_FLUX_AUTO", 
-                multiply_factor = multiply_factor
+                "FLUX_AUTO", "sex_FLUX_AUTO", multiply_factor=multiply_factor
             )
             for gal in self:
                 for aper_diam in gal.aper_phot.keys():
                     gal.aper_phot[aper_diam].sex_FLUX_AUTO = gal.sex_FLUX_AUTO
         else:
-            err_message = "Loading SExtractor flux autos from catalogue " + \
-                f"only works when hasattr({repr(self)}, data) or multiply_factor is not None!"
+            err_message = (
+                "Loading SExtractor flux autos from catalogue "
+                + f"only works when hasattr({repr(self)}, data) "
+                f"or multiply_factor is not None!"
+            )
             galfind_logger.critical(err_message)
             raise Exception(err_message)
-        
+
     def load_sextractor_kron_radii(self) -> None:
         """Load SExtractor Kron radii and morphological parameters.
 
@@ -2476,26 +2830,27 @@ class Catalogue(Catalogue_Base):
         if hasattr(self, "data"):
             # load Kron radius from SExtractor
             kron_radii = self.load_band_properties_from_cat(
-                "KRON_RADIUS", 
-                "sex_KRON_RADIUS", 
+                "KRON_RADIUS",
+                "sex_KRON_RADIUS",
             )
             try:
                 A_image_arr = self.load_band_properties_from_cat(
-                    "A_IMAGE",
-                    "sex_A_IMAGE",
-                    update = False
+                    "A_IMAGE", "sex_A_IMAGE", update=False
                 )
                 [
-                    setattr(gal, "sex_A_IMAGE", A_image[self.data[0].filt_name])
+                    setattr(
+                        gal, "sex_A_IMAGE", A_image[self.data[0].filt_name]
+                    )
                     for gal, A_image in zip(self, A_image_arr)
                 ]
                 A_image_as_arr = [
                     {
-                        band_data.filt_name: kron_radius[band_data.filt_name] \
-                            * A_image[band_data.filt_name] \
-                            * band_data.pix_scale \
+                        band_data.filt_name: kron_radius[band_data.filt_name]
+                        * A_image[band_data.filt_name]
+                        * band_data.pix_scale
                         for band_data in self.data
-                    } for kron_radius, A_image in zip(kron_radii, A_image_arr)
+                    }
+                    for kron_radius, A_image in zip(kron_radii, A_image_arr)
                 ]
                 [
                     gal.load_property(A_image_as, "sex_A_IMAGE_AS")
@@ -2504,45 +2859,61 @@ class Catalogue(Catalogue_Base):
                 B_image_arr = self.load_band_properties_from_cat(
                     "B_IMAGE",
                     "sex_B_IMAGE",
-                    update = False,
+                    update=False,
                 )
                 [
-                    setattr(gal, "sex_B_IMAGE", B_image[self.data[0].filt_name])
+                    setattr(
+                        gal, "sex_B_IMAGE", B_image[self.data[0].filt_name]
+                    )
                     for gal, B_image in zip(self, B_image_arr)
                 ]
                 B_image_as_arr = [
                     {
-                        band_data.filt_name: kron_radius[band_data.filt_name] \
-                            * B_image[band_data.filt_name] \
-                            * band_data.pix_scale \
+                        band_data.filt_name: kron_radius[band_data.filt_name]
+                        * B_image[band_data.filt_name]
+                        * band_data.pix_scale
                         for band_data in self.data
-                    } for kron_radius, B_image in zip(kron_radii, B_image_arr)
+                    }
+                    for kron_radius, B_image in zip(kron_radii, B_image_arr)
                 ]
                 [
-                    gal.load_property(
-                        B_image_as,
-                        "sex_B_IMAGE_AS"
-                    ) for gal, B_image_as in zip(self, B_image_as_arr)
+                    gal.load_property(B_image_as, "sex_B_IMAGE_AS")
+                    for gal, B_image_as in zip(self, B_image_as_arr)
                 ]
                 theta_image_arr = self.load_band_properties_from_cat(
                     "THETA_IMAGE",
                     "sex_THETA_IMAGE",
-                    multiply_factor = u.deg,
-                    update = False,
+                    multiply_factor=u.deg,
+                    update=False,
                 )
                 [
-                    setattr(gal, "sex_THETA_IMAGE", theta_image[self.data[0].filt_name])
+                    setattr(
+                        gal,
+                        "sex_THETA_IMAGE",
+                        theta_image[self.data[0].filt_name],
+                    )
                     for gal, theta_image in zip(self, theta_image_arr)
                 ]
-            except:
+            except Exception:
                 pass
-            
+
             for gal in self:
                 for aper_diam in gal.aper_phot.keys():
-                    for name in ["KRON_RADIUS", "A_IMAGE", "B_IMAGE", "THETA_IMAGE", "A_IMAGE_AS", "B_IMAGE_AS"]:
+                    for name in [
+                        "KRON_RADIUS",
+                        "A_IMAGE",
+                        "B_IMAGE",
+                        "THETA_IMAGE",
+                        "A_IMAGE_AS",
+                        "B_IMAGE_AS",
+                    ]:
                         name = f"sex_{name}"
                         if hasattr(gal, name):
-                            setattr(gal.aper_phot[aper_diam], name, getattr(gal, name))
+                            setattr(
+                                gal.aper_phot[aper_diam],
+                                name,
+                                getattr(gal, name),
+                            )
                         else:
                             galfind_logger.warning(f"{name} not in {gal.ID=}")
 
@@ -2567,25 +2938,34 @@ class Catalogue(Catalogue_Base):
             filt_names = None
         else:
             filt_names = list(multiply_factor.keys())
-        self.load_sextractor_auto_fluxes(multiply_factor = multiply_factor)
+        self.load_sextractor_auto_fluxes(multiply_factor=multiply_factor)
         [
-            gal.load_sextractor_ext_src_corrs(filt_names, aper_corrs = aper_corrs) for gal in tqdm(
+            gal.load_sextractor_ext_src_corrs(
+                filt_names, aper_corrs=aper_corrs
+            )
+            for gal in tqdm(
                 self,
-                desc = f"Loading SExtractor extended source corrections for {repr(self)}",
-                total = len(self),
-                disable = galfind_logger.getEffectiveLevel() > logging.INFO,
+                desc=f"Loading SExtractor extended source "
+                f"corrections for {repr(self)}",
+                total=len(self),
+                disable=galfind_logger.getEffectiveLevel() > logging.INFO,
             )
         ]
 
         if len(self) == len(self.cat_creator._open_tab("ID")):
             galfind_logger.info(
-                f"Saving SExtractor extended source corrections to {self.cat_name}!"
+                f"Saving SExtractor extended source corrections "
+                f"to {self.cat_name}!"
             )
             # save to catalogue
             for filt in self.filterset:
                 if filt_names is None or filt.filt_name in filt_names:
                     for aper_diam in self.aper_diams:
-                        self._append_property_to_tab(f"ext_src_corr_{aper_diam.to(u.arcsec).value:.2f}as_{filt.filt_name}", "OBJECTS", dtype = float)
+                        self._append_property_to_tab(
+                            f"ext_src_corr_{aper_diam.to(u.arcsec).value:.2f}as_{filt.filt_name}",
+                            "OBJECTS",
+                            dtype=float,
+                        )
 
     def load_sextractor_params(self) -> None:
         """Load all SExtractor parameters for all galaxies.
@@ -2624,7 +3004,8 @@ class Catalogue(Catalogue_Base):
             single value (applied to all bands) or a dictionary mapping filter
             names to factors. Default is `None` (no conversion).
         dest : `str`, optional
-            Destination to store the property on: either `"gal"` (galaxy object)
+            Destination to store the property on: either `"gal"` (galaxy
+            object)
             or `"phot_obs"` (photometry object). Default is `"gal"`.
         update : `bool`, optional
             Whether to update the galaxy objects with the loaded property.
@@ -2638,7 +3019,8 @@ class Catalogue(Catalogue_Base):
         """
         if len(self) == 0:
             galfind_logger.warning(
-                f"No galaxies in {self.cat_name}, skipping loading {cat_colname=}"
+                f"No galaxies in {self.cat_name}, skipping "
+                f"loading {cat_colname=}"
             )
             return None
         assert dest in ["gal", "phot_obs"]
@@ -2648,11 +3030,12 @@ class Catalogue(Catalogue_Base):
             has_attr = hasattr(self[0].phot, save_name)
         if not has_attr:
             galfind_logger.info(
-                f"Loading {cat_colname=} from {self.cat_path} saved as {save_name}!"
+                f"Loading {cat_colname=} from {self.cat_path} "
+                f"saved as {save_name}!"
             )
             # load the same property from every available band
             # open catalogue with astropy
-            fits_cat = self.open_cat(cropped = True)
+            fits_cat = self.open_cat(cropped=True)
             if multiply_factor is None:
                 multiply_factor = {
                     filt.filt_name: 1.0 * u.dimensionless_unscaled
@@ -2667,18 +3050,23 @@ class Catalogue(Catalogue_Base):
                 }
             # load in speed can be improved here!
             cat_band_properties = {
-                filt.filt_name: np.array(fits_cat[f"{cat_colname}_{filt.filt_name}"])
+                filt.filt_name: np.array(
+                    fits_cat[f"{cat_colname}_{filt.filt_name}"]
+                )
                 * multiply_factor[filt.filt_name]
                 for filt in self.filterset
                 if f"{cat_colname}_{filt.filt_name}" in fits_cat.colnames
                 and filt.filt_name in multiply_factor.keys()
             }
             if len(cat_band_properties) == 0:
-                err_message = f"Could not load {cat_colname=} from {self.cat_path} " + \
-                    f"as no '{cat_colname}_band' exists for band in {self.instrument.filt_names=}!"
+                err_message = (
+                    f"Could not load {cat_colname=} from {self.cat_path} "
+                    + f"as no '{cat_colname}_band' exists for band "
+                    f"in {self.instrument.filt_names=}!"
+                )
                 galfind_logger.info(err_message)
                 raise Exception(err_message)
-            
+
             cat_band_properties = [
                 {
                     band: cat_band_properties[band][i]
@@ -2703,8 +3091,9 @@ class Catalogue(Catalogue_Base):
                         )
                     ]
                 galfind_logger.info(
-                    f"Loaded {cat_colname} from {self.cat_path} " + \
-                    f"saved as {save_name} for {cat_band_properties[0].keys()=}"
+                    f"Loaded {cat_colname} from {self.cat_path} "
+                    f"saved as {save_name} for "
+                    f"{cat_band_properties[0].keys()=}"
                 )
             return cat_band_properties
 
@@ -2712,7 +3101,8 @@ class Catalogue(Catalogue_Base):
         self,
         cat_colname: str,
         save_name: str,
-        multiply_factor: Union[u.Quantity, u.Magnitude] = 1.0 * u.dimensionless_unscaled,
+        multiply_factor: Union[u.Quantity, u.Magnitude] = 1.0
+        * u.dimensionless_unscaled,
     ) -> None:
         """Load a single property column from the catalogue for all galaxies.
 
@@ -2726,7 +3116,8 @@ class Catalogue(Catalogue_Base):
         save_name : `str`
             Name to store the property as on each galaxy object.
         multiply_factor : `Quantity` or `Magnitude`, optional
-            Multiplication factor for unit conversion. Default is dimensionless.
+            Multiplication factor for unit conversion. Default is
+            dimensionless.
         dest : `str`, optional
             Destination: ``"gal"`` to store on galaxy, or ``"phot_obs"`` to
             store on photometry object. Default is ``"gal"``.
@@ -2739,7 +3130,7 @@ class Catalogue(Catalogue_Base):
             has_attr = hasattr(self[0].phot, save_name)
         if not has_attr:
             # open catalogue with astropy
-            fits_cat = self.open_cat(cropped = True)
+            fits_cat = self.open_cat(cropped=True)
             if cat_colname in fits_cat.colnames:
                 cat_property = np.array(fits_cat[cat_colname])
                 assert len(cat_property) == len(self)
@@ -2758,20 +3149,24 @@ class Catalogue(Catalogue_Base):
                         for gal, gal_property in zip(self, cat_property)
                     ]
                 galfind_logger.info(
-                    f"Loaded {cat_colname=} from {self.cat_path} saved as {save_name}!"
+                    f"Loaded {cat_colname=} from {self.cat_path} "
+                    f"saved as {save_name}!"
                 )
             else:
                 galfind_logger.info(
-                    f"{cat_colname=} does not exist in {self.cat_path}, skipping!"
+                    f"{cat_colname=} does not exist in "
+                    f"{self.cat_path}, skipping!"
                 )
 
     def load_sex_flux_mag_autos(self) -> None:
         """Load SExtractor AUTO fluxes and magnitudes into photometry objects.
 
         Extracts FLUX_AUTO and MAG_AUTO from SExtractor catalogues and
-        stores them on each galaxy's photometry object, converting fluxes to Jansky.
+        stores them on each galaxy's photometry object, converting fluxes
+        to Jansky.
         """
-        # sex_filt_names = [filt_name for filt_name, cat_type in self.data.sex_cat_types.items() if "SExtractor" in cat_type]
+        # sex_filt_names = [filt_name for filt_name, cat_type in
+        # self.data.sex_cat_types.items() if "SExtractor" in cat_type]
         flux_im_to_Jy_conv = {
             filt_name: funcs.flux_image_to_Jy(1.0, self.data.im_zps[filt_name])
             for filt_name in self.instrument.filt_names
@@ -2783,9 +3178,9 @@ class Catalogue(Catalogue_Base):
             dest="phot_obs",
         )
         self.load_band_properties_from_cat(
-            "MAG_AUTO", 
-            "MAG_AUTO", 
-            multiply_factor=u.ABmag, 
+            "MAG_AUTO",
+            "MAG_AUTO",
+            multiply_factor=u.ABmag,
             dest="phot_obs",
         )
 
@@ -2811,12 +3206,14 @@ class Catalogue(Catalogue_Base):
         AssertionError
             If redshift array length doesn't match catalogue length.
         """
-        assert len(z_arr) == len(self), \
-            galfind_logger.critical(
-                f"{len(z_arr)} != {len(self)}! {z_arr=} and {self=}"
-            )
-        
-        [gal.load_fixz_SED_result(aper_diam, z_value, z_label) for gal, z_value in zip(self, z_arr)]
+        assert len(z_arr) == len(self), galfind_logger.critical(
+            f"{len(z_arr)} != {len(self)}! {z_arr=} and {self=}"
+        )
+
+        [
+            gal.load_fixz_SED_result(aper_diam, z_value, z_label)
+            for gal, z_value in zip(self, z_arr)
+        ]
 
     def make_cutouts(
         self: Self,
@@ -2832,7 +3229,8 @@ class Catalogue(Catalogue_Base):
             to all bands) or a dictionary mapping band names to sizes.
             Default is 0.96 arcsec.
         native : `bool`, optional
-            Whether to use native (non-PSF-homogenized) data. Default is `False`.
+            Whether to use native (non-PSF-homogenized) data. Default is
+            `False`.
 
         Returns
         -------
@@ -2841,8 +3239,9 @@ class Catalogue(Catalogue_Base):
             names to `Band_Cutout_Base` objects.
         """
         if native:
-            assert hasattr(self.data, "native"), \
-                galfind_logger.critical("Native data not available")
+            assert hasattr(self.data, "native"), galfind_logger.critical(
+                "Native data not available"
+            )
             data = self.data.native
         else:
             data = self.data
@@ -2874,8 +3273,9 @@ class Catalogue(Catalogue_Base):
             Cutout objects, one per galaxy, for the specified band.
         """
         if native:
-            assert hasattr(self.data, "native"), \
-                galfind_logger.critical("Native data not available")
+            assert hasattr(self.data, "native"), galfind_logger.critical(
+                "Native data not available"
+            )
             data = self.data.native
         else:
             data = self.data
@@ -2884,19 +3284,20 @@ class Catalogue(Catalogue_Base):
             gal.make_band_cutout(
                 band_data,
                 cutout_size,
-                overwrite = overwrite,
-            ) for gal in tqdm(
+                overwrite=overwrite,
+            )
+            for gal in tqdm(
                 self,
                 desc=f"Making {filt.filt_name} band cutouts",
                 total=len(self),
-                disable = galfind_logger.getEffectiveLevel() > logging.INFO,
+                disable=galfind_logger.getEffectiveLevel() > logging.INFO,
             )
         ]
 
     def plot_cutouts(
         self: Self,
         cutout_size: u.Quantity = 0.96 * u.arcsec,
-        #save_name: Optional[str] = None,
+        # save_name: Optional[str] = None,
         plot_kwargs: Dict[str, Any] = {},
         crop_name: Optional[str] = None,
         collate_dir: Optional[str] = None,
@@ -2923,22 +3324,30 @@ class Catalogue(Catalogue_Base):
         """
         out_paths = np.full(len(self), None)
         for i, gal in enumerate(self):
-            cutouts = gal.make_cutouts(self.data, cutout_size, overwrite = overwrite)
-            cutouts.plot(close_fig = True, **plot_kwargs)
+            cutouts = gal.make_cutouts(
+                self.data, cutout_size, overwrite=overwrite
+            )
+            cutouts.plot(close_fig=True, **plot_kwargs)
             out_paths[i] = cutouts._get_save_path()
         out_paths.astype(str)
         # collate plots for the specified galaxies
         if collate_dir is None:
             if crop_name is None:
                 crop_name = self.crop_name
-            collate_dir = "/".join(out_paths[0].replace("/png", "").split("/")[:-2] + [crop_name]) \
+            collate_dir = (
+                "/".join(
+                    out_paths[0].replace("/png", "").split("/")[:-2]
+                    + [crop_name]
+                )
                 + out_paths[0].replace("/png", "").split("/")[-2]
-        self._collate_plots(out_paths, collate_dir, overwrite = overwrite_sample)
+            )
+        self._collate_plots(out_paths, collate_dir, overwrite=overwrite_sample)
 
     def stack_gals(
         self, cutout_size: u.Quantity = 0.96 * u.arcsec
     ) -> Multiple_Band_Cutout:
-        """Create a stacked multi-band cutout image from all galaxies in the catalogue.
+        """Create a stacked multi-band cutout image from all galaxies
+        in the catalogue.
 
         Generates aligned cutouts of the specified size for all galaxies,
         stacks them band-by-band, and caches the result for reuse.
@@ -3042,7 +3451,8 @@ class Catalogue(Catalogue_Base):
     ) -> NoReturn:
         """Plot RGB composite images for all galaxies.
 
-        Generates and displays RGB composite images from specified filter bands,
+        Generates and displays RGB composite images from specified filter
+        bands,
         optionally saving to file.
 
         Parameters
@@ -3068,7 +3478,8 @@ class Catalogue(Catalogue_Base):
             "R": ["F444W"],
         },
     ) -> Stacked_RGB:
-        """Create a stacked RGB composite image from all galaxies in the catalogue.
+        """Create a stacked RGB composite image from all galaxies in
+        the catalogue.
 
         Generates RGB composites for each galaxy, stacks them, and caches
         the result for reuse.
@@ -3127,11 +3538,12 @@ class Catalogue(Catalogue_Base):
         split_by_instr: bool = True,
         split_by_instr_cmap: str = "plasma",
         SED_cmap: Optional[str] = None,
-        #fig_axs: Optional[Tuple[plt.Figure, NDArray[plt.Axes]]] = None,
+        # fig_axs: Optional[Tuple[plt.Figure, NDArray[plt.Axes]]] = None,
     ):
         """Generate and save photometry diagnostic plots for all galaxies.
 
-        Creates multi-panel diagnostic figures showing cutouts, photometric SEDs,
+        Creates multi-panel diagnostic figures showing cutouts, photometric
+        SEDs,
         and redshift PDFs for each galaxy, saving them to a results directory.
 
         Parameters
@@ -3155,7 +3567,8 @@ class Catalogue(Catalogue_Base):
         crop_name : `str` or `None`, optional
             Name of crop/selection for organizing outputs. Default is `None`.
         collate_dir : `str` or `None`, optional
-            Directory to collate symlinks to diagnostic plots. Default is `None`.
+            Directory to collate symlinks to diagnostic plots. Default is
+            `None`.
         imshow_kwargs : `dict`, optional
             Keyword arguments for imshow. Default is empty.
         norm_kwargs : `dict`, optional
@@ -3208,54 +3621,56 @@ class Catalogue(Catalogue_Base):
         out_paths = [
             gal.plot_phot_diagnostic(
                 self.data,
-                #fig = fig,
-                #ax = fig_axs,
-                aper_diam = aper_diam,
-                SED_arr = SED_arr,
-                zPDF_arr = zPDF_arr,
-                plot_lowz = plot_lowz,
-                n_cutout_rows = n_cutout_rows,
-                wav_unit = wav_unit,
-                flux_unit = flux_unit,
-                log_fluxes = log_fluxes,
-                cutout_size = cutout_size,
-                imshow_kwargs = imshow_kwargs,
-                norm_kwargs = norm_kwargs,
-                aper_kwargs = aper_kwargs,
-                kron_kwargs = kron_kwargs,
-                cutout_label_kwargs = cutout_label_kwargs,
-                sed_plot_kwargs = sed_plot_kwargs,
-                legend_kwargs = legend_kwargs,
-                errorbar_kwargs = errorbar_kwargs,
-                SNR_label_kwargs = SNR_label_kwargs,
-                phot_axes_labels_kwargs = phot_axes_labels_kwargs,
-                phot_axes_ticks_kwargs = phot_axes_ticks_kwargs,
-                PDF_axes_ticks_kwargs = PDF_axes_ticks_kwargs,
-                PDF_axes_labels_kwargs = PDF_axes_labels_kwargs,
-                PDF_axes_title_kwargs = PDF_axes_title_kwargs,
-                title_kwargs = title_kwargs,
-                overwrite = overwrite,
-                save = True,
-                show = False,
-                incl_nodata_cutouts = True,
-                split_by_instr = split_by_instr,
-                split_by_instr_cmap = split_by_instr_cmap,
-                SED_cmap = SED_cmap,
-                cutout_gridspec_kwargs = cutout_gridspec_kwargs,
+                # fig = fig,
+                # ax = fig_axs,
+                aper_diam=aper_diam,
+                SED_arr=SED_arr,
+                zPDF_arr=zPDF_arr,
+                plot_lowz=plot_lowz,
+                n_cutout_rows=n_cutout_rows,
+                wav_unit=wav_unit,
+                flux_unit=flux_unit,
+                log_fluxes=log_fluxes,
+                cutout_size=cutout_size,
+                imshow_kwargs=imshow_kwargs,
+                norm_kwargs=norm_kwargs,
+                aper_kwargs=aper_kwargs,
+                kron_kwargs=kron_kwargs,
+                cutout_label_kwargs=cutout_label_kwargs,
+                sed_plot_kwargs=sed_plot_kwargs,
+                legend_kwargs=legend_kwargs,
+                errorbar_kwargs=errorbar_kwargs,
+                SNR_label_kwargs=SNR_label_kwargs,
+                phot_axes_labels_kwargs=phot_axes_labels_kwargs,
+                phot_axes_ticks_kwargs=phot_axes_ticks_kwargs,
+                PDF_axes_ticks_kwargs=PDF_axes_ticks_kwargs,
+                PDF_axes_labels_kwargs=PDF_axes_labels_kwargs,
+                PDF_axes_title_kwargs=PDF_axes_title_kwargs,
+                title_kwargs=title_kwargs,
+                overwrite=overwrite,
+                save=True,
+                show=False,
+                incl_nodata_cutouts=True,
+                split_by_instr=split_by_instr,
+                split_by_instr_cmap=split_by_instr_cmap,
+                SED_cmap=SED_cmap,
+                cutout_gridspec_kwargs=cutout_gridspec_kwargs,
             )
             for gal in tqdm(
                 self,
                 total=len(self),
                 desc="Plotting photometry diagnostic plots",
-                disable = galfind_logger.getEffectiveLevel() > logging.INFO
+                disable=galfind_logger.getEffectiveLevel() > logging.INFO,
             )
         ]
         if collate_dir is None:
             if crop_name is None:
                 crop_name = self.crop_name
-            collate_dir = f"{config['Other']['PLOT_DIR']}/{self.version}/" + \
-                f"{self.filterset.instrument_name}/{self.survey}/SED_plots/" + \
-                f"{aper_diam.to(u.arcsec).value:.2f}as/{crop_name}/"
+            collate_dir = (
+                f"{config['Other']['PLOT_DIR']}/{self.version}/"
+                + f"{self.filterset.instrument_name}/{self.survey}/SED_plots/"
+                + f"{aper_diam.to(u.arcsec).value:.2f}as/{crop_name}/"
+            )
         self._collate_plots(out_paths, collate_dir)
 
     def _collate_plots(
@@ -3276,9 +3691,11 @@ class Catalogue(Catalogue_Base):
         collate_dir : `str`
             Directory to create symlinks in.
         overwrite : `bool`, optional
-            Whether to remove and recreate existing symlinks. Default is `True`.
+            Whether to remove and recreate existing symlinks. Default is
+            `True`.
         """
-        # make a folder to store symlinked photometric diagnostic plots for selected galaxies
+        # make a folder to store symlinked photometric diagnostic
+        # plots for selected galaxies
         if self.crops != []:
             if overwrite:
                 # remove existing symlinks in folder
@@ -3305,11 +3722,14 @@ class Catalogue(Catalogue_Base):
         aper_diam: u.Quantity,
         SED_fit_code: SED_code,
         z_step: float = 0.01,
-        unmasked_area: Union[str, List[str], u.Quantity, Type[Mask_Selector]] = "selection",
+        unmasked_area: Union[
+            str, List[str], u.Quantity, Type[Mask_Selector]
+        ] = "selection",
         Vmax_method: str = "uniform_depth",
         n_jobs: int = 1,
     ) -> NDArray[float]:
-        """Calculate maximum co-moving volume (Vmax) for galaxies in a redshift bin.
+        """Calculate maximum co-moving volume (
+            Vmax) for galaxies in a redshift bin.
 
         Computes Vmax corrections for luminosity/mass function calculations,
         accounting for observational limits and survey sensitivity as a
@@ -3325,7 +3745,8 @@ class Catalogue(Catalogue_Base):
             SED fitting code used for redshift determination.
         z_step : `float`, optional
             Redshift step size for integration. Default is 0.01.
-        unmasked_area : `str`, `list` of `str`, `Quantity`, or `Mask_Selector`, optional
+        unmasked_area : `str`, `list` of `str`, `Quantity`, or
+            `Mask_Selector`, optional
             Definition of survey area with data. Can be "selection", a region
             selector, or an area value. Default is "selection".
         Vmax_method : `str`, optional
@@ -3339,24 +3760,22 @@ class Catalogue(Catalogue_Base):
         `np.ndarray` of `float`
             Vmax values for each galaxy in the catalogue.
         """
-        assert hasattr(self, "data"), \
-            galfind_logger.critical(
-                f"{repr(self)} does not have data loaded!"
-            )
+        assert hasattr(self, "data"), galfind_logger.critical(
+            f"{repr(self)} does not have data loaded!"
+        )
         return self._calc_Vmax(
             self.data,
-            z_bin = z_bin,
-            aper_diam = aper_diam,
-            SED_fit_code = SED_fit_code,
-            z_step = z_step,
-            unmasked_area = unmasked_area,
-            Vmax_method = Vmax_method,
-            n_jobs = n_jobs,
+            z_bin=z_bin,
+            aper_diam=aper_diam,
+            SED_fit_code=SED_fit_code,
+            z_step=z_step,
+            unmasked_area=unmasked_area,
+            Vmax_method=Vmax_method,
+            n_jobs=n_jobs,
         )
-    
 
-# class Simulated_Catalogue(Catalogue_Base):
-#     # TODO: Store Simulated_Galaxy rather than Galaxy objects
+    # class Simulated_Catalogue(Catalogue_Base):
+    #     # TODO: Store Simulated_Galaxy rather than Galaxy objects
 
     def scatter(
         self: Self,
@@ -3385,7 +3804,8 @@ class Catalogue(Catalogue_Base):
         min_flux_pc_err : `float`, optional
             Minimum flux percentage error floor. Default is 10.0.
         update_errs : `bool`, optional
-            Whether to recompute flux errors after scattering. Default is `True`.
+            Whether to recompute flux errors after scattering. Default is
+            `True`.
         """
         assert all(aper_diam in gal.aper_phot.keys() for gal in self)
         # load galaxy depths from the average depths of the field
@@ -3393,15 +3813,17 @@ class Catalogue(Catalogue_Base):
             self._update_depths_from_data(aper_diam, mode, depth_region)
         # calculate photometric errors from these newly inserted depths
         if update_errs:
-            self._update_errs_from_depths(aper_diam, apply_min_flux_pc_err = False)
+            self._update_errs_from_depths(
+                aper_diam, apply_min_flux_pc_err=False
+            )
         # scatter each set of fluxes once by the calculated errors
         [
-            gal.aper_phot[aper_diam].scatter_fluxes(update = True) 
+            gal.aper_phot[aper_diam].scatter_fluxes(update=True)
             for gal in tqdm(
                 self,
-                desc = "Scattering catalogue fluxes",
-                total = len(self),
-                disable = galfind_logger.getEffectiveLevel() > logging.INFO
+                desc="Scattering catalogue fluxes",
+                total=len(self),
+                disable=galfind_logger.getEffectiveLevel() > logging.INFO,
             )
         ]
         if update_errs:
@@ -3427,18 +3849,42 @@ class Catalogue(Catalogue_Base):
         depth_region : `str`, optional
             Region to calculate depth statistics from. Default is "all".
         """
-        assert hasattr(self, "data"), \
-            galfind_logger.critical(
-                f"{self.cat_name} does not have data loaded!"
-            )
+        assert hasattr(self, "data"), galfind_logger.critical(
+            f"{self.cat_name} does not have data loaded!"
+        )
         self.load_depths(aper_diam, mode)
-        assert all([hasattr(band_data, "med_depth") for band_data in self.data])
-        assert all([aper_diam in band_data.med_depth.keys() for band_data in self.data])
-        assert all([depth_region in band_data.med_depth[aper_diam].keys() for band_data in self.data])
-        depths = np.array([band_data.med_depth[aper_diam][depth_region] for band_data in self.data]) * u.ABmag
+        assert all(
+            [hasattr(band_data, "med_depth") for band_data in self.data]
+        )
+        assert all(
+            [
+                aper_diam in band_data.med_depth.keys()
+                for band_data in self.data
+            ]
+        )
+        assert all(
+            [
+                depth_region in band_data.med_depth[aper_diam].keys()
+                for band_data in self.data
+            ]
+        )
+        depths = (
+            np.array(
+                [
+                    band_data.med_depth[aper_diam][depth_region]
+                    for band_data in self.data
+                ]
+            )
+            * u.ABmag
+        )
         [
-            setattr(gal.aper_phot[aper_diam], "depths", depths) 
-            for gal in tqdm(self, desc = "Updating catalogue depths", total = len(self), disable = galfind_logger.getEffectiveLevel() > logging.INFO)
+            setattr(gal.aper_phot[aper_diam], "depths", depths)
+            for gal in tqdm(
+                self,
+                desc="Updating catalogue depths",
+                total=len(self),
+                disable=galfind_logger.getEffectiveLevel() > logging.INFO,
+            )
         ]
 
     def _update_errs_from_depths(
@@ -3457,17 +3903,22 @@ class Catalogue(Catalogue_Base):
         aper_diam : `astropy.units.Quantity`
             Aperture diameter to update errors for.
         default_min_flux_pc_err : `float`, optional
-            Minimum percentage error if not found in configuration. Default is 10.0.
+            Minimum percentage error if not found in configuration. Default
+            is 10.0.
         apply_min_flux_pc_err : `bool`, optional
-            Whether to apply a minimum percentage error floor. Default is `True`.
+            Whether to apply a minimum percentage error floor. Default is
+            `True`.
         """
         if apply_min_flux_pc_err:
             if "min_flux_pc_err" in self.cat_creator.load_phot_kwargs.keys():
-                min_flux_pc_err = self.cat_creator.load_phot_kwargs["min_flux_pc_err"]
+                min_flux_pc_err = self.cat_creator.load_phot_kwargs[
+                    "min_flux_pc_err"
+                ]
             else:
                 galfind_logger.warning(
-                    f"No 'min_flux_pc_err' in {self.cat_creator.load_phot_kwargs.keys()=}." + \
-                    f" Using {default_min_flux_pc_err=}!"
+                    f"No 'min_flux_pc_err' in "
+                    f"{self.cat_creator.load_phot_kwargs.keys()=}."
+                    + f" Using {default_min_flux_pc_err=}!"
                 )
                 min_flux_pc_err = default_min_flux_pc_err
         else:
@@ -3475,7 +3926,12 @@ class Catalogue(Catalogue_Base):
 
         [
             gal.aper_phot[aper_diam]._update_errs_from_depths(min_flux_pc_err)
-            for gal in tqdm(self, desc = "Updating catalogue errors from average depths", total = len(self), disable = galfind_logger.getEffectiveLevel() > logging.INFO)
+            for gal in tqdm(
+                self,
+                desc="Updating catalogue errors from average depths",
+                total=len(self),
+                disable=galfind_logger.getEffectiveLevel() > logging.INFO,
+            )
         ]
 
     def load_depths(
@@ -3511,64 +3967,155 @@ class Catalogue(Catalogue_Base):
                 mode,
             )
         else:
-            galfind_logger.info(
-                f"Loading {aper_diam} {mode} {region_selector.name if not invert_region else region_selector.fail_name} depths!"
+            region_name = (
+                region_selector.name
+                if not invert_region
+                else region_selector.fail_name
             )
-            gal_depths = {filt_name: [
-                    gal.aper_phot[aper_diam].depths[np.where(np.array(gal.aper_phot[aper_diam].filterset.filt_names) == filt_name)[0][0]].value
-                    for gal in self if filt_name in gal.aper_phot[aper_diam].filterset.filt_names 
-                    and ((gal.selection_flags[region_selector.name] and not invert_region)
-                    or (not gal.selection_flags[region_selector.name] and invert_region))
+            galfind_logger.info(
+                f"Loading {aper_diam} {mode} {region_name} depths!"
+            )
+            gal_depths = {
+                filt_name: [
+                    gal.aper_phot[aper_diam]
+                    .depths[
+                        np.where(
+                            np.array(
+                                gal.aper_phot[aper_diam].filterset.filt_names
+                            )
+                            == filt_name
+                        )[0][0]
+                    ]
+                    .value
+                    for gal in self
+                    if filt_name
+                    in gal.aper_phot[aper_diam].filterset.filt_names
+                    and (
+                        (
+                            gal.selection_flags[region_selector.name]
+                            and not invert_region
+                        )
+                        or (
+                            not gal.selection_flags[region_selector.name]
+                            and invert_region
+                        )
+                    )
                 ]
                 for filt_name in self.data.filterset.filt_names
             }
-            med_depths = {filt_name: np.nanmedian(gal_band_depths) for filt_name, gal_band_depths in gal_depths.items()}
-            depths_16 = {filt_name: np.nanpercentile(gal_band_depths, 16.) for filt_name, gal_band_depths in gal_depths.items()}
-            depths_84 = {filt_name: np.nanpercentile(gal_band_depths, 84.) for filt_name, gal_band_depths in gal_depths.items()}
-            mean_depths = {filt_name: np.nanmean(gal_band_depths) for filt_name, gal_band_depths in gal_depths.items()}
-            
+            med_depths = {
+                filt_name: np.nanmedian(gal_band_depths)
+                for filt_name, gal_band_depths in gal_depths.items()
+            }
+            depths_16 = {
+                filt_name: np.nanpercentile(gal_band_depths, 16.0)
+                for filt_name, gal_band_depths in gal_depths.items()
+            }
+            depths_84 = {
+                filt_name: np.nanpercentile(gal_band_depths, 84.0)
+                for filt_name, gal_band_depths in gal_depths.items()
+            }
+            mean_depths = {
+                filt_name: np.nanmean(gal_band_depths)
+                for filt_name, gal_band_depths in gal_depths.items()
+            }
+
             # pass to data objects for storage
             for band_data in self.data:
                 band_data._update_depths(
                     aper_diam,
                     med_depths[band_data.filt_name],
                     mean_depths[band_data.filt_name],
-                    region_selector.name if not invert_region
-                    else region_selector.fail_name
+                    region_selector.name
+                    if not invert_region
+                    else region_selector.fail_name,
                 )
-        
+
         if update_ecsv:
             if region_selector is None:
-                gal_depths = {filt_name: [
-                        gal.aper_phot[aper_diam].depths[np.where(np.array(gal.aper_phot[aper_diam].filterset.filt_names) == filt_name)[0][0]].value
-                        for gal in self if filt_name in gal.aper_phot[aper_diam].filterset.filt_names 
+                gal_depths = {
+                    filt_name: [
+                        gal.aper_phot[aper_diam]
+                        .depths[
+                            np.where(
+                                np.array(
+                                    gal.aper_phot[
+                                        aper_diam
+                                    ].filterset.filt_names
+                                )
+                                == filt_name
+                            )[0][0]
+                        ]
+                        .value
+                        for gal in self
+                        if filt_name
+                        in gal.aper_phot[aper_diam].filterset.filt_names
                     ]
                     for filt_name in self.data.filterset.filt_names
                 }
-                med_depths = {filt_name: np.nanmedian(gal_band_depths) for filt_name, gal_band_depths in gal_depths.items()}
-                depths_16 = {filt_name: np.nanpercentile(gal_band_depths, 16.) for filt_name, gal_band_depths in gal_depths.items()}
-                depths_84 = {filt_name: np.nanpercentile(gal_band_depths, 84.) for filt_name, gal_band_depths in gal_depths.items()}
-                mean_depths = {filt_name: np.nanmean(gal_band_depths) for filt_name, gal_band_depths in gal_depths.items()}
-            
-            tab = self.open_cat(cropped = False, hdu = "OBJECTS")
-            if len(self) == len(tab): # and region_selector is not None:
+                med_depths = {
+                    filt_name: np.nanmedian(gal_band_depths)
+                    for filt_name, gal_band_depths in gal_depths.items()
+                }
+                depths_16 = {
+                    filt_name: np.nanpercentile(gal_band_depths, 16.0)
+                    for filt_name, gal_band_depths in gal_depths.items()
+                }
+                depths_84 = {
+                    filt_name: np.nanpercentile(gal_band_depths, 84.0)
+                    for filt_name, gal_band_depths in gal_depths.items()
+                }
+                mean_depths = {
+                    filt_name: np.nanmean(gal_band_depths)
+                    for filt_name, gal_band_depths in gal_depths.items()
+                }
+
+            tab = self.open_cat(cropped=False, hdu="OBJECTS")
+            if len(self) == len(tab):  # and region_selector is not None:
                 # save depths to fits
                 depth_dir = Depths.get_depth_tab_dir(self.data)
-                gal_reg_depth_path = f"{depth_dir}/reg_depths/{self.survey}_{aper_diam.to(u.arcsec).value:.2f}as.ecsv"
-                append_data = {"reg_name": [], "filt_name": [], "depth_50": [], "depth_16": [], "depth_84": [], "mean_depth": []}
-                append_data_types = {"reg_name": str, "filt_name": str, "depth_50": float, "depth_16": float, "depth_84": float, "mean_depth": float}
+                gal_reg_depth_path = (
+                    f"{depth_dir}/reg_depths/{self.survey}_"
+                    f"{aper_diam.to(u.arcsec).value:.2f}as.ecsv"
+                )
+                append_data = {
+                    "reg_name": [],
+                    "filt_name": [],
+                    "depth_50": [],
+                    "depth_16": [],
+                    "depth_84": [],
+                    "mean_depth": [],
+                }
+                append_data_types = {
+                    "reg_name": str,
+                    "filt_name": str,
+                    "depth_50": float,
+                    "depth_16": float,
+                    "depth_84": float,
+                    "mean_depth": float,
+                }
                 if not Path(gal_reg_depth_path).is_file():
-                    orig_tab = Table(append_data, dtype = [append_data_types[key] for key in append_data])
+                    orig_tab = Table(
+                        append_data,
+                        dtype=[append_data_types[key] for key in append_data],
+                    )
                 else:
-                    orig_tab = Table.read(gal_reg_depth_path, format = "ascii.ecsv")
+                    orig_tab = Table.read(
+                        gal_reg_depth_path, format="ascii.ecsv"
+                    )
                 if region_selector is not None:
-                    reg_name = region_selector.name if not invert_region else region_selector.fail_name
+                    reg_name = (
+                        region_selector.name
+                        if not invert_region
+                        else region_selector.fail_name
+                    )
                 else:
                     reg_name = "all"
                 for band_data in self.data:
                     filt_name = band_data.filt_name
                     if not any(
-                        row["reg_name"] == reg_name and row["filt_name"] == filt_name 
+                        row["reg_name"] == reg_name
+                        and row["filt_name"] == filt_name
                         for row in orig_tab
                     ):
                         append_data["reg_name"].append(reg_name)
@@ -3576,16 +4123,25 @@ class Catalogue(Catalogue_Base):
                         append_data["depth_50"].append(med_depths[filt_name])
                         append_data["depth_16"].append(depths_16[filt_name])
                         append_data["depth_84"].append(depths_84[filt_name])
-                        append_data["mean_depth"].append(mean_depths[filt_name])
+                        append_data["mean_depth"].append(
+                            mean_depths[filt_name]
+                        )
                 # combine append data with original table
                 if len(append_data) > 0:
-                    append_tab = Table(append_data, dtype = [append_data_types[key] for key in append_data])
+                    append_tab = Table(
+                        append_data,
+                        dtype=[append_data_types[key] for key in append_data],
+                    )
                     out_tab = vstack([orig_tab, append_tab])
                     funcs.make_dirs(gal_reg_depth_path)
-                    out_tab.write(gal_reg_depth_path, format = "ascii.ecsv", overwrite = True)
+                    out_tab.write(
+                        gal_reg_depth_path, format="ascii.ecsv", overwrite=True
+                    )
                     funcs.change_file_permissions(gal_reg_depth_path)
-                    galfind_logger.info(f"Saved {reg_name} depths to {gal_reg_depth_path}!")
-    
+                    galfind_logger.info(
+                        f"Saved {reg_name} depths to {gal_reg_depth_path}!"
+                    )
+
     def make_readme(
         self: Self,
         update: bool = False,
@@ -3601,7 +4157,8 @@ class Catalogue(Catalogue_Base):
         update : `bool`, optional
             Whether to update an existing README. Default is `False`.
         hdu_divider : `str`, optional
-            String to use as divider between HDU sections. Default is 18 dashes.
+            String to use as divider between HDU sections. Default is 18
+            dashes.
         """
         out_path = f"{self.fits_path.replace('.fits', '')}_README.txt"
         if not Path(out_path).is_file() or update:
@@ -3618,7 +4175,7 @@ class Catalogue(Catalogue_Base):
 
     @staticmethod
     def _readme_info_from_fits_tab(
-        fits_path: str
+        fits_path: str,
     ) -> Dict[str, Dict[str, str]]:
         """Extract column metadata from a FITS catalogue for README generation.
 
@@ -3640,9 +4197,8 @@ class Catalogue(Catalogue_Base):
         hdu_names = [hdu.name for hdu in hdul]
         readme_info = {}
         for i, hdu_name in enumerate(hdu_names):
-            tab = hdul[i]
+            hdul[i]
             if hdu_name == "OBJECTS":
                 # check for SExtractor columns
                 pass
         return readme_info
-

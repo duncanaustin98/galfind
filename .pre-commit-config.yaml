@@ -16,8 +16,19 @@ repos:
       # Run the linter.
       - id: ruff
         args: [ --fix ]
+        files: ^galfind/
       # Run the formatter.
       - id: ruff-format
+        files: ^galfind/
+      # Full-repo lint check before a push reaches origin (also runs at
+      # commit time so `pre-commit run --all-files` in CI catches it too).
+      # examples/ is gitignored (scratch/plotting scripts, not part of the
+      # package) but still git-tracked, so it must be excluded explicitly.
+      - id: ruff
+        name: ruff check (full repo, pre-push)
+        alias: ruff-check-push
+        stages: [pre-commit, pre-push]
+        exclude: ^examples/
 
   # Sanitise Jupyter notebooks.
   - repo: https://github.com/srstevenson/nb-clean

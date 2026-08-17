@@ -1,11 +1,12 @@
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     pass
 
 from .grid import Grid_2D
+
 
 class Contamination(Grid_2D):
     """Grid of contamination fraction as a function of two properties.
@@ -17,6 +18,7 @@ class Contamination(Grid_2D):
     simulated source catalogue to a selected source catalogue. Currently
     unimplemented beyond the inherited `Grid_2D` behaviour.
     """
+
     pass
     # @staticmethod
     # def _make_grid(

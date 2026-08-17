@@ -32,7 +32,7 @@ def log_transform(im):  # function to transform fits image to log scaling
             return (np.log(im.clip(min, max)) - np.log(min)) / (
                 np.log(max) - np.log(min)
             )
-    except:
+    except (ValueError, TypeError):
         pass
     return im
 
@@ -69,9 +69,11 @@ def open_PSF_model(band, PSF_loc, PSF_name):
     # pixel_scale = PSFheader["PIXELSCL"] * u.arcsec
     try:
         pixel_scale = PSFheader["PIXELSCL"] * u.arcsec
-    except:
+    except KeyError:
         print("No PIXELSCL in header")
-        pixel_scale = log.pix_to_as
+        pixel_scale = (
+            config.getfloat("DataReduction", "NIRCAM_PIXEL_SCALE") * u.arcsec
+        )
     # print("pixel scale =", pixel_scale)
     return PSFdata, pixel_scale
 
@@ -111,7 +113,8 @@ def calc_aper_corr(
     plot_PSF : `bool`, optional
         Plot the PSF with apertures overlaid. Default is `True`.
     PSF_loc : `str`, optional
-        PSF directory (unused if PSFdata provided). Default is a placeholder path.
+        PSF directory (unused if PSFdata provided). Default is a
+        placeholder path.
     PSF_name : `str`, optional
         PSF name prefix (unused if PSFdata provided).
     print_output : `bool`, optional
@@ -155,7 +158,7 @@ def calc_aper_corr(
     # plot results
     if plot_PSF:
         fig, ax = plt.subplots()
-        im = ax.imshow(log_transform(PSFdata), origin="lower")
+        ax.imshow(log_transform(PSFdata), origin="lower")
         aper = Circle(xy=(x_cen, y_cen), radius=aper_diam / 2)
         aper_tot = Circle(xy=(x_cen, y_cen), radius=tot_aper_size / 2)
         aper.set_facecolor("none")
@@ -280,11 +283,13 @@ def plot_flux_curve(
 
 
 # def compare_aper_flux_to_full_radius():
-#    tot_flux = sep.sum_circle(PSFdata, [len(PSFdata[0]) / 2 - 0.5], [len(PSFdata[1]) / 2 - 0.5], len(PSFdata[0]) / 2)[0][0]
+#    tot_flux = sep.sum_circle(PSFdata, [len(PSFdata[0]) / 2 - 0.5],
+#    [len(PSFdata[1]) / 2 - 0.5], len(PSFdata[0]) / 2)[0][0]
 
 """
 def plot_additional_flux_curve(band):
-    df = pd.read_csv('/Users/user/Documents/PGR/JWST_PSFs_003as/Encircled_Energy_LW_ETCv2.txt', header = 1)
+    df = pd.read_csv('/Users/user/Documents/PGR/JWST_PSFs_003as/
+    Encircled_Energy_LW_ETCv2.txt', header = 1)
     #print(df_init[0][0])
     #print(df_init[0][0])
     #df.columns = df_init[0]
@@ -313,6 +318,7 @@ def fit_2d_moffatt(PSFdata, maxfev=10000):
     `tuple`
         Fitted Moffat parameters (A, a, b, xcen, ycen) and covariance matrix.
     """
+
     def moffatcurve(xdata_tuple, A, a, b, xcen, ycen):
         """2D Moffat profile function for PSF fitting."""
         (x, y) = xdata_tuple
@@ -423,7 +429,8 @@ if __name__ == "__main__":
     extract_code = "sep"
     save_loc = f"{config['DEFAULT']['GALFIND_WORK']}/Aperture_corrections/MIRI"
     os.makedirs(save_loc, exist_ok=True)
-    PSF_loc = "/raid/scratch/data/jwst/PSFs/MIRI_Original"  # config["DEFAULT"]["PSF_DIR"]
+    # config["DEFAULT"]["PSF_DIR"]
+    PSF_loc = "/raid/scratch/data/jwst/PSFs/MIRI_Original"
     # PSF_name = "PSF_Resample_03_"
     PSF_name = "PSF_MIRI_in_flight_opd_filter_"
     # PSF_name = ["PSF_", "cen_G5V_fov299px_ISIM41"]

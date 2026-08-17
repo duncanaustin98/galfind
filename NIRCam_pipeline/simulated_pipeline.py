@@ -9,11 +9,11 @@ Created on Tue May 30 16:36:34 2023
 # NIRCam_pipeline.py
 
 import astropy.units as u
+from galfind.Catalogue_Creator import Galfind_Catalogue_Creator
 
 from galfind import (
     Catalogue,
 )
-from galfind.Catalogue_Creator import Galfind_Catalogue_Creator
 
 
 def simulated_pipeline(

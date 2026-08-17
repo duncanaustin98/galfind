@@ -9,32 +9,47 @@ from __future__ import annotations
 import os
 from abc import ABC, abstractmethod
 from pathlib import Path
-from scipy.optimize import curve_fit
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    List,
+    NoReturn,
+    Optional,
+    Tuple,
+    Union,
+)
+
 from astropy.wcs import WCS
-from typing import NoReturn, Union, Optional, List, Dict, Any, Tuple
+from scipy.optimize import curve_fit
+
 try:
-    from typing import Self #, Type  # python 3.11+
+    from typing import Self  # , Type  # python 3.11+
 except ImportError:
-    from typing_extensions import Self #, Type  # python > 3.7 AND python < 3.11
+    from typing_extensions import (
+        Self,  # , Type  # python > 3.7 AND python < 3.11
+    )
+
+if TYPE_CHECKING:
+    from ..imaging import Multiple_Filter
 import logging
 from copy import deepcopy
-import h5py
-
-#from lmfit import Model, Parameters, minimize, fit_report
 
 import astropy.units as u
+import h5py
 import matplotlib.pyplot as plt
 import numpy as np
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.table import Table
 from astropy.utils.masked import Masked
+from lmfit import Parameters, fit_report, minimize
 from numpy.typing import NDArray
 from tqdm import tqdm
 
+from .. import astropy_cosmo as cosmo
 from .. import config, galfind_logger
 from ..utils import useful_funcs_austind as funcs
-from .. import astropy_cosmo as cosmo
 
 
 class Spectral_Grating:  # disperser
@@ -66,7 +81,8 @@ class Spectral_Grating:  # disperser
         self.load_transmission_curve()
 
     def __repr__(self) -> str:
-        """Return a string representation of the `Spectral_Grating` instance."""
+        """Return a string representation of the `Spectral_Grating`
+        instance."""
         return f"Spectral_Grating({self.name})"
 
     def load_dispersion_curve(self):
@@ -74,7 +90,8 @@ class Spectral_Grating:  # disperser
         pass
 
     def get_dispersion(self, wavs):
-        """Return the dispersion at the given wavelength(s). Not yet implemented.
+        """Return the dispersion at the given wavelength(
+            s). Not yet implemented.
 
         Parameters
         ----------
@@ -84,7 +101,8 @@ class Spectral_Grating:  # disperser
         pass
 
     def load_resolution_curve(self):
-        """Set the nominal spectral resolution and resolution curve path for this grating.
+        """Set the nominal spectral resolution and resolution curve path
+        for this grating.
 
         The nominal resolution is set to 100 for the ``"PRISM"`` grating,
         1000 for medium-resolution gratings (name ending in ``"M"``), and
@@ -99,10 +117,14 @@ class Spectral_Grating:  # disperser
             if self.name[-1] == "M"
             else 2_700.0
         )
-        self.resolution_curve_path = f"{config['Spectra']['R_CURVE_DIR']}/NIRSpec/jwst_nirspec_prism_disp.fits"
+        self.resolution_curve_path = (
+            f"{config['Spectra']['R_CURVE_DIR']}"
+            "/NIRSpec/jwst_nirspec_prism_disp.fits"
+        )
 
     def get_resolution(self, wavs):
-        """Return the spectral resolution at the given wavelength(s). Not yet implemented.
+        """Return the spectral resolution at the given wavelength(s). Not
+        yet implemented.
 
         Parameters
         ----------
@@ -112,11 +134,13 @@ class Spectral_Grating:  # disperser
         pass
 
     def load_transmission_curve(self):
-        """Load the transmission curve for this grating. Not yet implemented."""
+        """Load the transmission curve for this grating. Not yet
+        implemented."""
         pass
 
     def get_transmission(self, wavs):
-        """Return the transmission at the given wavelength(s). Not yet implemented.
+        """Return the transmission at the given wavelength(
+            s). Not yet implemented.
 
         Parameters
         ----------
@@ -153,7 +177,8 @@ class Spectral_Filter:
         pass
 
     def get_transmission(self, wavs):
-        """Return the transmission at the given wavelength(s). Not yet implemented.
+        """Return the transmission at the given wavelength(
+            s). Not yet implemented.
 
         Parameters
         ----------
@@ -194,12 +219,14 @@ class Spectral_Instrument(ABC):
 
     @abstractmethod
     def load_sensitivity(self):
-        """Load the sensitivity curve for this instrument configuration. Must be implemented by subclasses."""
+        """Load the sensitivity curve for this instrument configuration.
+        Must be implemented by subclasses."""
         pass
 
     @abstractmethod
     def get_sensitivity(self):
-        """Return the sensitivity of this instrument configuration. Must be implemented by subclasses."""
+        """Return the sensitivity of this instrument configuration. Must
+        be implemented by subclasses."""
         pass
 
 
@@ -248,7 +275,8 @@ class NIRSpec(Spectral_Instrument):
         assert (
             grating_filter_name in self.available_grating_filters
         ), galfind_logger.critical(
-            f"{grating_filter_name=} not in {self.available_grating_filters=}"
+            f"{grating_filter_name=} not in "
+            f"{self.available_grating_filters=}"
         )
         super().__init__(
             Spectral_Grating(grating_name),
@@ -256,12 +284,14 @@ class NIRSpec(Spectral_Instrument):
         )
 
     def load_sensitivity(self):
-        """Load the sensitivity curve for this NIRSpec configuration (e.g. from pandeia). Not yet implemented."""
+        """Load the sensitivity curve for this NIRSpec configuration
+        (e.g. from pandeia). Not yet implemented."""
         # load from pandeia
         pass
 
     def get_sensitivity(self):
-        """Return the sensitivity of this NIRSpec configuration. Not yet implemented."""
+        """Return the sensitivity of this NIRSpec configuration. Not yet
+        implemented."""
         # determine from self.sensitivity
         pass
 
@@ -367,11 +397,16 @@ class Spectrum:
 
     def __repr__(self) -> str:
         """Return a string representation of the `Spectrum` instance."""
-        return f"Spectrum({self.src_name}, z={self.z}, {self.instrument.grating_filter_name})"
+        return (
+            f"Spectrum({self.src_name}, z={self.z}, "
+            f"{self.instrument.grating_filter_name})"
+        )
 
     @property
     def PID(self) -> Union[int, None]:
-        """`int` or `None`: JWST program ID, taken from `meta["PROGRAM"]` or the leading component of `meta["SRCNAM1"]` (cached after first access)."""
+        """`int` or `None`: JWST program ID, taken from
+        `meta["PROGRAM"]` or the leading component of `meta["SRCNAM1"]`
+        (cached after first access)."""
         try:
             return self._PID
         except AttributeError:
@@ -385,7 +420,8 @@ class Spectrum:
 
     # @property
     # def root(self) -> Union[str, None]:
-    #     """`str` or `None`: Root name of the source, taken from `meta["SRCNAM1"]` (cached after first access)."""
+    #     """`str` or `None`: Root name of the source, taken from
+    #     `meta["SRCNAM1"]` (cached after first access)."""
     #     try:
     #         return self._root
     #     except AttributeError:
@@ -397,7 +433,9 @@ class Spectrum:
 
     @property
     def src_ID(self) -> Union[int, None]:
-        """`int` or `None`: Source ID, taken from `meta["SOURCEID"]` or the second component of `meta["SRCNAM1"]` (cached after first access)."""
+        """`int` or `None`: Source ID, taken from `meta["SOURCEID"]` or
+        the second component of `meta["SRCNAM1"]` (cached after first
+        access)."""
         try:
             return self._src_ID
         except AttributeError:
@@ -411,7 +449,8 @@ class Spectrum:
 
     @property
     def src_name(self):
-        """`str`: Unique source name, combining `PID` and `src_ID` as ``"{PID}_{src_ID}"``."""
+        """`str`: Unique source name, combining `PID` and `src_ID` as
+        ``"{PID}_{src_ID}"``."""
         _src_name = f"{self.PID}_{self.src_ID}"
         if hasattr(self, "root"):
             _src_name = f"{self.root}_{_src_name}"
@@ -419,7 +458,8 @@ class Spectrum:
 
     @property
     def MSA_ID(self):
-        """`int`: MSA metadata ID, taken from `meta["MSAMETID"]` (cached after first access)."""
+        """`int`: MSA metadata ID, taken from `meta["MSAMETID"]`
+        (cached after first access)."""
         try:
             return self._meta_ID
         except AttributeError:
@@ -431,7 +471,8 @@ class Spectrum:
 
     @property
     def dither_pt(self):
-        """`int`: Dither point/pattern index, taken from `meta["PATT_NUM"]` (cached after first access)."""
+        """`int`: Dither point/pattern index, taken from
+        `meta["PATT_NUM"]` (cached after first access)."""
         try:
             return self._dither_pt
         except AttributeError:
@@ -441,9 +482,14 @@ class Spectrum:
                 raise (Exception())
             return self._dither_pt
 
-        # meta = {"PID": int(header["PROGRAM"]), "src_ID": int(header("SOURCEID")), "slit_ID": int(header["SLITID"]), "exp_time": float(header["DURATION"]), "readout_pattern": \
-        #    "nod_type": str(header["NOD_TYPE"]).replace(" ", ""), "src_slit_pos": [float(header["SRCXPOS"]), float(header["SRCYPOS"])]}
-        #    str(header["READPATT"]).replace(" ", ""), "n_integrations": int(header["NINTS"]), "n_groups": int(header["NGROUPS"]), \
+        # meta = {"PID": int(header["PROGRAM"]), "src_ID": int(header(
+        #    "SOURCEID")), "slit_ID": int(header["SLITID"]), "exp_time":
+        #    float(header["DURATION"]), "readout_pattern": \
+        #    "nod_type": str(header["NOD_TYPE"]).replace(" ", ""),
+        #    "src_slit_pos": [float(header["SRCXPOS"]),
+        #    float(header["SRCYPOS"])]}
+        #    str(header["READPATT"]).replace(" ", ""), "n_integrations":
+        #    int(header["NINTS"]), "n_groups": int(header["NGROUPS"]), \
 
     @classmethod
     def from_DJA(
@@ -518,7 +564,7 @@ class Spectrum:
             instrument = instrument_conv_dict[
                 str(header["INSTRUME"]).replace(" ", "")
             ]
-        except:
+        except Exception:
             instrument = NIRSpec
         instrument = instrument(grating_name, filter_name)
 
@@ -529,31 +575,32 @@ class Spectrum:
         )
         if not Path(loc_1d_path).is_file():
             import msaexp.spectrum
+
             spectrum_1D = msaexp.spectrum.SpectrumSampler(loc_2d_path)
             # could also extract resolution here
             mask = ~spectrum_1D.spec["valid"]
             wavs = spectrum_1D.spec["wave"]
-            fluxes = spectrum_1D.spec["flux"] #Masked( * flux_unit, mask = mask)
+            fluxes = spectrum_1D.spec[
+                "flux"
+            ]  # Masked( * flux_unit, mask = mask)
             if version == "v2":
                 # determine number of exposures
                 N_exposures = int(header["NOUTPUTS"]) * int(header["NFRAMES"])
-                flux_errs = spectrum_1D.spec["full_err"] * (
-                    N_exposures**-0.25
-                )
+                flux_errs = spectrum_1D.spec["full_err"] * (N_exposures**-0.25)
             elif version in ["v3", "v4_2", "v4_4"]:
                 flux_errs = spectrum_1D.spec["full_err"]
             else:
                 flux_errs = spectrum_1D.spec["full_err"]
-            #breakpoint()
+            # breakpoint()
             # save as local .h5 file
             funcs.make_dirs(loc_1d_path)
             hf = h5py.File(loc_1d_path, "w")
             for name, data in zip(
                 ["mask", "wavs", "fluxes", "flux_errs"],
-                [mask, wavs, fluxes, flux_errs]
+                [mask, wavs, fluxes, flux_errs],
             ):
-                hf.create_dataset(name, data = data)
-            wav_unit = u.um # NOT GENERAL!
+                hf.create_dataset(name, data=data)
+            wav_unit = u.um  # NOT GENERAL!
             flux_unit = u.Unit(str(header["BUNIT"].replace(" ", "")))
             hf.attrs["wav_unit"] = (u.um).to_string()
             hf.attrs["flux_unit"] = flux_unit.to_string()
@@ -568,8 +615,8 @@ class Spectrum:
             flux_errs = np.array(hf["flux_errs"])
 
         wavs *= wav_unit
-        fluxes = Masked(fluxes * flux_unit, mask = mask)
-        flux_errs = Masked(np.array(flux_errs) * flux_unit, mask = mask)
+        fluxes = Masked(fluxes * flux_unit, mask=mask)
+        flux_errs = Masked(np.array(flux_errs) * flux_unit, mask=mask)
 
         if version in ["v2"]:
             msa_metafile = str(header["MSAMETFL"]).replace(" ", "")
@@ -577,7 +624,7 @@ class Spectrum:
             msa_metafile = str(header["MSAMETFL"]).replace(" ", "")
         else:
             msa_metafile = str(header["MSAMET1"]).replace(" ", "")
-        
+
         meta_uri_dir = "https://mast.stsci.edu/api/v0.1/Download/file?uri=mast:JWST/product"
         meta_in_path = f"{meta_uri_dir}/{msa_metafile}"
 
@@ -593,7 +640,7 @@ class Spectrum:
                 meta.writeto(meta_out_path)
                 funcs.change_file_permissions(meta_out_path)
             MSA_metafile_name = meta_out_path
-        except:
+        except Exception:
             MSA_metafile_name = None
 
         if z is None:
@@ -619,7 +666,8 @@ class Spectrum:
         return spec_obj
 
     def load_MSA_metafile(self):
-        """Load the MSA metafile referenced by `MSA_metafile_name` into `MSA_metafile`.
+        """Load the MSA metafile referenced by `MSA_metafile_name` into
+        `MSA_metafile`.
 
         If loading fails (e.g. `MSA_metafile_name` is invalid or `None`),
         `MSA_metafile` is set to `None`. Does nothing if `MSA_metafile`
@@ -630,7 +678,7 @@ class Spectrum:
         if not hasattr(self, "MSA_metafile"):
             try:
                 self.MSA_metafile = msa.MSAMetafile(self.MSA_metafile_name)
-            except:
+            except Exception:
                 self.MSA_metafile = None
 
     def plot_slitlet(
@@ -642,7 +690,8 @@ class Spectrum:
         nod_colour: str = "lightpink",
         **plot_kwargs,
     ):
-        """Overplot the NIRSpec MSA slitlet outlines for this source's dither point on an image.
+        """Overplot the NIRSpec MSA slitlet outlines for this source's
+        dither point on an image.
 
         Loads the MSA metafile if not already loaded, retrieves the slit
         regions for this source's dither point/MSA metadata ID, converts
@@ -682,9 +731,9 @@ class Spectrum:
             xy = np.array(s.xy[0])  # shape (4, 2) - RA/Dec corners
             # convert corners to pixel coordinates
             pixels = wcs.world_to_pixel_values(xy[:, 0], xy[:, 1])
-            x_pix = np.append(pixels[0], pixels[0][0]) # close the rectangle
+            x_pix = np.append(pixels[0], pixels[0][0])  # close the rectangle
             y_pix = np.append(pixels[1], pixels[1][0])
-            if s.meta['is_source']:
+            if s.meta["is_source"]:
                 colour_ = colour
                 lw = plot_kwargs.get("lw", 2.0) * 1.5
             else:
@@ -693,7 +742,12 @@ class Spectrum:
             plot_kwargs_ = deepcopy(plot_kwargs)
             plot_kwargs_.pop("lw", None)
             # plot only slits that enter the field of view
-            if np.any((x_pix >= 0) & (x_pix < wcs.pixel_shape[0]) & (y_pix >= 0) & (y_pix < wcs.pixel_shape[1])):
+            if np.any(
+                (x_pix >= 0)
+                & (x_pix < wcs.pixel_shape[0])
+                & (y_pix >= 0)
+                & (y_pix < wcs.pixel_shape[1])
+            ):
                 ax.plot(x_pix, y_pix, color=colour_, lw=lw, **plot_kwargs_)
 
         if add_labels:
@@ -704,7 +758,7 @@ class Spectrum:
                 ha="left",
                 va="bottom",
                 transform=ax.transAxes,
-                color="magenta",# color
+                color="magenta",  # color
                 fontsize=8,
             )
             ax.text(
@@ -714,7 +768,7 @@ class Spectrum:
                 ha="left",
                 va="bottom",
                 transform=ax.transAxes,
-                color="magenta", #color,
+                color="magenta",  # color,
                 fontsize=8,
             )
             ax.text(
@@ -724,13 +778,14 @@ class Spectrum:
                 ha="right",
                 va="bottom",
                 transform=ax.transAxes,
-                color="magenta", #colour,
+                color="magenta",  # colour,
                 fontsize=8,
             )
             # ax.text(
             #     0.97,
             #     0.03,
-            #     f"({self.sky_coord.ra.deg:.6f}, {self.sky_coord.dec.deg:.6f})",
+            #     f"({self.sky_coord.ra.deg:.6f}, "
+            #     f"{self.sky_coord.dec.deg:.6f})",
             #     ha = "right",
             #     va = "bottom",
             #     transform = ax.transAxes,
@@ -743,7 +798,8 @@ class Spectrum:
         rest_cont_wav: u.Quantity,
         delta_wav: u.Quantity = 100 * u.AA,
     ):
-        """Compute the median signal-to-noise ratio in a rest-frame continuum window.
+        """Compute the median signal-to-noise ratio in a rest-frame
+        continuum window.
 
         Selects data points within ``delta_wav / 2`` of `rest_cont_wav` in
         the rest frame, computes the per-pixel flux/flux_err ratio, and
@@ -781,7 +837,9 @@ class Spectrum:
         self: Self,
         frame: str = "obs",
         src: str = "manual",
-        out_dir: Optional[str] = f"{config['DEFAULT']['GALFIND_WORK']}/DJA_spec_plots/",
+        out_dir: Optional[
+            str
+        ] = f"{config['DEFAULT']['GALFIND_WORK']}/DJA_spec_plots/",
         fig: Optional[plt.Figure] = None,
         ax: Optional[plt.Axes] = None,
         wav_units: u.Unit = u.um,
@@ -792,7 +850,8 @@ class Spectrum:
         plot_masked: bool = True,
         **fit_kwargs: Dict[str, Any],
     ) -> NoReturn:
-        """Plot the spectrum, either via ``msaexp``'s plotting routine or manually.
+        """Plot the spectrum,
+        either via ``msaexp``'s plotting routine or manually.
 
         If ``src == "msaexp"``, uses `msaexp.spectrum.plot_spectrum` on
         `self.origin` and saves the figure under `out_dir`. If
@@ -810,7 +869,8 @@ class Spectrum:
             Default is ``"manual"``.
         out_dir : `str` or `None`, optional
             Output directory for the saved figure when ``src == "msaexp"``.
-            Default is ``f"{config['DEFAULT']['GALFIND_WORK']}/DJA_spec_plots/"``.
+            Default is
+            ``f"{config['DEFAULT']['GALFIND_WORK']}/DJA_spec_plots/"``.
         fig : `matplotlib.pyplot.Figure` or `None`, optional
             Figure to plot on when ``src == "manual"``. Created if `None`.
             Default is `None`.
@@ -852,7 +912,10 @@ class Spectrum:
             self.fit_data = data
             if out_dir is None:
                 out_dir = ""
-            save_path = f"{out_dir}{self.instrument.grating_filter_name}/{self.src_name}_spec.png"
+            save_path = (
+                f"{out_dir}{self.instrument.grating_filter_name}/"
+                f"{self.src_name}_spec.png"
+            )
             funcs.make_dirs(save_path)
             fig.savefig(save_path)
         elif src == "manual":
@@ -862,27 +925,43 @@ class Spectrum:
             mask = ~self.fluxes.mask
             wavs = funcs.convert_wav_units(self.wavs[mask], wav_units)
             if frame == "rest":
-                wavs /= (1 + self.z)
+                wavs /= 1 + self.z
             if rest_wav_range is None:
                 wav_range_mask = np.ones_like(wavs, dtype=bool)
             else:
                 if frame == "rest":
                     wav_range = np.array(rest_wav_range.to(u.AA).value)
-                else: # frame == "obs":
-                    wav_range = np.array(rest_wav_range.to(u.AA).value) * (1 + self.z)
+                else:  # frame == "obs":
+                    wav_range = np.array(rest_wav_range.to(u.AA).value) * (
+                        1 + self.z
+                    )
                 wav_range_mask = np.array(
-                    [wav > wav_range[0] and wav < wav_range[1] for wav in wavs.to(u.AA).value]
+                    [
+                        wav > wav_range[0] and wav < wav_range[1]
+                        for wav in wavs.to(u.AA).value
+                    ]
                 ).astype(bool)
             wavs = wavs[wav_range_mask]
-            fluxes = funcs.convert_mag_units(wavs, self.fluxes[mask][wav_range_mask].filled(np.nan), flux_units)
+            fluxes = funcs.convert_mag_units(
+                wavs,
+                self.fluxes[mask][wav_range_mask].filled(np.nan),
+                flux_units,
+            )
             flux_errs = funcs.convert_mag_err_units(
                 wavs,
                 self.fluxes[mask][wav_range_mask].filled(np.nan),
-                np.array([
-                    self.flux_errs[mask][wav_range_mask].filled(np.nan).value,
-                    self.flux_errs[mask][wav_range_mask].filled(np.nan).value
-                ]) * self.flux_errs.unit,
-                flux_units
+                np.array(
+                    [
+                        self.flux_errs[mask][wav_range_mask]
+                        .filled(np.nan)
+                        .value,
+                        self.flux_errs[mask][wav_range_mask]
+                        .filled(np.nan)
+                        .value,
+                    ]
+                )
+                * self.flux_errs.unit,
+                flux_units,
             )
             wavs = wavs.value
             fluxes = fluxes.value
@@ -896,10 +975,18 @@ class Spectrum:
             flux_errs = [flux_errs_l1, flux_errs_u1]
             ax.plot(wavs, fluxes, label=self.src_name, **fit_kwargs)
             alpha = deepcopy(fit_kwargs).pop("alpha", 1.0) * 0.5
-            ax.fill_between(wavs, fluxes - flux_errs[0], fluxes + flux_errs[1], alpha = alpha, **fit_kwargs)
+            ax.fill_between(
+                wavs,
+                fluxes - flux_errs[0],
+                fluxes + flux_errs[1],
+                alpha=alpha,
+                **fit_kwargs,
+            )
         if annotate:
             # label x and y axes
-            ax.set_xlabel(f"{frame.capitalize()} wavelength [{wav_units.to_string()}]")
+            ax.set_xlabel(
+                f"{frame.capitalize()} wavelength [{wav_units.to_string()}]"
+            )
             if log_fluxes:
                 ax.set_ylabel(f"log10(flux [{flux_units.to_string()}])")
             else:
@@ -908,7 +995,7 @@ class Spectrum:
             ax.set_title(f"{self.src_name} (z={self.z:.3f})")
             # add legend
             ax.legend()
-    
+
     def make_mock_phot(
         self: Self,
         filterset: Multiple_Filter,
@@ -934,6 +1021,7 @@ class Spectrum:
         via `SED_obs.create_mock_photometry`.
         """
         from . import SED_obs
+
         # TODO: Link SED and Spectrum objects
         # make SED object from self
         assert self.z is not None, galfind_logger.critical(
@@ -941,14 +1029,14 @@ class Spectrum:
         )
         sed_obs = SED_obs(
             self.z,
-            self.wavs.value, 
+            self.wavs.value,
             self.fluxes.value,
             self.wavs.unit,
             self.fluxes.unit,
         )
         return sed_obs.create_mock_photometry(
             filterset,
-            depths = depths,
+            depths=depths,
         )
 
     def fit_UV_slope(
@@ -959,7 +1047,8 @@ class Spectrum:
 
         Crops the rest-frame spectrum to the Calzetti et al. (1994)
         continuum windows, converts fluxes to f_lambda, and fits a
-        power-law ``f(wav) = 10**A * wav**beta`` via `scipy.optimize.curve_fit`.
+        power-law ``f(wav) = 10**A * wav**beta`` via
+        `scipy.optimize.curve_fit`.
 
         Parameters
         ----------
@@ -986,41 +1075,52 @@ class Spectrum:
         # convert wavs to rest frame
         rest_wavs = self.wavs / (1.0 + self.z)
         if wav_range == "Calzetti+94":
-            wavs, fluxes = funcs.crop_to_Calzetti94_filters(rest_wavs, self.fluxes)
+            wavs, fluxes = funcs.crop_to_Calzetti94_filters(
+                rest_wavs, self.fluxes
+            )
         else:
-            err_message = f"Only 'Calzetti+94' wav_range currently implemented for fit_UV_slope, not {wav_range=}"
+            err_message = (
+                "Only 'Calzetti+94' wav_range currently implemented "
+                f"for fit_UV_slope, not {wav_range=}"
+            )
             galfind_logger.critical(err_message)
             raise NotImplementedError(err_message)
         if len([mask for mask in fluxes.mask if not mask]) <= 1:
-            galfind_logger.debug(f"Not enough valid data points to fit UV slope for {repr(self)}")
+            galfind_logger.debug(
+                "Not enough valid data points to fit UV slope for "
+                f"{repr(self)}"
+            )
             beta = np.nan
             beta_err = np.nan
         else:
             # convert fluxes to f_lambda in rest frame
-            fluxes = funcs.convert_mag_units(wavs, fluxes, u.erg / u.s / u.cm**2 / u.AA)
+            fluxes = funcs.convert_mag_units(
+                wavs, fluxes, u.erg / u.s / u.cm**2 / u.AA
+            )
             try:
                 popt, pcov = curve_fit(
                     funcs.beta_slope_power_law_func,
                     wavs.value,
                     fluxes.value,
-                    maxfev = 1_000,
+                    maxfev=1_000,
                 )
                 # A = popt[0]
                 beta = popt[1]
                 # A_err = np.sqrt(pcov[0][0])
                 beta_err = np.sqrt(pcov[1][1])
             except Exception as e:
-                galfind_logger.debug(f"Failed to fit UV slope for {repr(self)}: {e}")
+                galfind_logger.debug(
+                    f"Failed to fit UV slope for {repr(self)}: {e}"
+                )
                 beta = np.nan
                 beta_err = np.nan
                 breakpoint()
         return beta, [beta_err, beta_err]
 
-
     def fit_Muv(
         self: Self,
         wav_range: u.Quantity = [1_450.0, 1_550.0] * u.AA,
-        size = 10_000,
+        size=10_000,
     ):
         """Compute the absolute UV magnitude, M_UV, of the spectrum.
 
@@ -1052,45 +1152,71 @@ class Spectrum:
         )
         rest_wavs = funcs.convert_wav_units(self.wavs, u.AA) / (1.0 + self.z)
         wav_range_AA = wav_range.to(u.AA)
-        valid = (~self.fluxes.mask & (rest_wavs < wav_range_AA[1]) & (rest_wavs > wav_range_AA[0]))
+        valid = (
+            ~self.fluxes.mask
+            & (rest_wavs < wav_range_AA[1])
+            & (rest_wavs > wav_range_AA[0])
+        )
         rest_wavs = rest_wavs[valid]
         fluxes = self.fluxes.filled(np.nan)[valid]
         flux_errs = self.flux_errs.filled(np.nan)[valid]
 
         if len(rest_wavs) > 0:
             try:
-                flux_errs = funcs.convert_mag_err_units(rest_wavs, fluxes, [flux_errs, flux_errs], u.erg / u.s / u.cm**2 / u.AA)[0] # symmetric in flux space
+                flux_errs = funcs.convert_mag_err_units(
+                    rest_wavs,
+                    fluxes,
+                    [flux_errs, flux_errs],
+                    u.erg / u.s / u.cm**2 / u.AA,
+                )[0]  # symmetric in flux space
             except Exception as e:
-                galfind_logger.debug(f"Failed to convert mag err units for {repr(self)}: {e}")
+                galfind_logger.debug(
+                    f"Failed to convert mag err units for {repr(self)}: {e}"
+                )
                 return np.nan, [np.nan, np.nan]
         else:
             galfind_logger.debug(f"No valid data for {self.src_name}")
             return np.nan, [np.nan, np.nan]
-        fluxes = funcs.convert_mag_units(rest_wavs, fluxes, u.erg / u.s / u.cm**2 / u.AA)
+        fluxes = funcs.convert_mag_units(
+            rest_wavs, fluxes, u.erg / u.s / u.cm**2 / u.AA
+        )
         # fluxes *= (1. + z) ** 2
         # flux_errs *= (1. + z) ** 2
         # weighted mean
-        weights = flux_errs ** -2.
-        flambda_1500 = np.sum(fluxes * weights) / (np.sum(weights) * len(fluxes))
-        flambda_1500_err = np.sqrt(1. / np.sum(weights))
+        weights = flux_errs**-2.0
+        flambda_1500 = np.sum(fluxes * weights) / (
+            np.sum(weights) * len(fluxes)
+        )
+        flambda_1500_err = np.sqrt(1.0 / np.sum(weights))
         # convert to MUV
-        flambda_1500_chains = np.random.normal(flambda_1500.value, flambda_1500_err.value, size) * u.erg / (u.s * (u.cm ** 2) * u.AA)
+        flambda_1500_chains = (
+            np.random.normal(flambda_1500.value, flambda_1500_err.value, size)
+            * u.erg
+            / (u.s * (u.cm**2) * u.AA)
+        )
         self.flambda_1500_chains = flambda_1500_chains
-        fnu = funcs.convert_mag_units(1_500. * u.AA, flambda_1500_chains, u.Jy)
+        fnu = funcs.convert_mag_units(
+            1_500.0 * u.AA, flambda_1500_chains, u.Jy
+        )
         mUV = -2.5 * np.log10(fnu.value) + u.Jy.to(u.ABmag)
-        #mUV += 2.5 * np.log10(self.norm_factor)
-        MUV_arr = mUV - 5.0 * np.log10(cosmo.luminosity_distance(self.z).to(u.pc).value / 10.0) + 2.5 * np.log10(1. + self.z)
+        # mUV += 2.5 * np.log10(self.norm_factor)
+        MUV_arr = (
+            mUV
+            - 5.0
+            * np.log10(cosmo.luminosity_distance(self.z).to(u.pc).value / 10.0)
+            + 2.5 * np.log10(1.0 + self.z)
+        )
         self.MUV_arr = MUV_arr
         self.MUV = np.nanmedian(MUV_arr)
         self.MUV_l1 = self.MUV - np.nanpercentile(MUV_arr, 16)
         self.MUV_u1 = np.nanpercentile(MUV_arr, 84) - self.MUV
         return self.MUV, [self.MUV_l1, self.MUV_u1]
 
-
     def fit_D4000_break(
         self: Self,
-        wav_ranges: u.Quantity = [[3_400., 3_600.], [4_150., 4_250.]] * u.AA,
-        size = 10_000,
+        wav_ranges: u.Quantity = [[3_400.0, 3_600.0], [4_150.0, 4_250.0]]
+        * u.AA,
+        size=10_000,
     ) -> Tuple[float, List[float]]:
         """Compute the D4000 spectral break strength of the spectrum.
 
@@ -1124,21 +1250,34 @@ class Spectrum:
         assert len(wav_ranges) == 2, galfind_logger.critical(
             f"{wav_ranges=} must be a list of two wavelength ranges!"
         )
-        assert all([len(wav_range) == 2 for wav_range in wav_ranges]), galfind_logger.critical(
-            f"Each element of {wav_ranges=} must be a wavelength range (i.e. a list of two wavelengths)!"
+        assert all(
+            [len(wav_range) == 2 for wav_range in wav_ranges]
+        ), galfind_logger.critical(
+            f"Each element of {wav_ranges=} must be a wavelength "
+            "range (i.e. a list of two wavelengths)!"
         )
-        assert all([wav_range[0] < wav_range[1] for wav_range in wav_ranges]), galfind_logger.critical(
-            f"In each wavelength range in {wav_ranges=}, the first wavelength must be less than the second wavelength!"
+        assert all(
+            [wav_range[0] < wav_range[1] for wav_range in wav_ranges]
+        ), galfind_logger.critical(
+            f"In each wavelength range in {wav_ranges=}, the first "
+            "wavelength must be less than the second wavelength!"
         )
-        assert np.mean(wav_ranges[0]) < np.mean(wav_ranges[1]), galfind_logger.critical(
-            f"The first wavelength range in {wav_ranges=} must be blueshifted relative to the second!"
+        assert np.mean(wav_ranges[0]) < np.mean(
+            wav_ranges[1]
+        ), galfind_logger.critical(
+            f"The first wavelength range in {wav_ranges=} must be "
+            "blueshifted relative to the second!"
         )
         rest_wavs = funcs.convert_wav_units(self.wavs, u.AA) / (1.0 + self.z)
         D4000_fluxes = {}
         D4000_flux_errs = {}
         for i, wav_range in enumerate(wav_ranges):
             wav_range_AA = wav_range.to(u.AA)
-            valid = (~self.fluxes.mask & (rest_wavs < wav_range_AA[1]) & (rest_wavs > wav_range_AA[0]))
+            valid = (
+                ~self.fluxes.mask
+                & (rest_wavs < wav_range_AA[1])
+                & (rest_wavs > wav_range_AA[0])
+            )
             rest_wavs_ = rest_wavs[valid]
             # median flux in wav_range
             if len(rest_wavs_) > 0:
@@ -1147,17 +1286,30 @@ class Spectrum:
                 D4000_fluxes[i] = np.nanmedian(fluxes).value
                 D4000_flux_errs[i] = np.nanmedian(flux_errs).value
             else:
-                galfind_logger.debug(f"No valid data for {self.src_name} in D4000 wav_range {wav_range=}")
+                galfind_logger.debug(
+                    f"No valid data for {self.src_name} in D4000 "
+                    f"wav_range {wav_range=}"
+                )
                 D4000_fluxes[i] = np.nan
                 D4000_flux_errs[i] = np.nan
-        if any(col < 0 for col in D4000_fluxes.values()) or any(col < 0 for col in D4000_flux_errs.values()):
-            galfind_logger.debug(f"Negative fluxes for {self.src_name} in D4000 wav_ranges: {D4000_fluxes=}")
+        if any(col < 0 for col in D4000_fluxes.values()) or any(
+            col < 0 for col in D4000_flux_errs.values()
+        ):
+            galfind_logger.debug(
+                f"Negative fluxes for {self.src_name} in D4000 "
+                f"wav_ranges: {D4000_fluxes=}"
+            )
             return np.nan, [np.nan, np.nan]
         else:
             # compute D4000 and error
             D4000_flux_ratio = D4000_fluxes[1] / D4000_fluxes[0]
-            D4000_flux_ratio_err = D4000_flux_ratio * np.sqrt((D4000_flux_errs[1] / D4000_fluxes[1])**2 + (D4000_flux_errs[0] / D4000_fluxes[0])**2)
-            D4000_flux_ratio_arr = np.random.normal(D4000_flux_ratio, D4000_flux_ratio_err, size)
+            D4000_flux_ratio_err = D4000_flux_ratio * np.sqrt(
+                (D4000_flux_errs[1] / D4000_fluxes[1]) ** 2
+                + (D4000_flux_errs[0] / D4000_fluxes[0]) ** 2
+            )
+            D4000_flux_ratio_arr = np.random.normal(
+                D4000_flux_ratio, D4000_flux_ratio_err, size
+            )
             D4000_arr = -2.5 * np.log10(D4000_flux_ratio_arr)
             D4000 = np.nanmedian(D4000_arr)
             D4000_l1 = D4000 - np.nanpercentile(D4000_arr, 16)
@@ -1166,7 +1318,7 @@ class Spectrum:
 
     def fit_Ha(
         self: Self,
-        wav_range = [6_200., 6_900.] * u.AA,
+        wav_range=[6_200.0, 6_900.0] * u.AA,
         Halpha_wav: u.Quantity = 6562.8 * u.AA,
         frame: str = "rest",
         plot: bool = True,
@@ -1215,101 +1367,204 @@ class Spectrum:
         ValueError
             If `frame` is not ``"rest"`` or ``"obs"``.
         """
-        rest_wavs = funcs.convert_wav_units(self.wavs, u.AA) / (1. + self.z)
+        rest_wavs = funcs.convert_wav_units(self.wavs, u.AA) / (1.0 + self.z)
         wav_range_AA = wav_range.to(u.AA)
-        valid = (~self.fluxes.mask & (rest_wavs < wav_range_AA[1]) & (rest_wavs > wav_range_AA[0]))
+        valid = (
+            ~self.fluxes.mask
+            & (rest_wavs < wav_range_AA[1])
+            & (rest_wavs > wav_range_AA[0])
+        )
         rest_wavs = rest_wavs[valid]
         fluxes = self.fluxes.filled(np.nan)[valid]
         flux_errs = self.flux_errs.filled(np.nan)[valid]
         if len(rest_wavs) > 0:
-            flux_errs = funcs.convert_mag_err_units(rest_wavs, fluxes, [flux_errs, flux_errs], u.erg / u.s / u.cm**2 / u.AA)[0] # symmetric in flux space
+            flux_errs = funcs.convert_mag_err_units(
+                rest_wavs,
+                fluxes,
+                [flux_errs, flux_errs],
+                u.erg / u.s / u.cm**2 / u.AA,
+            )[0]  # symmetric in flux space
         else:
-            print(f"No valid data for {spec_filepath.split('/')[-1]}")
+            print(f"No valid data for {self.src_name}")
             return None
-        fluxes = funcs.convert_mag_units(rest_wavs, fluxes, u.erg / u.s / u.cm**2 / u.AA)
-    
-        # TODO: This doesn't actually constrain the width - something wrong with the fitting here!
+        fluxes = funcs.convert_mag_units(
+            rest_wavs, fluxes, u.erg / u.s / u.cm**2 / u.AA
+        )
+
+        # TODO: This doesn't actually constrain the width - something
+        # wrong with the fitting here!
         params = Parameters()
-        params.add('A', value=np.max(fluxes.value) - np.median(fluxes.value), min=0., max=1e-12)
-        params.add('c', value=np.median(fluxes.value), min=0., max=1e-12)
-        params.add('sigma', value=15., min=1., max=50.)
+        params.add(
+            "A",
+            value=np.max(fluxes.value) - np.median(fluxes.value),
+            min=0.0,
+            max=1e-12,
+        )
+        params.add("c", value=np.median(fluxes.value), min=0.0, max=1e-12)
+        params.add("sigma", value=15.0, min=1.0, max=50.0)
         # dmodel = Model(gauss_model)
         # result = dmodel.fit(fluxes.value, params, wavs=wavs.value)
         # print(result.fit_report())
 
-        out = minimize(Halpha_residual, params, args=(rest_wavs.value,), kws={'y': fluxes.value, 'y_err': flux_errs.value})
+        out = minimize(
+            Halpha_residual,
+            params,
+            args=(rest_wavs.value,),
+            kws={"y": fluxes.value, "y_err": flux_errs.value},
+        )
         print(fit_report(out))
 
         sigma = out.params["sigma"].value
         cont = out.params["c"].value
 
         try:
-            A_arr = np.random.normal(loc=out.params["A"].value, scale=out.params["A"].stderr, size=size)
-            sigma_arr = np.random.normal(loc=params["sigma"].value, scale=out.params["sigma"].stderr, size=size)
-            cont_arr = np.random.normal(loc=params["c"].value, scale=out.params["c"].stderr, size=size)
-        except:
+            A_arr = np.random.normal(
+                loc=out.params["A"].value,
+                scale=out.params["A"].stderr,
+                size=size,
+            )
+            sigma_arr = np.random.normal(
+                loc=params["sigma"].value,
+                scale=out.params["sigma"].stderr,
+                size=size,
+            )
+            cont_arr = np.random.normal(
+                loc=params["c"].value, scale=out.params["c"].stderr, size=size
+            )
+        except Exception:
             breakpoint()
             self.failed_Ha_fit = True
             return
 
-        Halpha_flux_arr =  A_arr * sigma_arr * np.sqrt(2 * np.pi)
-        self.Halpha_flux_arr = Halpha_flux_arr * u.erg / u.s / u.cm ** 2
-        # Halpha_flux_arr = [self._Halpha_flux(A, sigma, c) * self.norm_factor \
+        Halpha_flux_arr = A_arr * sigma_arr * np.sqrt(2 * np.pi)
+        self.Halpha_flux_arr = Halpha_flux_arr * u.erg / u.s / u.cm**2
+        # Halpha_flux_arr = [self._Halpha_flux(A, sigma, c) *
+        self.norm_factor
         #     for A, sigma, c in zip(self.A_arr, self.sigma_arr, self.c_arr)]
         if frame == "rest":
             EW_arr = Halpha_flux_arr / cont_arr
         elif frame == "obs":
-            EW_arr = Halpha_flux_arr * (1. + self.z) / cont_arr
+            EW_arr = Halpha_flux_arr * (1.0 + self.z) / cont_arr
         else:
             raise ValueError("frame must be 'rest' or 'obs'")
         EW_percentiles = np.percentile(EW_arr, [16, 50, 84])
         if frame == "rest":
-            self.Ha_EWrest = {"16": EW_percentiles[0], "50": EW_percentiles[1], "84": EW_percentiles[2]}
-            #return EW_percentiles[0], EW_percentiles[1], EW_percentiles[2]
+            self.Ha_EWrest = {
+                "16": EW_percentiles[0],
+                "50": EW_percentiles[1],
+                "84": EW_percentiles[2],
+            }
+            # return EW_percentiles[0], EW_percentiles[1], EW_percentiles[2]
         elif frame == "obs":
-            self.Ha_EWobs = {"16": EW_percentiles[0], "50": EW_percentiles[1], "84": EW_percentiles[2]}
-            #return EW_percentiles[0], EW_percentiles[1], EW_percentiles[2]
+            self.Ha_EWobs = {
+                "16": EW_percentiles[0],
+                "50": EW_percentiles[1],
+                "84": EW_percentiles[2],
+            }
+            # return EW_percentiles[0], EW_percentiles[1], EW_percentiles[2]
         else:
-            raise(Exception("frame must be 'rest' or 'obs'"))
+            raise (Exception("frame must be 'rest' or 'obs'"))
 
         cont_percentiles = np.percentile(cont_arr, [16, 50, 84])
-        self.Ha_cont = {"16": cont_percentiles[0], "50": cont_percentiles[1], "84": cont_percentiles[2]}
+        self.Ha_cont = {
+            "16": cont_percentiles[0],
+            "50": cont_percentiles[1],
+            "84": cont_percentiles[2],
+        }
 
         Halpha_flux_percentiles = np.percentile(Halpha_flux_arr, [16, 50, 84])
-        self.Ha_flux = {"16": Halpha_flux_percentiles[0], "50": Halpha_flux_percentiles[1], "84": Halpha_flux_percentiles[2]}
+        self.Ha_flux = {
+            "16": Halpha_flux_percentiles[0],
+            "50": Halpha_flux_percentiles[1],
+            "84": Halpha_flux_percentiles[2],
+        }
 
-        feature_mask = (rest_wavs.value > Halpha_wav.value - 5. * sigma) & (rest_wavs.value < Halpha_wav.value + 5. * sigma)
-        SNRs = (fluxes[feature_mask].value - cont) / flux_errs.value[feature_mask]
+        feature_mask = (rest_wavs.value > Halpha_wav.value - 5.0 * sigma) & (
+            rest_wavs.value < Halpha_wav.value + 5.0 * sigma
+        )
+        SNRs = (fluxes[feature_mask].value - cont) / flux_errs.value[
+            feature_mask
+        ]
         integrated_SNR = np.sum(SNRs) / np.sqrt(len(SNRs))
         print(f"Integrated SNR: {integrated_SNR}")
         assert not np.isnan(integrated_SNR)
         self.Ha_SNR = integrated_SNR
-    
+
         fig, ax = plt.subplots()
         if plot:
-            ax.plot(rest_wavs.value, fluxes.value, c = "black", label = "NIRSpec/PRISM")
-            ax.fill_between(rest_wavs.value, fluxes.value - flux_errs.value, fluxes.value + flux_errs.value, alpha = 0.5, color = "black")
-            median_chains = [np.median(Halpha_gauss(wav, A_arr, sigma_arr, cont_arr)) for wav in rest_wavs.value]
-            ax.plot(rest_wavs.value, median_chains, c = "red", label = "Halpha model")
-            model_l1 = [np.percentile(Halpha_gauss(wav, A_arr, sigma_arr, cont_arr), 16) for wav in rest_wavs.value]
-            model_u1 = [np.percentile(Halpha_gauss(wav, A_arr, sigma_arr, cont_arr), 84) for wav in rest_wavs.value]
-            ax.fill_between(rest_wavs.value, model_l1, model_u1, alpha = 0.5, color = "red")
+            ax.plot(
+                rest_wavs.value, fluxes.value, c="black", label="NIRSpec/PRISM"
+            )
+            ax.fill_between(
+                rest_wavs.value,
+                fluxes.value - flux_errs.value,
+                fluxes.value + flux_errs.value,
+                alpha=0.5,
+                color="black",
+            )
+            median_chains = [
+                np.median(Halpha_gauss(wav, A_arr, sigma_arr, cont_arr))
+                for wav in rest_wavs.value
+            ]
+            ax.plot(
+                rest_wavs.value, median_chains, c="red", label="Halpha model"
+            )
+            model_l1 = [
+                np.percentile(
+                    Halpha_gauss(wav, A_arr, sigma_arr, cont_arr), 16
+                )
+                for wav in rest_wavs.value
+            ]
+            model_u1 = [
+                np.percentile(
+                    Halpha_gauss(wav, A_arr, sigma_arr, cont_arr), 84
+                )
+                for wav in rest_wavs.value
+            ]
+            ax.fill_between(
+                rest_wavs.value, model_l1, model_u1, alpha=0.5, color="red"
+            )
             # make rf string containing EW width and errors
-            #plt.text(0.05, 0.95, r"EW$_{\mathrm{rest}}$(H$\alpha$)=" + f"{Halpha_EWrest_50:.2f}" + r"$^{+" + f"{Halpha_EWrest_84 - Halpha_EWrest_50:.2f}" + r"}_{-" + f"{Halpha_EWrest_50 - Halpha_EWrest_16:.2f}" + r"}~\mathrm{\AA}$", transform = plt.gca().transAxes)
+            # plt.text(0.05, 0.95, r"EW$_{\mathrm{rest}}$(H$\alpha$)=" +
+            # f"{Halpha_EWrest_50:.2f}" + r"$^{+" +
+            # f"{Halpha_EWrest_84 - Halpha_EWrest_50:.2f}" + r"}_{-" +
+            # f"{Halpha_EWrest_50 - Halpha_EWrest_16:.2f}" +
+            # r"}~\mathrm{\AA}$", transform = plt.gca().transAxes)
             # make rf string containing flux and errors
-            ax.text(0.05, 0.95, r"$F_{\mathrm{H}\alpha}$=" + f"{Halpha_flux_percentiles[1]:.2e}" + r"$^{+" + f"{Halpha_flux_percentiles[2] - Halpha_flux_percentiles[1]:.2e}" + r"}_{-" + f"{Halpha_flux_percentiles[1] - Halpha_flux_percentiles[0]:.2e}" + r"}~\mathrm{erg/s/cm^2}$", transform = plt.gca().transAxes)
+            Halpha_flux_err_hi = (
+                Halpha_flux_percentiles[2] - Halpha_flux_percentiles[1]
+            )
+            Halpha_flux_err_lo = (
+                Halpha_flux_percentiles[1] - Halpha_flux_percentiles[0]
+            )
+            ax.text(
+                0.05,
+                0.95,
+                r"$F_{\mathrm{H}\alpha}$="
+                + f"{Halpha_flux_percentiles[1]:.2e}"
+                + r"$^{+"
+                f"{Halpha_flux_err_hi:.2e}" + r"}_{-"
+                f"{Halpha_flux_err_lo:.2e}" + r"}~\mathrm{erg/s/cm^2}$",
+                transform=plt.gca().transAxes,
+            )
             # make rf string to show the SNR
-            ax.text(0.05, 0.9, f"SNR={self.Ha_SNR:.2f}", transform = plt.gca().transAxes)
+            ax.text(
+                0.05,
+                0.9,
+                f"SNR={self.Ha_SNR:.2f}",
+                transform=plt.gca().transAxes,
+            )
             out_path = f"../plots/Halpha_spec_fits/manual/{self.file}.png"
             funcs.make_dirs(out_path)
             ax.set_xlabel("Wavelength (AA)")
             ax.set_ylabel("Flux (erg/s/cm^2/AA)")
-            ax.legend(loc = "upper right")
+            ax.legend(loc="upper right")
             plt.savefig(out_path)
             plt.clf()
 
     def fit_xi_ion(self: Self, plot: bool = False):
-        """Compute the ionizing photon production efficiency, xi_ion, of the source.
+        """Compute the ionizing photon production efficiency,
+        xi_ion, of the source.
 
         Runs `fit_Muv` and `fit_Ha` to obtain the rest-frame UV and
         H-alpha luminosities, converts the H-alpha luminosity to an
@@ -1326,9 +1581,16 @@ class Spectrum:
             is `False`.
         """
         self.fit_Muv()
-        self.fit_Ha(plot = plot)
-        LUV_arr = funcs.flux_to_luminosity(self.flambda_1500_chains, 1_500.0 * u.AA, self.z)
-        LHa_arr = funcs.flux_to_luminosity(self.Halpha_flux_arr / (1.0 + self.z), 6_562.8 * u.AA, self.z, out_units = u.erg / u.s)
+        self.fit_Ha(plot=plot)
+        LUV_arr = funcs.flux_to_luminosity(
+            self.flambda_1500_chains, 1_500.0 * u.AA, self.z
+        )
+        LHa_arr = funcs.flux_to_luminosity(
+            self.Halpha_flux_arr / (1.0 + self.z),
+            6_562.8 * u.AA,
+            self.z,
+            out_units=u.erg / u.s,
+        )
         self.ndot_ion_arr = 7.28e11 * LHa_arr.value
         self.ndot_ion = np.median(self.ndot_ion_arr)
         self.ndot_ion_l1 = np.percentile(self.ndot_ion_arr, 16)
@@ -1337,6 +1599,7 @@ class Spectrum:
         self.xi_ion = np.median(self.xi_ion_arr)
         self.xi_ion_l1 = np.percentile(self.xi_ion_arr, 16)
         self.xi_ion_u1 = np.percentile(self.xi_ion_arr, 84)
+
 
 def Halpha_gauss(x, A, sigma, c):
     """Evaluate a Gaussian-plus-constant model of the H-alpha emission line.
@@ -1358,10 +1621,12 @@ def Halpha_gauss(x, A, sigma, c):
         Model flux values at `x`, centred on the H-alpha rest wavelength
         (6562.8 Angstrom).
     """
-    return A * np.exp(-0.5 * ((x - 6562.8) / sigma)**2) + c
+    return A * np.exp(-0.5 * ((x - 6562.8) / sigma) ** 2) + c
+
 
 def Halpha_residual(params, x, y, y_err):
-    """Compute the weighted residual of `Halpha_gauss` for use with `lmfit.minimize`.
+    """Compute the weighted residual of `Halpha_gauss` for use with
+    `lmfit.minimize`.
 
     Parameters
     ----------
@@ -1380,7 +1645,7 @@ def Halpha_residual(params, x, y, y_err):
         ``(model - y) / y_err`` evaluated at `x`.
     """
     # gaussian plus a constant
-    model = Halpha_gauss(x, params['A'], params['sigma'], params['c'])
+    model = Halpha_gauss(x, params["A"], params["sigma"], params["c"])
     return (model - y) / y_err
 
 
@@ -1413,7 +1678,9 @@ class Spectral_Catalogue:
             [spec for spec in spectrum_arr if spec.src_name == src_name]
             for src_name in unique_src_names
         ]
-        # self.sky_coords = np.array([spec[0].sky_coord for spec in self.spectrum_arr])
+        # self.sky_coords = np.array(
+        #     [spec[0].sky_coord for spec in self.spectrum_arr]
+        # )
 
     def __len__(self):
         return len(self.spectrum_arr)
@@ -1446,7 +1713,7 @@ class Spectral_Catalogue:
             + [spectrum for gal in cat for spectrum in gal]
         )
         return Spectral_Catalogue(spectra_arr)
-    
+
     def __deepcopy__(self, memo):
         galfind_logger.debug(f"deepcopy({self.__class__.__name__})")
         cls = self.__class__
@@ -1455,7 +1722,7 @@ class Spectral_Catalogue:
         for key, value in self.__dict__.items():
             try:
                 setattr(result, key, deepcopy(value, memo))
-            except:
+            except Exception:
                 galfind_logger.critical(
                     f"deepcopy({self.__class__.__name__}) {key}: {value} FAIL!"
                 )
@@ -1477,7 +1744,8 @@ class Spectral_Catalogue:
         version: str = "v4_4",
         zlabel: str = "z",
     ):
-        """Construct a `Spectral_Catalogue` by querying the DAWN JWST Archive (DJA) catalogue.
+        """Construct a `Spectral_Catalogue` by querying the DAWN JWST
+        Archive (DJA) catalogue.
 
         Loads the DJA source catalogue for the given `version`, optionally
         filters it (by `filename_arr`, or by any combination of `ra_range`,
@@ -1532,11 +1800,13 @@ class Spectral_Catalogue:
         if grating_filter is not None:
             assert grating_filter in NIRSpec.available_grating_filters
         available_versions = ["v1", "v2", "v3", "v4_2", "v4_4"]
-        assert version in available_versions, \
-            galfind_logger.critical(f"version {version} not in {available_versions}"
+        assert version in available_versions, galfind_logger.critical(
+            f"version {version} not in {available_versions}"
         )
         # open and crop catalogue
-        # DJA_cat = utils.read_catalog(config['Spectra']['DJA_CAT_PATH'], format = "ascii.ecsv")
+        # DJA_cat = utils.read_catalog(
+        #     config['Spectra']['DJA_CAT_PATH'], format = "ascii.ecsv"
+        # )
         DJA_cat = Table.read(
             config["Spectra"]["DJA_CAT_PATH"].replace("v4_4", version)
         )
@@ -1545,38 +1815,64 @@ class Spectral_Catalogue:
                 assert len(ra_range) == 2
                 if type(ra_range) in [list, np.array]:
                     assert ra_range[0].unit == ra_range[1].unit
-                    ra_range = [ra_range[0].value, ra_range[1].value] \
-                        * ra_range[0].unit
+                    ra_range = [
+                        ra_range[0].value,
+                        ra_range[1].value,
+                    ] * ra_range[0].unit
                 ra_range = sorted(ra_range.to(u.deg).value)
-                galfind_logger.info(f"Filtering DJA_{version} catalogue to RA range {ra_range}. Original size: {len(DJA_cat)}")
+                galfind_logger.info(
+                    f"Filtering DJA_{version} catalogue to RA range "
+                    f"{ra_range}. Original size: {len(DJA_cat)}"
+                )
                 DJA_cat = DJA_cat[
-                    ((DJA_cat["ra"] > ra_range[0]) & (DJA_cat["ra"] < ra_range[1]))
+                    (
+                        (DJA_cat["ra"] > ra_range[0])
+                        & (DJA_cat["ra"] < ra_range[1])
+                    )
                 ]
-                galfind_logger.info(f"Filtered DJA_{version} catalogue to size: {len(DJA_cat)}")
-            
+                galfind_logger.info(
+                    f"Filtered DJA_{version} catalogue to size: {len(DJA_cat)}"
+                )
+
             if dec_range is not None:
                 assert len(dec_range) == 2
                 if type(dec_range) in [list, np.array]:
                     assert dec_range[0].unit == dec_range[1].unit
-                    dec_range = [dec_range[0].value, dec_range[1].value] \
-                        * dec_range[0].unit
+                    dec_range = [
+                        dec_range[0].value,
+                        dec_range[1].value,
+                    ] * dec_range[0].unit
                 dec_range = sorted(dec_range.to(u.deg).value)
-                galfind_logger.info(f"Filtering DJA_{version} catalogue to Dec range {dec_range}. Original size: {len(DJA_cat)}")
+                galfind_logger.info(
+                    f"Filtering DJA_{version} catalogue to Dec range "
+                    f"{dec_range}. Original size: {len(DJA_cat)}"
+                )
                 DJA_cat = DJA_cat[
                     (
                         (DJA_cat["dec"] > dec_range[0])
                         & (DJA_cat["dec"] < dec_range[1])
                     )
                 ]
-                galfind_logger.info(f"Filtered DJA_{version} catalogue to size: {len(DJA_cat)}")
+                galfind_logger.info(
+                    f"Filtered DJA_{version} catalogue to size: {len(DJA_cat)}"
+                )
 
             if grade is not None:
-                galfind_logger.info(f"Filtering DJA_{version} catalogue to grade {grade} sources. Original size: {len(DJA_cat)}")
+                galfind_logger.info(
+                    f"Filtering DJA_{version} catalogue to grade "
+                    f"{grade} sources. Original size: {len(DJA_cat)}"
+                )
                 DJA_cat = DJA_cat[DJA_cat["grade"] == grade]
-                galfind_logger.info(f"Filtered DJA_{version} catalogue to size: {len(DJA_cat)}")
+                galfind_logger.info(
+                    f"Filtered DJA_{version} catalogue to size: {len(DJA_cat)}"
+                )
 
             if grating_filter is not None:
-                galfind_logger.info(f"Filtering DJA_{version} catalogue to grating/filter {grating_filter}. Original size: {len(DJA_cat)}")
+                galfind_logger.info(
+                    f"Filtering DJA_{version} catalogue to "
+                    f"grating/filter {grating_filter}. Original size: "
+                    f"{len(DJA_cat)}"
+                )
                 if "grating" in DJA_cat.colnames:
                     # TODO: Generalize this!
                     if version in ["v4_2"]:
@@ -1589,24 +1885,36 @@ class Spectral_Catalogue:
                     DJA_cat = DJA_cat[
                         DJA_cat["filter"] == grating_filter.split("/")[1]
                     ]
-                galfind_logger.info(f"Filtered DJA_{version} catalogue to size: {len(DJA_cat)}")
+                galfind_logger.info(
+                    f"Filtered DJA_{version} catalogue to size: {len(DJA_cat)}"
+                )
 
             if z_cat_range is not None:
-                galfind_logger.info(f"Filtering DJA_{version} catalogue to z range {z_cat_range}. Original size: {len(DJA_cat)}")
+                galfind_logger.info(
+                    f"Filtering DJA_{version} catalogue to z range "
+                    f"{z_cat_range}. Original size: {len(DJA_cat)}"
+                )
                 DJA_cat = DJA_cat[
                     (
                         (DJA_cat[zlabel] > z_cat_range[0])
                         & (DJA_cat[zlabel] < z_cat_range[1])
                     )
                 ]
-                galfind_logger.info(f"Filtered DJA_{version} catalogue to size: {len(DJA_cat)}")
+                galfind_logger.info(
+                    f"Filtered DJA_{version} catalogue to size: {len(DJA_cat)}"
+                )
                 z_from_cat = True
-            
+
             if PID is not None:
-                galfind_logger.info(f"Filtering DJA_{version} catalogue to PID {PID}. Original size: {len(DJA_cat)}")
+                galfind_logger.info(
+                    f"Filtering DJA_{version} catalogue to PID {PID}. "
+                    f"Original size: {len(DJA_cat)}"
+                )
                 if "PID" in DJA_cat.colnames:
                     DJA_cat = DJA_cat[DJA_cat["PID"] == PID]
-                galfind_logger.info(f"Filtered DJA_{version} catalogue to size: {len(DJA_cat)}")
+                galfind_logger.info(
+                    f"Filtered DJA_{version} catalogue to size: {len(DJA_cat)}"
+                )
         else:
             mask = np.isin(np.array(DJA_cat["file"]), np.array(filename_arr))
             DJA_cat = DJA_cat[mask]
@@ -1616,17 +1924,18 @@ class Spectral_Catalogue:
                 [
                     Spectrum.from_DJA(
                         f"{config['Spectra']['DJA_WEB_DIR']}/{root}/{file}",
-                        save = save,
-                        version = version,
-                        z = z,
-                        root = root,
-                        file = file,
+                        save=save,
+                        version=version,
+                        z=z,
+                        root=root,
+                        file=file,
                     )
                     for root, file, z in tqdm(
                         zip(DJA_cat["root"], DJA_cat["file"], DJA_cat[zlabel]),
                         total=len(DJA_cat),
                         desc=f"Loading DJA_{version} catalogue",
-                        disable=galfind_logger.getEffectiveLevel() > logging.INFO
+                        disable=galfind_logger.getEffectiveLevel()
+                        > logging.INFO,
                     )
                 ]
             )
@@ -1635,20 +1944,21 @@ class Spectral_Catalogue:
                 [
                     Spectrum.from_DJA(
                         f"{config['Spectra']['DJA_WEB_DIR']}/{root}/{file}",
-                        save = save,
-                        version = version,
-                        root = root,
-                        file = file,
+                        save=save,
+                        version=version,
+                        root=root,
+                        file=file,
                     )
                     for root, file in tqdm(
                         zip(DJA_cat["root"], DJA_cat["file"]),
                         total=len(DJA_cat),
                         desc=f"Loading DJA_{version} catalogue",
-                        disable=galfind_logger.getEffectiveLevel() > logging.INFO
+                        disable=galfind_logger.getEffectiveLevel()
+                        > logging.INFO,
                     )
                 ]
             )
-    
+
     def plot(
         self: Self,
         src: str = "msaexp",
@@ -1666,4 +1976,4 @@ class Spectral_Catalogue:
         """
         for gal in tqdm(self, desc="Plotting spectra"):
             for spec in gal:
-                spec.plot(src = src)
+                spec.plot(src=src)

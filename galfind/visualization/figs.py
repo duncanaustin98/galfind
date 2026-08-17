@@ -4,9 +4,10 @@ Provides functions for creating rectangular and square axis grids with
 automatic scaling and layout configuration.
 """
 
-import numpy as np
+from typing import Any, Dict, List, Tuple, Union
+
 import matplotlib.pyplot as plt
-from typing import Union, List, Tuple, Dict, Any
+import numpy as np
 
 
 def make_rectangular_fig(
@@ -49,7 +50,15 @@ def make_rectangular_fig(
     assert isinstance(n_ax, int) and n_ax > 0
     n_x = int(np.ceil(np.sqrt(n_ax * xy_ratio)))
     n_y = int(np.ceil(n_ax / n_x))
-    return make_fig_ax(n_x, n_y, scaling = scaling, axis_type = axis_type, sharex = sharex, sharey = sharey, **gridspec_kwargs)
+    return make_fig_ax(
+        n_x,
+        n_y,
+        scaling=scaling,
+        axis_type=axis_type,
+        sharex=sharex,
+        sharey=sharey,
+        **gridspec_kwargs,
+    )
 
 
 def make_square_fig(
@@ -92,7 +101,15 @@ def make_square_fig(
     """
     assert isinstance(np.sqrt(n_ax), int)
     n_x = int(np.sqrt(n_ax))
-    return make_fig_ax(n_x, n_x, scaling = scaling, axis_type = axis_type, sharex = sharex, sharey = sharey, **gridspec_kwargs)
+    return make_fig_ax(
+        n_x,
+        n_x,
+        scaling=scaling,
+        axis_type=axis_type,
+        sharex=sharex,
+        sharey=sharey,
+        **gridspec_kwargs,
+    )
 
 
 def make_fig_ax(
@@ -134,9 +151,13 @@ def make_fig_ax(
     """
     fig = make_fig(n_x, n_y, scaling)
     if axis_type == "cutout":
-        ax_arr = make_cutout_ax(fig, n_x, n_y, **gridspec_kwargs) #, sharex = sharex, sharey = sharey)
+        ax_arr = make_cutout_ax(
+            fig, n_x, n_y, **gridspec_kwargs
+        )  # , sharex = sharex, sharey = sharey)
     else:
-        ax_arr = make_ax(fig, n_x, n_y, sharex = sharex, sharey = sharey, **gridspec_kwargs)
+        ax_arr = make_ax(
+            fig, n_x, n_y, sharex=sharex, sharey=sharey, **gridspec_kwargs
+        )
     return fig, ax_arr
 
 
@@ -163,6 +184,7 @@ def make_fig(
         A new figure object.
     """
     return plt.figure(figsize=(n_x * scaling, n_y * scaling))
+
 
 def make_ax(
     fig: plt.Figure,
@@ -200,10 +222,15 @@ def make_ax(
         if i == 0:
             cutout_ax = fig.add_subplot(gridspec_cutout[i])
         else:
-            cutout_ax = fig.add_subplot(gridspec_cutout[i], sharex=cutout_ax_list[0] if sharex else None, sharey=cutout_ax_list[0] if sharey else None)
+            cutout_ax = fig.add_subplot(
+                gridspec_cutout[i],
+                sharex=cutout_ax_list[0] if sharex else None,
+                sharey=cutout_ax_list[0] if sharey else None,
+            )
         cutout_ax_list.extend([cutout_ax])
     ax_arr = np.array(cutout_ax_list, dtype=object).flatten()
     return ax_arr
+
 
 def make_cutout_ax(
     fig: plt.Figure,
@@ -243,6 +270,7 @@ def make_cutout_ax(
     ax_arr = np.array(cutout_ax_list, dtype=object).flatten()
     return ax_arr
 
+
 def make_phot_diagnostic_fig(
     n_cutouts: int,
     fig_kwargs: Dict[str, Any] = {},
@@ -275,10 +303,8 @@ def make_phot_diagnostic_fig(
     fig, cutout_fig = overall_fig.subfigures(
         2,
         1,
-        hspace = -2.0,
-        height_ratios = [2.0, 1.0]
-        if n_cutouts <= 8
-        else [1.8, 1],
+        hspace=-2.0,
+        height_ratios=[2.0, 1.0] if n_cutouts <= 8 else [1.8, 1],
     )
 
     gs = fig.add_gridspec(2, 4)

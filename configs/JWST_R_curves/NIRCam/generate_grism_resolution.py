@@ -6,12 +6,13 @@ def grism_resolution(wavelength):
     wavelength =  np.array(wavelength)
     return 3.35 * wavelength**4 - 41.9 * wavelength**3 + 95.5 * wavelength**2 + 536 * wavelength - 240
 # in Angstrom
-wavelengths = np.arange(2.5, 5.2, 0.0001) 
+wavelengths = np.arange(2.5, 5.2, 0.0001)
 
 resolutions = grism_resolution(wavelengths)
 
 #get file directory
 import os
+
 current_dir = os.path.dirname(os.path.realpath(__file__))
 
 

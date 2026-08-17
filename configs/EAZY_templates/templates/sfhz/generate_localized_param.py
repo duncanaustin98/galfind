@@ -1,6 +1,7 @@
 import glob
 import pathlib
 
+
 def generate_localized_param():
     print('Generating localized param files')
 
@@ -28,7 +29,7 @@ def generate_localized_param():
                 absolute_path = absolute_path.resolve()
                 # Replace the relative path with the absolute path
                 param_contents = param_contents.replace(relative_path, str(absolute_path))
-                
+
         # Write the contents back to the file - but replace .param with _galfind.param
         with open(param_file.replace('.param', '_galfind.param'), 'w') as f:
             f.write(param_contents)
@@ -38,4 +39,3 @@ if __name__ == '__main__':
     generate_localized_param()
 
 
-        

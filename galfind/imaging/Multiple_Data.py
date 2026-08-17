@@ -8,7 +8,8 @@ import numpy as np
 
 
 class Multiple_Data:
-    """Container for a collection of ``Data`` objects spanning multiple surveys.
+    """Container for a collection of ``Data`` objects spanning
+    multiple surveys.
 
     Parameters
     ----------
@@ -72,16 +73,16 @@ class Multiple_Data:
             `str`, `list` or `numpy.ndarray`, or if their nested elements
             are not `str`, `list` or `numpy.ndarray`.
         """
-        if type(versions) == str:
+        if isinstance(versions, str):
             versions = [versions for i in range(len(surveys))]
         assert len(versions) == len(surveys)
 
-        if type(instrument_names_arr) == str:
+        if isinstance(instrument_names_arr, str):
             instrument_names_arr = [
                 [instrument_names_arr] for i in range(len(surveys))
             ]
         elif type(instrument_names_arr) in [list, np.array]:
-            if type(instrument_names_arr[0]) == str:
+            if isinstance(instrument_names_arr[0], str):
                 instrument_names_arr = [
                     instrument_names_arr for i in range(len(surveys))
                 ]
@@ -94,10 +95,10 @@ class Multiple_Data:
             raise (Exception())
         assert len(instrument_names_arr) == len(surveys)
 
-        if type(excl_bands_arr) == str:
+        if isinstance(excl_bands_arr, str):
             excl_bands_arr = [[excl_bands_arr] for i in range(len(surveys))]
         elif type(excl_bands_arr) in [list, np.array]:
-            if type(excl_bands_arr[0]) == str:
+            if isinstance(excl_bands_arr[0], str):
                 excl_bands_arr = [excl_bands_arr for i in range(len(surveys))]
             elif type(excl_bands_arr[0]) in [list, np.array]:
                 # already formatted correctly
