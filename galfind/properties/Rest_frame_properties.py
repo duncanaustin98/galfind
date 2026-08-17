@@ -8,17 +8,15 @@ from __future__ import annotations
 
 import astropy.units as u
 import numpy as np
-from abc import abstractmethod, ABC
+from abc import abstractmethod
 from tqdm import tqdm
 from pathlib import Path
 from astropy.table import Table
 from copy import deepcopy
-import time
 from scipy.stats import norm
 import logging
 from numba import njit
 from joblib import Parallel, delayed, parallel_config
-import itertools
 from typing import TYPE_CHECKING, Dict, Any, List, Union, Tuple, Optional, NoReturn
 if TYPE_CHECKING:
     from . import Multiple_Filter
@@ -30,10 +28,15 @@ except ImportError:
 from .. import galfind_logger, config, all_filt_names, astropy_cosmo
 from ..utils import useful_funcs_austind as funcs
 from ..utils.decorators import ignore_warnings
-from . import Catalogue, Catalogue_Base, Galaxy, SED_code, Photometry_rest, PDF
-from .Emission_lines import line_diagnostics, strong_optical_lines
+from ..catalogues.Catalogue import Catalogue
+from ..catalogues.Catalogue_Base import Catalogue_Base
+from ..galaxy.Galaxy import Galaxy
+from ..sed_fitting.SED_codes import SED_code
+from ..photometry.Photometry_rest import Photometry_rest
+from ..visualization.PDF import PDF
+from ..spectra.Emission_lines import line_diagnostics, strong_optical_lines
 from .Property_calculator import Property_Calculator
-from .Dust_Attenuation import AUV_from_beta, Dust_Law, Calzetti00, M99
+from ..spectra.Dust_Attenuation import AUV_from_beta, Dust_Law, Calzetti00, M99
 
 # Rest optical line property naming functions
 
@@ -3509,11 +3512,167 @@ class SFR_Halpha_Calculator(Rest_Frame_Property_Calculator):
         SFR_Halpha_arr[~np.isfinite(SFR_Halpha_arr)] = np.nan
         if self.global_kwargs["logged"]:
             SFR_Halpha_arr = np.log10(SFR_Halpha_arr.value) * u.Unit(f"dex({SFR_Halpha_arr.unit.to_string()})")
-        breakpoint()
         return SFR_Halpha_arr
-    
+
     def _get_output_kwargs(
         self: Self,
         phot_rest: Photometry_rest
     ) -> Dict[str, Any]:
         return {}
+
+
+class Lya_Break_Strength_Calculator(Rest_Frame_Property_Calculator):
+    """Calculates the Lyman-alpha break strength as the color across the Ly-alpha break.
+
+    Identifies the reddest rest-frame filter that is entirely blueward of the
+    Lyman-alpha wavelength and the bluest rest-frame filter that is entirely
+    redward of the Lyman-alpha wavelength, then computes the color (magnitude
+    difference) between them. The break strength is defined as
+    mag_blue - mag_red in rest-frame AB magnitudes.
+
+    Parameters
+    ----------
+    aper_diam : `astropy.units.Quantity`
+        Aperture diameter of the photometry used to compute this property.
+    SED_fit_label : `str` or `Type[SED_code]`
+        Label (or `SED_code` instance) identifying the SED-fitting run
+        whose `Photometry_rest` this property is calculated from.
+    lya_wav : `astropy.units.Quantity`, optional
+        Rest-frame wavelength of the Lyman-alpha line. Default is
+        `1_215.67 * u.AA` (observed Ly-alpha wavelength).
+    """
+
+    def __init__(
+        self: Self,
+        aper_diam: u.Quantity,
+        SED_fit_label: Union[str, Type[SED_code]],
+        lya_wav: u.Quantity = 1_215.67 * u.AA,
+    ) -> NoReturn:
+        global_kwargs = {"lya_wav": lya_wav.to(u.AA)}
+        super().__init__(aper_diam, SED_fit_label, [], **global_kwargs)
+
+    @property
+    def name(self: Self) -> str:
+        """`str`: Short identifier, ``"lya_break_strength"``."""
+        return "lya_break_strength"
+
+    @property
+    def plot_name(self: Self) -> str:
+        """`str`: Human-readable plot label for the Lyman-alpha break strength."""
+        return r"Ly$\alpha$ Break Strength"
+
+    def _kwarg_assertions(self: Self) -> None:
+        assert u.get_physical_type(self.global_kwargs["lya_wav"]) == "length"
+        assert self.global_kwargs["lya_wav"] > 100.0 * u.AA
+        assert self.global_kwargs["lya_wav"] < 10_000.0 * u.AA
+
+    def _calc_obj_kwargs(
+        self: Self,
+        phot_rest: Photometry_rest
+    ) -> Dict[str, Any]:
+        """Identify filters entirely blueward and redward of the Lyman-alpha wavelength."""
+        lya_wav = self.global_kwargs["lya_wav"].to(u.AA).value
+
+        # Get rest-frame filter edges and centers
+        rest_filt_centers = []
+        rest_filt_upper_edges = []
+        rest_filt_lower_edges = []
+
+        for filt in phot_rest.filterset:
+            center = funcs.convert_wav_units(filt.WavelengthCen / (1.0 + phot_rest.z.value), u.AA).value
+            upper = funcs.convert_wav_units(filt.WavelengthUpper50 / (1.0 + phot_rest.z.value), u.AA).value
+            lower = funcs.convert_wav_units(filt.WavelengthLower50 / (1.0 + phot_rest.z.value), u.AA).value
+            rest_filt_centers.append(center)
+            rest_filt_upper_edges.append(upper)
+            rest_filt_lower_edges.append(lower)
+
+        rest_filt_centers = np.array(rest_filt_centers)
+        rest_filt_upper_edges = np.array(rest_filt_upper_edges)
+        rest_filt_lower_edges = np.array(rest_filt_lower_edges)
+
+        # Find filters entirely blueward (upper edge < Ly-alpha) and entirely redward (lower edge > Ly-alpha)
+        blue_indices = np.where(rest_filt_upper_edges < lya_wav)[0]
+        red_indices = np.where(rest_filt_lower_edges > lya_wav)[0]
+
+        # Select the reddest blue filter (highest center) and the bluest red filter (lowest center)
+        if len(blue_indices) == 0 or len(red_indices) == 0:
+            return {
+                "blue_idx": None,
+                "red_idx": None,
+                "blue_filt_name": None,
+                "red_filt_name": None,
+                "blue_wav": None,
+                "red_wav": None,
+            }
+
+        blue_idx = blue_indices[np.argmax(rest_filt_centers[blue_indices])]
+        red_idx = red_indices[np.argmin(rest_filt_centers[red_indices])]
+
+        return {
+            "blue_idx": blue_idx,
+            "red_idx": red_idx,
+            "blue_filt_name": phot_rest.filterset.filt_names[blue_idx],
+            "red_filt_name": phot_rest.filterset.filt_names[red_idx],
+            "blue_wav": rest_filt_centers[blue_idx] * u.AA,
+            "red_wav": rest_filt_centers[red_idx] * u.AA,
+        }
+
+    def _fail_criteria(
+        self: Self,
+        phot_rest: Photometry_rest,
+    ) -> bool:
+        """Fail if no valid filter pair brackets the break."""
+        if (self.obj_kwargs["blue_idx"] is None or
+            self.obj_kwargs["red_idx"] is None):
+            return True
+
+        # Check for valid flux measurements
+        blue_SNR = phot_rest.flux[self.obj_kwargs["blue_idx"]] / phot_rest.flux_errs[self.obj_kwargs["blue_idx"]]
+        red_SNR = phot_rest.flux[self.obj_kwargs["red_idx"]] / phot_rest.flux_errs[self.obj_kwargs["red_idx"]]
+
+        if np.isnan(blue_SNR) or np.isnan(red_SNR):
+            return True
+
+        return False
+
+    def _calculate(
+        self: Self,
+        fluxes_arr: u.Quantity,
+        phot_rest: Photometry_rest,
+    ) -> Optional[Union[u.Quantity, u.Magnitude, u.Dex]]:
+        """Calculate break strength as mag_blue - mag_red."""
+        blue_idx = self.obj_kwargs["blue_idx"]
+        red_idx = self.obj_kwargs["red_idx"]
+        blue_wav = self.obj_kwargs["blue_wav"]
+        red_wav = self.obj_kwargs["red_wav"]
+
+        # Extract fluxes for the blue and red filters
+        if fluxes_arr.ndim == 1:
+            # Single measurement - reshape to 2D for consistent handling
+            blue_flux = fluxes_arr[blue_idx:blue_idx+1]
+            red_flux = fluxes_arr[red_idx:red_idx+1]
+        else:
+            # Array of chains
+            blue_flux = fluxes_arr[:, blue_idx]
+            red_flux = fluxes_arr[:, red_idx]
+
+        # Convert fluxes to AB magnitudes using galfind's conversion utilities
+        with np.errstate(divide='ignore', invalid='ignore'):
+            blue_mag = funcs.convert_mag_units(blue_wav, blue_flux, u.ABmag)
+            red_mag = funcs.convert_mag_units(red_wav, red_flux, u.ABmag)
+
+        # Calculate break strength as color (blue - red)
+        break_strength = (blue_mag - red_mag).to(u.ABmag)
+
+        return break_strength
+
+    def _get_output_kwargs(
+        self: Self,
+        phot_rest: Photometry_rest
+    ) -> Dict[str, Any]:
+        return {
+            "blue_filter": self.obj_kwargs["blue_filt_name"],
+            "red_filter": self.obj_kwargs["red_filt_name"],
+            "blue_wav_rest": self.obj_kwargs["blue_wav"],
+            "red_wav_rest": self.obj_kwargs["red_wav"],
+        }

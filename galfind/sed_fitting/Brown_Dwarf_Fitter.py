@@ -9,7 +9,6 @@ from __future__ import annotations
 import numpy as np
 import astropy.units as u
 import h5py
-from astropy.table import Table
 from pathlib import Path
 import itertools
 from typing import TYPE_CHECKING, Dict, List, NoReturn, Union, Optional, Tuple
@@ -22,8 +21,8 @@ except ImportError:
 
 from ..utils import useful_funcs_austind as funcs
 from .. import config, galfind_logger
-from . import SED_code
-from .SED import SED_obs
+from .SED_codes import SED_code
+from ..spectra.SED import SED_obs
 
 class Template_Fitter(SED_code):
     """`SED_code` wrapper around external stellar/brown-dwarf template fitting (`BDFit.StarFit`).

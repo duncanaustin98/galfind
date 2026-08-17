@@ -12,7 +12,6 @@ import itertools
 import subprocess
 from pathlib import Path
 import os
-import json
 import logging
 from tqdm import tqdm
 import astropy.units as u

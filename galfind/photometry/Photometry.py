@@ -9,7 +9,6 @@ utilities for indexing, error propagation, Monte Carlo flux scattering, and plot
 from __future__ import annotations
 
 from copy import deepcopy
-import time
 import matplotlib.pyplot as plt
 from abc import ABC
 import astropy.units as u
@@ -19,7 +18,7 @@ import numpy as np
 from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Union, Optional, List, Dict, Any, NoReturn
 if TYPE_CHECKING:
-    from . import Instrument
+    pass
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -27,7 +26,7 @@ except ImportError:
 
 from .. import galfind_logger
 from ..utils import useful_funcs_austind as funcs
-from . import Filter, Multiple_Filter
+from ..imaging.Filter import Filter, Multiple_Filter
 
 
 class Photometry:

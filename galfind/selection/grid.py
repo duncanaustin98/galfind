@@ -13,17 +13,17 @@ from copy import deepcopy
 from astropy.table import Table
 from tqdm import tqdm
 from pathlib import Path
-from typing import TYPE_CHECKING, Tuple, List, Dict, Optional, Callable
+from typing import TYPE_CHECKING, List, Dict, Optional, Callable
 if TYPE_CHECKING:
-    from . import Catalogue, SED_code, Selector, Multiple_Filter, Property_Calculator_Base
+    from . import Catalogue, SED_code, Selector, Multiple_Filter
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
 from .. import galfind_logger
-from ..Catalogue import galfind_depth_labels, scattered_phot_labels, load_galfind_depths, scattered_depth_labels#, scattered_phot_labels_inst
-from .. import useful_funcs_austind as funcs
+from ..catalogues.Catalogue import galfind_depth_labels, scattered_phot_labels, load_galfind_depths#, scattered_phot_labels_inst
+from ..utils import useful_funcs_austind as funcs
 
 
 class Grid:

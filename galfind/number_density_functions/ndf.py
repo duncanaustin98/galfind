@@ -19,9 +19,6 @@ from typing import NoReturn, Optional, Union, Tuple, Dict, List, Any, TYPE_CHECK
 if TYPE_CHECKING:
     from . import (
         Catalogue_Base,
-        Catalogue,
-        Combined_Catalogue,
-        Rest_Frame_Property_Calculator,
         Property_Calculator,
         Mask_Selector,
     )
@@ -32,9 +29,9 @@ except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
 from ..utils import useful_funcs_austind as funcs
-from .. import config, galfind_logger, figs
-from . import MCMC_Fitter, Priors, Schechter_Mag_Fitter, Schechter_Lum_Fitter
-from .SED_codes import SED_code
+from ..utils.MCMC import MCMC_Fitter, Priors
+from .. import config, galfind_logger
+from ..sed_fitting.SED_codes import SED_code
 
 
 class Base_Number_Density_Function:
@@ -690,7 +687,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         `Number_Density_Function` or `None`
             The computed number density function, or `None` if calculation fails.
         """
-        from . import Combined_Catalogue
+        from ..catalogues.Multiple_Catalogue import Combined_Catalogue
         if isinstance(cat, Combined_Catalogue):
             plot = False
         # input assertions
@@ -725,7 +722,7 @@ class Number_Density_Function(Base_Number_Density_Function):
         x = np.array([x_.value for x_ in x]) * x[0].unit
 
         # crop catalogue to this redshift bin
-        from . import Redshift_Limit_Selector, Redshift_Bin_Selector
+        from . import Redshift_Bin_Selector
         # TODO: Implement Redshift_Limit_Selector in case of np.nan z_bin entry
         z_bin_selector = Redshift_Bin_Selector(aper_diam, SED_fit_code, z_bin)
         z_bin_cat = deepcopy(cat).crop(z_bin_selector)
@@ -820,7 +817,7 @@ class Number_Density_Function(Base_Number_Density_Function):
                         plt.close(hist_fig)
                     
                     # crop to galaxies in the x bin - not the bootstrapping method
-                    from . import Rest_Frame_Property_Limit_Selector, Rest_Frame_Property_Bin_Selector
+                    from . import Rest_Frame_Property_Bin_Selector
                     # TODO: Implement Rest_Frame_Property_Limit_Selector in case of np.nan x_bin entry
                     x_bin_selector = Rest_Frame_Property_Bin_Selector(aper_diam, SED_fit_code, x_calculator, x_bin)
                     try:
@@ -935,7 +932,9 @@ class Number_Density_Function(Base_Number_Density_Function):
                             / detected_gals
                         )
                     
-                    from . import Catalogue_Base, Catalogue, Combined_Catalogue
+                    from ..catalogues.Catalogue_Base import Catalogue_Base
+                    from ..catalogues.Catalogue import Catalogue
+                    from ..catalogues.Multiple_Catalogue import Combined_Catalogue
                     if isinstance(cat, Combined_Catalogue):
                         data_arr = [cat_.data for cat_ in cat.cat_arr]
                     elif isinstance(cat, Catalogue):

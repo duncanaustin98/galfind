@@ -7,7 +7,6 @@ image-level, and association-based resampling) for NIRCam data.
 from __future__ import annotations
 
 import os
-import shutil
 import glob
 import numpy as np
 from numpy.typing import NDArray
@@ -21,7 +20,7 @@ import subprocess
 from astropy.coordinates import SkyCoord
 from astropy import units as u
 import logging
-from typing import Optional, Dict, Any, NoReturn, Union, Tuple
+from typing import Optional, Dict, Any, Union, Tuple
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -762,7 +761,6 @@ class Raw_JWST_Data:
         output_suffix: str,
     ) -> Tuple[Optional[ImageModel], Optional[str]]:
         """Run pipeline on a single file."""
-        import jwst
         # TODO: Generalize this to work for stage 3 as well!
         input_suffix = file.split("_")[-1]
         out_filename = file.split("/")[-1].replace(input_suffix, output_suffix)

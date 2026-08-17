@@ -11,22 +11,18 @@ from __future__ import annotations
 import glob
 import json
 import os
-import time
 from copy import deepcopy
 from pathlib import Path
 import logging
 
 import astropy.units as u
-from matplotlib import cm
 import h5py
-import matplotlib.pyplot as plt
 import numpy as np
 from astropy.table import Table
 from astropy.coordinates import SkyCoord
 from numpy.typing import NDArray
 from astropy.io import fits
-from astropy.table import Table, join, vstack, MaskedColumn
-from astropy.wcs import WCS
+from astropy.table import Table, join, vstack
 import itertools
 from astropy.utils.masked import Masked
 from tqdm import tqdm
@@ -40,7 +36,6 @@ if TYPE_CHECKING:
         Selector,
         Multiple_Filter,
         Data,
-        Property_Calculator_Base,
         Band_Cutout_Base,
         Band_Cutout,
         Region_Selector,
@@ -51,26 +46,23 @@ try:
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from . import (
+from .. import (
     EAZY,  # noqa F501
     Depths,
     NIRCam,
     MIRI,
     Multiple_Filter,
-    Catalogue_Base,
-    Photometry_rest,
     Photometry_obs,
     config,
     galfind_logger,
-    figs,
 )
+from .Catalogue_Base import Catalogue_Base
 from ..utils import useful_funcs_austind as funcs
-from . import SED_code
-from .Cutout import Multiple_Band_Cutout, Multiple_RGB, Stacked_RGB
-from .Data import Data
-from .Emission_lines import line_diagnostics
-from .Galaxy import Galaxy
-from .Spectrum import Spectral_Catalogue
+from ..sed_fitting.SED_codes import SED_code
+from ..visualization.Cutout import Multiple_Band_Cutout, Multiple_RGB, Stacked_RGB
+from ..imaging.Data import Data
+from ..galaxy.Galaxy import Galaxy
+from ..spectra.Spectrum import Spectral_Catalogue
 
 
 def load_IDs_Table(

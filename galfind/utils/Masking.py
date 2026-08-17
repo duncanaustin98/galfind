@@ -20,7 +20,7 @@ from typing import List, Dict, Tuple, Union, Optional, NoReturn, TYPE_CHECKING
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
-    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
+    from typing_extensions import Type  # python > 3.7 AND python < 3.11
 if TYPE_CHECKING:
     from . import Band_Data_Base, Stacked_Band_Data, Filter, Mask_Selector, Region_Selector
 
@@ -433,7 +433,6 @@ def auto_mask(
     funcs.make_dirs(output_mask_path)
 
     if not Path(output_mask_path).is_file() or overwrite:
-        import cv2
         check_star_mask_params(star_mask_params)
         galfind_logger.info(f"Automasking {self.survey} {self.filt_name}")
 
@@ -1478,7 +1477,6 @@ def get_rebin_mask_path(
     `str`
         Path for the rebinned mask FITS file.
     """
-    from . import Depths
     re_binned_mask_path = get_area_mask_path(
         self,
         mask_selector_name,

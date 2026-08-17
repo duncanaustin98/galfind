@@ -7,7 +7,6 @@ maps and forced photometry catalogues.
 from __future__ import annotations
 
 import numpy as np
-import json
 import astropy.units as u
 import subprocess
 from pathlib import Path
@@ -17,7 +16,7 @@ import os
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
-    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
+    from typing_extensions import Type  # python > 3.7 AND python < 3.11
 from typing import Optional, Tuple, Union, NoReturn, TYPE_CHECKING
 
 if TYPE_CHECKING:

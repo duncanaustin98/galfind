@@ -12,7 +12,7 @@ import numpy as np
 from scipy.interpolate import interp1d
 import h5py
 from scipy.optimize import curve_fit
-from typing import TYPE_CHECKING, Dict, Any, List, Union, Optional, NoReturn
+from typing import Optional, NoReturn
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:

@@ -23,8 +23,8 @@ if TYPE_CHECKING:
 
 from .. import galfind_logger
 from ..utils import useful_funcs_austind as funcs
-from .Photometry import Multiple_Photometry
-from .Photometry_rest import Photometry_rest
+from ..photometry.Photometry import Multiple_Photometry
+from ..photometry.Photometry_rest import Photometry_rest
 
 
 class SED_result:

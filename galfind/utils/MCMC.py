@@ -11,22 +11,20 @@ import emcee
 import numpy as np
 import corner
 import multiprocessing as mp
-import os
 import json
 from astropy.stats import sigma_clip
-from scipy import stats
 from tqdm import tqdm
 import h5py
 from matplotlib import patheffects as pe
 import matplotlib.pyplot as plt
 from numpy.typing import NDArray
-from typing import NoReturn, Union, Optional, List, Dict, Any, Tuple, TYPE_CHECKING
+from typing import NoReturn, Union, Optional, List, Dict, Any, Tuple
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from .. import config, galfind_logger
+from .. import galfind_logger
 from ..utils import useful_funcs_austind as funcs
 
 class Prior(ABC):

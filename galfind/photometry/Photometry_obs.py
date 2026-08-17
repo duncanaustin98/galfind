@@ -6,7 +6,6 @@ results in the observed frame.
 
 from __future__ import annotations
 
-import inspect
 import time
 import astropy.units as u
 from astropy.utils.masked import Masked
@@ -31,7 +30,7 @@ except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
 from .Photometry import Photometry
-from .SED_result import SED_result, Catalogue_SED_results, Galaxy_SED_results
+from ..sed_fitting.SED_result import SED_result, Catalogue_SED_results, Galaxy_SED_results
 from ..utils import useful_funcs_austind as funcs
 from .. import galfind_logger
 

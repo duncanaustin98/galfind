@@ -31,7 +31,6 @@ from astropy.table import Table
 from astropy.utils.masked import Masked
 from numpy.typing import NDArray
 from tqdm import tqdm
-from matplotlib.patches import Rectangle
 
 from .. import config, galfind_logger
 from ..utils import useful_funcs_austind as funcs

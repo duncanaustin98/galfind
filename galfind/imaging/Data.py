@@ -11,12 +11,10 @@ from __future__ import annotations
 
 # from reproject import reproject_adaptive
 from abc import ABC, abstractmethod
-import contextlib
 import glob
 import json
 import os
 import shutil
-import subprocess
 import astropy
 import sys
 from matplotlib.colors import LinearSegmentedColormap
@@ -24,7 +22,6 @@ import time
 import itertools
 import logging
 from matplotlib import cm
-import cmasher as cmr
 from copy import deepcopy
 from pathlib import Path
 from numpy.typing import NDArray
@@ -47,30 +44,24 @@ except ImportError:
 
 if TYPE_CHECKING:
     from . import Multiple_Filter, Region_Selector, Mask_Selector
-    from .PSF import PSF
     from . import PSF_Base, PSF_Cutout
 
 import astropy.units as u
-import astropy.visualization as vis
-import h5py
-import joblib
 import matplotlib.pyplot as plt
 import numpy as np
 from astropy.convolution import convolve, convolve_fft
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
-from astropy.table import Column, Table, QTable, hstack, vstack
-from astropy.visualization.mpl_normalize import ImageNormalize
+from astropy.table import Table, QTable, hstack, vstack
 from astropy.wcs import WCS
 #from astroquery.gaia import Gaia
-from joblib import Parallel, delayed, parallel_config
+from joblib import Parallel, delayed
 from matplotlib.colors import LogNorm, Normalize
 from tqdm import tqdm
 
 from .. import Depths, Masking, SExtractor, Photutils, Filter, Multiple_Filter, config, galfind_logger
 from ..utils import useful_funcs_austind as funcs
-from ..utils.decorators import run_in_dir
-from . import Filter, Multiple_Filter
+from .Filter import Filter, Multiple_Filter
 from .Instrument import ACS_SBC, ACS_WFC, WFC3_IR, NIRCam, MIRI, Instrument  # noqa F501
 
 morgan_version_to_dir = {
@@ -6260,7 +6251,7 @@ class Data:
             Unmasked area in the specified units.
         """
 
-        from . import Mask_Selector, Redshift_Selector, Multiple_Mask_Selector
+        from . import Mask_Selector
 
         if not hasattr(self, "unmasked_area"):
             self.unmasked_area = {}

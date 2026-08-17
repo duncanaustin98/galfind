@@ -8,20 +8,19 @@ import h5py
 from copy import deepcopy
 from pathlib import Path
 from matplotlib.patches import Rectangle, ConnectionPatch
-from matplotlib.lines import Line2D
 import numpy as np
 from numpy.typing import NDArray
-from mpl_toolkits.axes_grid1.inset_locator import inset_axes, mark_inset
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 import matplotlib.pyplot as plt
 import astropy.units as u
 from numpy.typing import NDArray
-from typing import Tuple, Optional, List, Callable, Union
+from typing import Tuple, Optional, List, Union
 try:
     from typing import Self #, Type  # python 3.11+
 except ImportError:
     from typing_extensions import Self #, Type  # python > 3.7 AND python < 3.11
 
-from .. import galfind_logger
+from . import galfind_logger
 
 class SFH:
     """Container for a (possibly posterior-sampled) star-formation history.

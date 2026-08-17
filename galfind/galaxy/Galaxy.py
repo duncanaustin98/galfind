@@ -9,57 +9,37 @@ for creating image cutouts, RGB images, and diagnostic plots.
 
 from __future__ import annotations
 
-import os
-import sys
-import time
 from copy import deepcopy
 from pathlib import Path
 import astropy.units as u
-import matplotlib.patches as patches
 import matplotlib.patheffects as pe
 from matplotlib.patches import Ellipse
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.interpolate import interp1d
 from astropy.coordinates import SkyCoord
-from astropy.io import fits
-from astropy.nddata import Cutout2D
 from astropy.table import Table
 from astropy.utils.masked import Masked
-from astropy.visualization import (
-    ImageNormalize,
-    LinearStretch,
-    LogStretch,
-    ManualInterval,
-)
-from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
-from tqdm import tqdm
-from typing import  Union, Callable, Tuple, List, NoReturn, Optional, Dict, Any, TYPE_CHECKING
+from typing import  Union, Tuple, List, NoReturn, Optional, Dict, Any, TYPE_CHECKING
 if TYPE_CHECKING:
-    from . import Filter, SED_code, Selector, Band_Data, Band_Cutout, Multiple_Filter, SED_code, Mask_Selector
+    from . import SED_code, Selector, Band_Cutout, Multiple_Filter, SED_code, Mask_Selector
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from . import (
-    PDF,
+from .. import (
     Data,
-    Instrument,
-    Multiple_Photometry_obs,
     Photometry_obs,
     astropy_cosmo,
     config,
     galfind_logger,
-    instr_to_name_dict,
     figs,
 )
 from ..utils import useful_funcs_austind as funcs
-from .Cutout import RGB, Multiple_Band_Cutout
-from .EAZY import EAZY
-from .Emission_lines import line_diagnostics
-from .SED import Mock_SED_obs, Mock_SED_rest, SED_obs
-from .SED_result import SED_result
+from ..visualization.Cutout import RGB, Multiple_Band_Cutout
+from ..spectra.SED import SED_obs
+from ..sed_fitting.SED_result import SED_result
 
 # should be exhaustive
 select_func_to_type = {
@@ -231,7 +211,7 @@ class Galaxy:
         `Galaxy`
             The loaded galaxy, including its PSFs from `data.psfs`.
         """
-        from . import Galaxy_Creator
+        from .Galaxy_Creator import Galaxy_Creator
         gal_creator = Galaxy_Creator.from_data(
             data,
             id = int(id),
@@ -659,7 +639,7 @@ class Galaxy:
             #         save_path = None,
             #     ) 
             # else:
-            from . import Band_Cutout 
+            from ..visualization.Cutout import Band_Cutout
             # make the cutout from the relevant band_data
             cutout_ = Band_Cutout.from_gal_band_data(
                 self,
@@ -1862,7 +1842,6 @@ class Galaxy:
         assert crops != []
         from . import (
             Data_Selector,
-            Mask_Selector,
             SED_fit_Selector,
             Multiple_Selector,
             Rest_Frame_Property_Limit_Selector, 

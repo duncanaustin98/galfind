@@ -7,20 +7,17 @@ extraction, sampling, PDF combination, and persistence operations.
 
 from __future__ import annotations
 
-import time
 from copy import deepcopy
 import astropy.units as u
 import matplotlib.patheffects as pe
-from scipy.stats import gaussian_kde
 import numpy as np
-from astropy.table import Table
-from typing import Callable, Union, Optional, Dict, Any, TYPE_CHECKING
+from typing import Callable, Union, Optional, Dict, Any
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
-    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
+    from typing_extensions import Self  # python > 3.7 AND python < 3.11
 
-from .. import config, galfind_logger
+from .. import galfind_logger
 from ..utils import useful_funcs_austind as funcs
 
 

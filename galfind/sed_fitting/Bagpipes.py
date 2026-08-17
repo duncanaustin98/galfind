@@ -9,14 +9,11 @@ distribution parsing from Bagpipes SED fitter.
 from __future__ import annotations
 
 import types
-import itertools
-import importlib
 import h5py
 import sys
 import os
 import glob
 import astropy.constants as const
-import shutil
 from pathlib import Path
 import astropy.units as u
 import matplotlib.pyplot as plt
@@ -34,13 +31,12 @@ try:
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from .. import Redshift_PDF, SED_code, SED_fit_PDF, config, galfind_logger
+from .. import Redshift_PDF, SED_code, SED_fit_PDF, config, galfind_logger, astropy_cosmo as cosmo
 from ..utils import useful_funcs_austind as funcs
-from .useful_funcs_austind import astropy_cosmo as cosmo
 from ..utils.decorators import run_in_dir
-from .SED import SED_obs, SED_2D
-from .Filter import Filter
-from .SFH import SFH
+from ..spectra.SED import SED_obs, SED_2D
+from ..imaging.Filter import Filter
+from ..SFH import SFH
 
 pipes_unit_dict = {
     "z": u.dimensionless_unscaled,
@@ -440,7 +436,8 @@ class Bagpipes(SED_code):
             self.rank = 0
             self.size = 1
 
-        from . import Galaxy, Catalogue
+        from ..galaxy.Galaxy import Galaxy
+        from ..catalogues.Catalogue import Catalogue
         if isinstance(target, (Galaxy, Catalogue)):
             assert aper_diam is not None, \
                 galfind_logger.critical(
@@ -460,7 +457,7 @@ class Bagpipes(SED_code):
                 **fit_kwargs
             )
         else:
-            from . import Spectral_Catalogue
+            from ..catalogues.Catalogue import Spectral_Catalogue
             assert isinstance(target, Spectral_Catalogue)
             return self.fit_spec_cat(
                 target,
@@ -1639,7 +1636,6 @@ class Bagpipes(SED_code):
             Each element is a dictionary mapping property names to PDF objects,
             with values of `None` if PDFs are unavailable or ignored.
         """
-        from . import PDF
         assert len(IDs) == len(PDF_paths), \
             galfind_logger.critical(
                 f"{len(IDs)=} != {len(PDF_paths)=}"

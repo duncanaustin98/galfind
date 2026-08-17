@@ -16,13 +16,11 @@ from pathlib import Path
 import sys
 import itertools
 import matplotlib.image as mpimg
-import json
-from astropy.stats import mad_std
 import matplotlib.patheffects as pe
 import matplotlib.patches as patches
 from matplotlib.patches import Patch
-from matplotlib.artist import Artist, ArtistInspector
-from matplotlib.colors import Colormap, Normalize
+from matplotlib.artist import ArtistInspector
+from matplotlib.colors import Normalize
 from astropy.coordinates import SkyCoord
 import matplotlib.pyplot as plt
 from astropy.visualization import make_lupton_rgb
@@ -31,7 +29,6 @@ from astropy.visualization import (
     ImageNormalize,
     LinearStretch,
     LogStretch,
-    SqrtStretch,
     ManualInterval,
 )
 from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
@@ -61,7 +58,9 @@ try:
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from . import Filter, Band_Data, Stacked_Band_Data, Depths
+from ..imaging.Filter import Filter
+from ..imaging.Data import Band_Data, Stacked_Band_Data
+from ..utils import Depths
 from .. import config, galfind_logger, astropy_cosmo, figs
 from ..utils import useful_funcs_austind as funcs
 
@@ -732,7 +731,6 @@ class Band_Cutout(Band_Cutout_Base):
         band_data: Band_Data,
         sky_coord: SkyCoord,
         cutout_size: u.Quantity,
-        meta: Dict[str, Any] = {},
         overwrite: bool = False,
         **meta: Any,
     ) -> Self:

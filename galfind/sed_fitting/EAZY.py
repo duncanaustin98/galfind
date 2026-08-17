@@ -12,7 +12,6 @@ from __future__ import annotations
 import itertools
 import os
 from shutil import copy
-import time
 import warnings
 from pathlib import Path
 import logging
@@ -39,7 +38,7 @@ warnings.filterwarnings("ignore", category=LinAlgWarning)
 from .. import Redshift_PDF, SED_code, config, galfind_logger
 from ..utils import useful_funcs_austind as funcs
 from ..utils.decorators import run_in_dir
-from .SED import SED_obs
+from ..spectra.SED import SED_obs
 
 # %% EAZY SED fitting code
 
@@ -230,7 +229,7 @@ class EAZY(SED_code):
             save_name = save_name,
             **fit_kwargs,
         )
-        from . import Catalogue, Spectral_Catalogue
+        from ..catalogues.Catalogue import Catalogue, Spectral_Catalogue
         if isinstance(target, (Catalogue, Spectral_Catalogue)):
             # BUG: save_name doesn't propagate 
             # - don't think it makes a difference in the function though

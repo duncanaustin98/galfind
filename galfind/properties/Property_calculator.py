@@ -13,22 +13,25 @@ from galfind.catalogues.Catalogue import Catalogue
 import numpy as np
 from numpy.typing import NDArray
 from astropy.table import Table
-import itertools
 from copy import deepcopy
 import astropy.units as u
-from typing import TYPE_CHECKING, Dict, Any, List, Union, Tuple, Optional, NoReturn
+from typing import TYPE_CHECKING, Dict, Any, List, Union, Tuple, Optional
 if TYPE_CHECKING:
-    from . import Catalogue, Galaxy, Photometry_rest, SED_code, SED_obs, PDF, Morphology_Fitter, Morphology_Result, Band_Cutout_Base
+    from . import Catalogue, Galaxy, Photometry_rest, SED_code, SED_obs, PDF, Morphology_Fitter, Band_Cutout_Base
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from .. import config, galfind_logger, all_filt_names, astropy_cosmo
+from .. import galfind_logger, all_filt_names, astropy_cosmo
 from ..utils import useful_funcs_austind as funcs
-from . import Catalogue, Catalogue_Base, Galaxy, SED_code, SED_result
-from . import PDF, SED_fit_PDF
-from . import SED_obs, SED_rest
+from ..catalogues.Catalogue import Catalogue
+from ..catalogues.Catalogue_Base import Catalogue_Base
+from ..galaxy.Galaxy import Galaxy
+from ..sed_fitting.SED_codes import SED_code
+from ..sed_fitting.SED_result import SED_result
+from ..visualization.PDF import PDF, SED_fit_PDF
+from ..spectra.SED import SED_obs
 
 class Property_Calculator_Base(ABC):
     """Abstract base class defining the calling contract for property calculators.
@@ -963,7 +966,8 @@ class Morphology_Property_Calculator(Property_Calculator_Base):
         self: Self,
         object: Union[Type[Catalogue_Base], Galaxy, Type[Band_Cutout_Base]],
     ) -> Optional[Union[Type[Catalogue_Base], Galaxy, Type[Band_Cutout_Base]]]:
-        from . import Band_Cutout_Base, Catalogue_Base
+        from ..visualization.Cutout import Band_Cutout_Base
+        from ..catalogues.Catalogue_Base import Catalogue_Base
         if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
             val = self._call_cat(object)
         elif isinstance(object, Galaxy):

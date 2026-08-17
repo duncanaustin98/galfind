@@ -11,25 +11,21 @@ from __future__ import annotations
 # Photometry_rest.py
 import inspect
 from copy import deepcopy
-import time
 import astropy.units as u
 import numpy as np
-from scipy.optimize import curve_fit
 from astropy.utils.masked import Masked
-from tqdm import tqdm
 from typing import TYPE_CHECKING, List, Union, Dict, Optional, Tuple
 if TYPE_CHECKING:
-    from . import Multiple_Filter, PDF, Filter
+    from . import Multiple_Filter, PDF
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from . import PDF, PDF_nD, Photometry, galfind_logger
+from ..visualization.PDF import PDF
+from .Photometry import Photometry
+from .. import galfind_logger
 from ..utils import useful_funcs_austind as funcs
-from ..utils.decorators import ignore_warnings
-from .Dust_Attenuation import AUV_from_beta
-from .Emission_lines import line_diagnostics, strong_optical_lines
 
 
 class Photometry_rest(Photometry):

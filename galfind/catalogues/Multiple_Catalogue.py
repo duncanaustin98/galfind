@@ -7,7 +7,6 @@ combined survey metadata and crop tracking.
 from __future__ import annotations
 
 import astropy.units as u
-import json
 from itertools import chain
 from pathlib import Path
 import matplotlib.cm as cm
@@ -29,9 +28,10 @@ if TYPE_CHECKING:
         Selector,
     )
 
-from .. import galfind_logger, config
+from .. import galfind_logger
+from ..imaging.Filter import Multiple_Filter
 from ..utils import useful_funcs_austind as funcs
-from . import Catalogue_Base, Multiple_Filter
+from .Catalogue_Base import Catalogue_Base
 from .Catalogue import open_galfind_cat
 
 
@@ -254,7 +254,7 @@ class Combined_Catalogue(Catalogue_Base):
 
         if not Path(cat_path).is_file() or overwrite:
             # TODO: Make the loading of these not require to indiviudally specify code names
-            from . import SED_code, EAZY, LePhare, Bagpipes
+            from . import SED_code
             unique_hdu_names, unique_hdu_counts = np.unique(list(chain.from_iterable([cat.get_hdu_names() for cat in cat_arr])), return_counts = True)
             unique_hdu_names = np.array([hdu for hdu, count in zip(unique_hdu_names, unique_hdu_counts) if count == len(cat_arr)])
             

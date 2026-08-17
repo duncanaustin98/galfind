@@ -10,19 +10,11 @@ import numpy as np
 import astropy.units as u
 from astropy.table import Table
 from numpy.typing import NDArray
-from typing import Union, Tuple, Any, List, Dict, Callable, Optional, NoReturn, TYPE_CHECKING
+from typing import Union, Any, List, Dict, Callable, Optional, TYPE_CHECKING
 if TYPE_CHECKING:
     from . import (
-        Filter,
-        Band_Data_Base,
-        Selector,
         Multiple_Filter,
         Data,
-        Property_Calculator_Base,
-        Band_Cutout_Base,
-        Band_Cutout,
-        Region_Selector,
-        Mask_Selector,
         PSF_Base,
     )
 try:
@@ -31,8 +23,8 @@ except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
 from .. import galfind_logger
-from . import Catalogue_Creator, Catalogue
-from .Catalogue import (
+from ..catalogues.Catalogue import Catalogue_Creator
+from ..catalogues.Catalogue import (
     open_galfind_cat,
     open_galfind_hdr,
     load_IDs_Table,
@@ -213,7 +205,8 @@ class Galaxy_Creator(Catalogue_Creator):
             ]
         ] = None,
     ) -> Galaxy:
-        from . import Photometry_obs, Galaxy
+        from ..photometry.Photometry_obs import Photometry_obs
+        from .Galaxy import Galaxy
         galfind_logger.info(
             f"Loading {repr(self)} galaxy!"
         )

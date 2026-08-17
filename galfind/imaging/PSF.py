@@ -9,19 +9,18 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 import matplotlib.pyplot as plt
-import matplotlib.patheffects as pe
 import astropy.units as u
 from astropy.convolution import convolve_fft
 from pathlib import Path
 from copy import deepcopy
 import h5py
 from astropy.io import fits
-from astropy.visualization import ImageNormalize, LinearStretch, LogStretch
+from astropy.visualization import ImageNormalize, LinearStretch
 from tqdm import tqdm
 from scipy.interpolate import interp1d
 from scipy.ndimage import binary_dilation, zoom
 import logging
-from astropy.io import fits, ascii
+from astropy.io import fits
 from astropy.table import Table, hstack
 from astropy.time import Time
 from astropy.nddata import block_reduce
@@ -413,7 +412,7 @@ class PSF_Cutout(PSF_Base):
         Returns:
         None
         """
-        from . import Band_Data_Base, Multiple_Band_Data_Base
+        from .Data import Band_Data_Base, Multiple_Band_Data_Base
         psf_filepath = cls.get_empirical_psf_path(band_data, name = name, size = size)
 
         if isinstance(band_data, Multiple_Band_Data_Base):
@@ -582,7 +581,8 @@ class PSF_Cutout(PSF_Base):
             galfind_logger.info(f"Saved PSF cutout with {str(size)=} to {psf_out_path}")
 
         # make Band_Cutout object
-        from . import Band_Data, Band_Cutout
+        from .Data import Band_Data
+        from ..visualization.Cutout import Band_Cutout
         band_data = Band_Data(
             filt,
             survey = psf_name,

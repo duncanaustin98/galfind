@@ -7,18 +7,16 @@ import h5py as h5
 from numpy.typing import NDArray
 from astropy.table import Table
 from scipy.interpolate import interp1d
-import astropy.units as u
 from typing import TYPE_CHECKING, Callable, Dict, Union, Optional, List
 if TYPE_CHECKING:
-    from . import Galaxy, Catalogue, Property_Calculator
+    from . import Galaxy, Property_Calculator
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
 from .grid import Grid_2D
-from .. import galfind_logger
-from ..Catalogue_Base import Catalogue_Base
+from ..catalogues.Catalogue_Base import Catalogue_Base
 
 class Completeness:
     """Completeness curve of a selection as a function of one property.
@@ -288,7 +286,7 @@ class Completeness:
         self: Self,
         obj: Union[Galaxy, Type[Catalogue_Base]],
     ) -> float:
-        from .. import Galaxy, Catalogue, Combined_Catalogue
+        from .. import Galaxy
         if isinstance(obj, Galaxy):
             return self._call_gal(obj)
         else:

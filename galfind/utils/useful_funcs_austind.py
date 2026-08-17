@@ -25,12 +25,12 @@ from numba import njit
 from numpy.typing import NDArray
 from typing import Union, List, Tuple, TYPE_CHECKING, Optional, Any, Dict
 if TYPE_CHECKING:
-    from .Data import Band_Data_Base, Band_Data, Stacked_Band_Data
-    from . import Selector, Filter, Multiple_Filter, Mask_Selector, Photometry_rest, Catalogue
+    from .Data import Band_Data_Base
+    from . import Selector, Multiple_Filter, Mask_Selector, Photometry_rest, Catalogue
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
-    from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
+    from typing_extensions import Type  # python > 3.7 AND python < 3.11
 
 from .. import astropy_cosmo, galfind_logger, config
 
@@ -2444,7 +2444,6 @@ def footprints_from_files(files):
         vertices, for files where a valid S_REGION was found and parsed.
     """
     from astropy.io import fits
-    from matplotlib.patches import Polygon
     footprints = {}
     for f in files:
         try:

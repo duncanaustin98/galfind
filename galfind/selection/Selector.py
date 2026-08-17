@@ -26,7 +26,7 @@ from scipy import ndimage
 from tqdm import tqdm
 import logging
 
-from typing import TYPE_CHECKING, Any, List, Union, Callable, Optional, Dict
+from typing import TYPE_CHECKING, Any, List, Union, Optional, Dict
 if TYPE_CHECKING:
     from . import (
         Multiple_Filter,
@@ -43,9 +43,14 @@ except ImportError:
 
 from ..utils import useful_funcs_austind as funcs
 from .. import galfind_logger, config, wav_lyman_lim
-from . import Galaxy, Catalogue, Catalogue_Base, Instrument, SED_code, Depths, Multiple_Filter
-from .Instrument import expected_instr_bands
-from .Morphology import fwhm_nircam
+from ..galaxy.Galaxy import Galaxy
+from ..catalogues.Catalogue import Catalogue
+from ..catalogues.Catalogue_Base import Catalogue_Base
+from ..imaging.Instrument import Instrument, expected_instr_bands
+from ..sed_fitting.SED_codes import SED_code
+from ..utils import Depths
+from ..imaging.Filter import Multiple_Filter
+from ..properties.Morphology import fwhm_nircam
 
 class Selector(ABC):
     """Abstract base class defining the galaxy-sample-selection interface.
@@ -3325,7 +3330,7 @@ class Bluewards_Lya_Non_Detect_Selector(Redshift_Selector):
         **kwargs,
     ) -> Tuple[bool, Dict[str, Any]]:
         # extract first Lya non-detect band
-        from .Emission_lines import line_diagnostics
+        from ..spectra.Emission_lines import line_diagnostics
 
         if self.fit_filterset is None:
             ignore_bands = []
@@ -3504,7 +3509,7 @@ class Redwards_Lya_Detect_Selector(Redshift_Selector):
         *args,
         **kwargs,
     ) -> Tuple[bool, Dict[str, Any]]:
-        from .Emission_lines import line_diagnostics
+        from ..spectra.Emission_lines import line_diagnostics
         if self.fit_filterset is None:
             ignore_bands = []
         else:
@@ -3680,7 +3685,7 @@ class Lya_Band_Selector(Redshift_Selector):
         *args,
         **kwargs,
     ) -> Tuple[bool, Dict[str, Any]]:
-        from .Emission_lines import line_diagnostics
+        from ..spectra.Emission_lines import line_diagnostics
         bands = np.array(gal.aper_phot[self.aper_diam].filterset.filt_names)
         # determine Lya band(s) - usually a single band, 
         # but could be two in the case of medium bands
@@ -3912,7 +3917,7 @@ class Unmasked_Bluewards_Lya_Selector(Redshift_Selector, Mask_Selector):
             `widebands_only`), and the name of that first band. Both
             are `None` if there are no bands bluewards of Lyman-alpha.
         """
-        from .Emission_lines import line_diagnostics
+        from ..spectra.Emission_lines import line_diagnostics
         if self.fit_filterset is None:
             ignore_bands = []
         else:
@@ -4062,7 +4067,7 @@ class Unmasked_Bluewards_Lya_Selector(Redshift_Selector, Mask_Selector):
             Lyman-alpha does not change.
         """
         # determine redshift limits at which bands become bluewards of Lya
-        from .Emission_lines import line_diagnostics
+        from ..spectra.Emission_lines import line_diagnostics
         if self.fit_filterset is None:
             ignore_bands = []
         else:
@@ -4240,7 +4245,7 @@ class Unmasked_Redwards_Lya_Selector(Redshift_Selector, Mask_Selector):
             the name of that first band. Both are `None` if there are
             no bands redwards of Lyman-alpha.
         """
-        from .Emission_lines import line_diagnostics
+        from ..spectra.Emission_lines import line_diagnostics
         if self.fit_filterset is None:
             ignore_bands = []
         else:
@@ -4386,7 +4391,7 @@ class Unmasked_Redwards_Lya_Selector(Redshift_Selector, Mask_Selector):
             Lyman-alpha does not change.
         """
         # determine redshift limits at which bands become bluewards of Lya
-        from .Emission_lines import line_diagnostics
+        from ..spectra.Emission_lines import line_diagnostics
         if self.fit_filterset is None:
             ignore_bands = []
         else:
@@ -4861,7 +4866,7 @@ class Stacked_Blue_Lya_Non_Detect_Selector(SED_fit_Selector):
         self: Self,
         gal: Galaxy,
     ) -> str:
-        from . import Multiple_Filter, wav_lyman_alpha
+        from . import wav_lyman_alpha
         z = gal.aper_phot[self.aper_diam].SED_results[self.SED_fitter.label].z
         if z < 0.0:
             return None

@@ -14,7 +14,7 @@ import numpy as np
 from scipy.special import wofz
 
 from .. import astropy_cosmo
-from .Emission_lines import wav_lyman_alpha
+from ..spectra.Emission_lines import wav_lyman_alpha
 
 lambda_alpha_classical = (
     8

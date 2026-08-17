@@ -8,7 +8,6 @@ from __future__ import annotations
 
 # import automask as am
 import astropy.visualization as vis
-import matplotlib as mpl
 import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
 import numpy as np
@@ -24,11 +23,10 @@ import os
 import logging
 from astropy.visualization.mpl_normalize import ImageNormalize
 from matplotlib import cm
-from matplotlib.colors import LinearSegmentedColormap, BoundaryNorm
+from matplotlib.colors import LinearSegmentedColormap
 from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
 from numba import jit
 from photutils.aperture import CircularAperture
-from scipy.stats import gaussian_kde
 from skimage import morphology
 from sklearn.cluster import KMeans
 from tqdm import tqdm
@@ -1752,7 +1750,6 @@ def calc_band_data_area_depth(
     assert aper_diam in self.depth_args.keys()
     #galfind_logger.info(f"Calculating area-depth for {repr(self)} in sub-region {depth_subreg}")
     area_depth_save_path = get_area_depth_h5_path(self, aper_diam, mask_selector, mask_type, region_selector, invert_region, zbin)
-    from . import Stacked_Band_Data
     if not Path(area_depth_save_path).is_file():
         start = time.time()
         # load appropriate mask if not provided
@@ -2870,7 +2867,8 @@ def append_loc_depth_cols(
         `forced_phot_band`, or if aperture diameters differ between
         bands.
     """
-    from . import Catalogue, Stacked_Band_Data
+    from ..catalogues.Catalogue import Catalogue
+    from ..imaging.Data import Stacked_Band_Data
     # open catalogue
     tab = Table.read(self.phot_cat_path)
     # update catalogue with local depths if not already done so

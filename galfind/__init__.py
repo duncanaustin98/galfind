@@ -142,7 +142,7 @@ from .utils import useful_funcs_austind
 from .utils import utils
 from .visualization import figs
 from .utils import decorators
-from .photometry import SExtractor
+from .photometry import SExtractor, Photutils
 from .utils import Masking, Depths
 
 from .imaging.PSF import PSF_Base, PSF_Cutout
@@ -155,7 +155,7 @@ from .imaging.Filter import Filter, Multiple_Filter, Tophat_Filter, U, V, J
 
 # sort bands blue -> red based on central wavelength
 all_filt_names = [filt.filt_name for filt in sorted(Multiple_Filter.from_instruments \
-    (list(json.loads(config.get("Other", "INSTRUMENT_NAMES")))), \
+    (list(instr_to_name_dict.values())), \
     key=lambda band: band.WavelengthCen.to(u.AA).value)]
 config.set("Other", "ALL_BANDS", json.dumps(all_filt_names))
 
@@ -304,6 +304,7 @@ from .properties.Rest_frame_properties import (
     Rest_Frame_Property_Calculator,
     UV_Beta_Calculator,
     UV_Dust_Attenuation_Calculator,
+    Lya_Break_Strength_Calculator,
     mUV_Calculator,
     MUV_Calculator,
     LUV_Calculator,
@@ -322,6 +323,6 @@ from .properties.Rest_frame_properties import (
 
 from .properties.Morphology import Morphology_Result, Morphology_Fitter, Galfit_Fitter
 
-from .spectra.SFH import SFH
+from .SFH import SFH
 
 from .imaging.NIRCam_reduction import Raw_JWST_Data

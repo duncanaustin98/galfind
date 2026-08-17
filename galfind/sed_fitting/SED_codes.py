@@ -27,7 +27,7 @@ try:
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from .. import SED_result, config, galfind_logger
+from .. import SED_result, galfind_logger
 from ..utils import useful_funcs_austind as funcs
 
 class SED_code(ABC):

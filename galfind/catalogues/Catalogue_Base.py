@@ -10,16 +10,12 @@ from copy import deepcopy
 import matplotlib.pyplot as plt
 import astropy.units as u
 import numpy as np
-import re
 from pathlib import Path
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.table import Table, join, vstack
 from tqdm import tqdm
-import inspect
 import logging
-import tempfile
-import os
 from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Any, List, Dict, Union, Optional, NoReturn, Tuple
 if TYPE_CHECKING:
@@ -29,11 +25,8 @@ try:
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from . import (
-    config,
-    SED_code,
-    galfind_logger,
-)
+from .. import config, galfind_logger
+from ..sed_fitting.SED_codes import SED_code
 from ..utils import useful_funcs_austind as funcs
 
 
@@ -295,7 +288,7 @@ class Catalogue_Base:
 
     def __add__(self, cat, out_survey=None):
         if not cat.__class__.__name__ == "Spectral_Catalogue":
-            from . import Combined_Catalogue
+            from .Multiple_Catalogue import Combined_Catalogue
             # concat catalogues
             if out_survey == None:
                 out_survey = "+".join([self.survey, cat.survey])
@@ -331,7 +324,7 @@ class Catalogue_Base:
             The resulting Combined_Catalogue after performing the multiplication, with duplicates removed.
 
         """
-        from . import Combined_Catalogue
+        from .Multiple_Catalogue import Combined_Catalogue
         # cross-match catalogues
         # update .fits tables with cross-matched version
         # open tables

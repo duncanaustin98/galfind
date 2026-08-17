@@ -27,9 +27,9 @@ try:
 except ImportError:
     from photutils.aperture import EllipticalAperture
 import subprocess
-from typing import Union, Dict, Any, List, Tuple, Callable, Optional, NoReturn, TYPE_CHECKING
+from typing import Union, Dict, Any, List, Tuple, Optional, TYPE_CHECKING
 if TYPE_CHECKING:
-    from . import Galaxy, Catalogue, Catalogue_Base, PSF_Base, Band_Cutout_Base, RGB_Base, Multiple_Cutout_Base, PDF_Base
+    from . import Galaxy, Catalogue, Catalogue_Base, PSF_Base, Band_Cutout_Base, PDF_Base
 try:
     from typing import Self, Type  # python 3.11+
 except ImportError:
@@ -522,7 +522,8 @@ class Morphology_Fitter(ABC):
         *args: Any,
         **kwargs: Dict[str, Any],
     ) -> None:
-        from . import Galaxy, Catalogue_Base #Band_Cutout_Base, RGB_Base, Multiple_Cutout_Base
+        from ..galaxy.Galaxy import Galaxy
+        from ..catalogues.Catalogue_Base import Catalogue_Base
         if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
             result = self._fit_cat(object, *args, **kwargs)
         elif isinstance(object, Galaxy):

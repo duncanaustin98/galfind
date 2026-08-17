@@ -15,7 +15,6 @@ import json
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
 from typing import List, Tuple, Union, Optional, NoReturn, TYPE_CHECKING
-import warnings
 import matplotlib.patheffects as pe
 
 if TYPE_CHECKING:
@@ -27,8 +26,7 @@ except ImportError:
 
 from .. import galfind_logger, config, instr_to_name_dict
 from ..utils import useful_funcs_austind as funcs
-from . import Facility, Instrument
-from . import ACS_WFC, WFC3_IR, NIRCam, MIRI, JWST, HST  # noqa: F401
+from .Instrument import Facility, Instrument, ACS_WFC, WFC3_IR, NIRCam, MIRI, JWST, HST  # noqa: F401
 
 
 class Filter:

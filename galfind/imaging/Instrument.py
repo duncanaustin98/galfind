@@ -7,23 +7,19 @@ with their filter configurations and metadata.
 
 from __future__ import annotations
 
-from typing import NoReturn, Dict, Any, Union, List, TYPE_CHECKING
+from typing import Dict, Any, Union, List, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from . import Band_Data, Band_Data_Base, Data
+    from . import Band_Data, Band_Data_Base
     from . import PSF_Base, PSF_Cutout
-    from . import Filter, Multiple_Filter
 
 import astropy.units as u
 from astropy.io import ascii
 import h5py
 from astropy.table import Table
 from pathlib import Path
-import matplotlib.pyplot as plt
 import numpy as np
-from astroquery.svo_fps import SvoFps
 from copy import deepcopy
-import json
 from abc import ABC, abstractmethod
 from typing import Tuple
 
@@ -727,7 +723,12 @@ class ACS_SBC(Instrument, funcs.Singleton):
             "F165LP",
         ]
         self.SVO_name = "ACS"
-        super().__init__("HST", ACS_SBC_band_names)
+        super().__init__(HST(), ACS_SBC_band_names)
+
+    @property
+    def ZP_keys(self) -> List[str]:
+        """FITS header keywords required to calculate zero-point: PHOTFLAM, PHOTPLAM, or ZEROPNT."""
+        return ["PHOTFLAM", "PHOTPLAM", "ZEROPNT"]
 
     def calc_ZP(self: Self, band_data: Type[Band_Data_Base]) -> u.Quantity:
         im_header = band_data.load_im()[1]
@@ -752,8 +753,9 @@ class ACS_SBC(Instrument, funcs.Singleton):
             raise (Exception(err_message))
         return ZP
 
-    def make_model_PSF(self: Self, band: Union[str, Filter]) -> Type[PSF_Base]:
-        pass
+    def make_model_psf(self: Self, band_data: Band_Data, size: u.Quantity = 0.96 * u.arcsec) -> Type[PSF_Base]:
+        """Model PSF construction not supported for HST/ACS-SBC."""
+        raise NotImplementedError("Model PSF generation is not supported for HST/ACS-SBC")
 
     def make_empirical_PSF(self: Self, band_data: Band_Data) -> Type[PSF_Base]:
         pass

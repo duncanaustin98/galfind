@@ -10,7 +10,7 @@ Voigt profiles and photon absorption cross-sections for DLA modeling.
 import astropy.units as u
 
 from .Emission_lines import line_diagnostics
-from .lyman_alpha_damping_wing import *
+from ..utils.lyman_alpha_damping_wing import *
 
 
 class DLA:

@@ -23,13 +23,9 @@ except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 if TYPE_CHECKING:
     from . import Multiple_Filter
-from . import (
-    IGM_attenuation,
-    Mock_Photometry,
-    astropy_cosmo,
-    config,
-    galfind_logger,
-)
+from . import IGM_attenuation
+from ..photometry.Photometry import Mock_Photometry
+from .. import astropy_cosmo, config, galfind_logger
 from ..utils import useful_funcs_austind as funcs
 from .Emission_lines import line_diagnostics
 

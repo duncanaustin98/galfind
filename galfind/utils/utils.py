@@ -10,7 +10,6 @@ from astropy import units as u
 import shutil
 from pathlib import Path
 
-from .. import config
 from ..utils import useful_funcs_austind as funcs
 #from .Data import morgan_version_to_dir_dict
 
