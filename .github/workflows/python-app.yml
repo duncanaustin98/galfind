@@ -43,7 +43,3 @@ jobs:
         files: ./coverage.xml
         flags: unittests
         fail_ci_if_error: false
-    - name: Build API documentation
-      run: |
-        pip install sphinx sphinx-rtd-theme
-        cd docs && make html
