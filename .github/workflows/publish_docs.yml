@@ -1,0 +1,32 @@
+# This workflow builds the Sphinx API documentation as a check that it
+# still builds cleanly. Actual publishing to readthedocs.io is handled
+# by Read the Docs' own webhook, not this workflow.
+
+name: publish_docs
+
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  docs:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: "3.12"
+    - name: Install pandoc
+      run: sudo apt-get update && sudo apt-get install -y pandoc
+    - name: Build API documentation
+      run: |
+        pip install -e ".[docs]"
+        cd docs && make html

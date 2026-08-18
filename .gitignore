@@ -27,6 +27,7 @@ configs/james_galfind_config.ini
 galfind/configs
 htmlcov
 .coverage
+coverage.xml
 .pytest_cache
 configs/DJA_spectral_catalogues
 configs/EAZY_templates/templates/PEGASE2.0
