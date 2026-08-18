@@ -23,6 +23,7 @@ from galfind.catalogues import Catalogue
 from galfind.galaxy import Galaxy
 from galfind.imaging import NIRCam
 from galfind.imaging.Instrument import JWST
+from galfind.properties import UV_Beta_Calculator
 from galfind.selection.Selector import (
     Band_Mag_Selector,
     Band_SNR_Selector,
@@ -33,6 +34,7 @@ from galfind.selection.Selector import (
     Chi_Sq_Lim_Selector,
     Chi_Sq_Template_Diff_Selector,
     Colour_Selector,
+    Compactness_Selector,
     Depth_Region_Selector,
     Ds9_Region_Selector,
     EPOCHS_Selector,
@@ -55,6 +57,7 @@ from galfind.selection.Selector import (
     Rest_Frame_Property_Kwarg_Selector,
     Rest_Frame_Property_Limit_Selector,
     Robust_zPDF_Selector,
+    Selector,
     Sextractor_Band_Radius_Selector,  # up to here
     Sextractor_Bands_Radius_Selector,
     Sextractor_Instrument_Radius_PSF_FWHM_Selector,
@@ -269,14 +272,87 @@ def fail_redshift_limit_selector(request):
     return Redshift_Limit_Selector, inputs, outcome
 
 
-@pytest.fixture(scope="module", params=[])
+@pytest.fixture(scope="module")
+def uv_beta_calculator(eazy_fsps_larson_sed_fitter):
+    return UV_Beta_Calculator(test_aper_diams[0], eazy_fsps_larson_sed_fitter)
+
+
+@pytest.fixture(
+    scope="module",
+    params=[
+        (
+            {
+                "aper_diam": test_aper_diams[0],
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "property_calculator": "uv_beta_calculator",
+                "property_lim": -2.0 * u.dimensionless_unscaled,
+                "gtr_or_less": "less",
+            },
+            True,
+        ),
+        (
+            {
+                "aper_diam": test_aper_diams[0],
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "property_calculator": "uv_beta_calculator",
+                "property_lim": -2.0 * u.dimensionless_unscaled,
+                "gtr_or_less": "gtr",
+            },
+            True,
+        ),
+    ],
+)
 def call_rest_frame_property_limit_selector(request):
-    return Rest_Frame_Property_Limit_Selector, *request.param
+    inputs, outcome = request.param
+    inputs["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    inputs["property_calculator"] = request.getfixturevalue(
+        inputs["property_calculator"]
+    )
+    return Rest_Frame_Property_Limit_Selector, inputs, outcome
 
 
-@pytest.fixture(scope="module", params=[])
+@pytest.fixture(
+    scope="module",
+    params=[
+        (
+            {
+                "aper_diam": test_aper_diams[0],
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "property_calculator": "uv_beta_calculator",
+                "property_lim": -2.0 * u.dimensionless_unscaled,
+                "gtr_or_less": "invalid",
+            },
+            Exception,
+        ),
+        (
+            {
+                "aper_diam": test_aper_diams[0],
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "property_calculator": "uv_beta_calculator",
+                "property_lim": -2.0,
+                "gtr_or_less": "less",
+            },
+            Exception,
+        ),
+        (
+            {
+                "aper_diam": 0.1 * u.arcsec,
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "property_calculator": "uv_beta_calculator",
+                "property_lim": -2.0 * u.dimensionless_unscaled,
+                "gtr_or_less": "less",
+            },
+            Exception,
+        ),
+    ],
+)
 def fail_rest_frame_property_limit_selector(request):
-    return Rest_Frame_Property_Limit_Selector, *request.param
+    inputs, outcome = request.param
+    inputs["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    inputs["property_calculator"] = request.getfixturevalue(
+        inputs["property_calculator"]
+    )
+    return Rest_Frame_Property_Limit_Selector, inputs, outcome
 
 
 @pytest.fixture(
@@ -365,14 +441,69 @@ def fail_redshift_bin_selector(request):
     return Redshift_Bin_Selector, inputs, outcome
 
 
-@pytest.fixture(scope="module", params=[])
+@pytest.fixture(
+    scope="module",
+    params=[
+        (
+            {
+                "aper_diam": test_aper_diams[0],
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "property_calculator": "uv_beta_calculator",
+                "property_bin": [-3.0, -1.0] * u.dimensionless_unscaled,
+            },
+            True,
+        ),
+    ],
+)
 def call_rest_frame_property_bin_selector(request):
-    return Rest_Frame_Property_Bin_Selector, *request.param
+    inputs, outcome = request.param
+    inputs["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    inputs["property_calculator"] = request.getfixturevalue(
+        inputs["property_calculator"]
+    )
+    return Rest_Frame_Property_Bin_Selector, inputs, outcome
 
 
-@pytest.fixture(scope="module", params=[])
+@pytest.fixture(
+    scope="module",
+    params=[
+        (
+            {
+                "aper_diam": test_aper_diams[0],
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "property_calculator": "uv_beta_calculator",
+                "property_bin": [-1.0, -3.0] * u.dimensionless_unscaled,
+            },
+            Exception,
+        ),
+        (
+            {
+                "aper_diam": test_aper_diams[0],
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "property_calculator": "uv_beta_calculator",
+                "property_bin": [-3.0, -2.0, -1.0]
+                * u.dimensionless_unscaled,
+            },
+            Exception,
+        ),
+        (
+            {
+                "aper_diam": test_aper_diams[0],
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "property_calculator": "uv_beta_calculator",
+                "property_bin": [-3.0, -1.0],
+            },
+            Exception,
+        ),
+    ],
+)
 def fail_rest_frame_property_bin_selector(request):
-    return Rest_Frame_Property_Bin_Selector, *request.param
+    inputs, outcome = request.param
+    inputs["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    inputs["property_calculator"] = request.getfixturevalue(
+        inputs["property_calculator"]
+    )
+    return Rest_Frame_Property_Bin_Selector, inputs, outcome
 
 
 @pytest.fixture(
@@ -520,6 +651,90 @@ def call_min_band_selector(request):
 )
 def fail_min_band_selector(request):
     return Min_Band_Selector, *request.param
+
+
+@pytest.fixture(
+    scope="module",
+    params=[
+        (
+            {
+                "filt_name": "F444W",
+                "compare_radii": [0.16, 0.32] * u.arcsec,
+                "compactness_lim": 1.2,
+            },
+            True,
+        ),
+        (
+            {
+                "filt_name": "F444W",
+                "compare_radii": [0.16, 0.32] * u.arcsec,
+                "compactness_lim": 1.2,
+                "psf_normed": False,
+            },
+            True,
+        ),
+    ],
+)
+def call_compactness_selector(request):
+    return Compactness_Selector, *request.param
+
+
+@pytest.fixture(
+    scope="module",
+    params=[
+        (
+            {
+                "filt_name": "not_a_filter",
+                "compare_radii": [0.16, 0.32] * u.arcsec,
+                "compactness_lim": 1.2,
+            },
+            Exception,
+        ),
+        (
+            {
+                "filt_name": "F444W",
+                "compare_radii": [0.32, 0.16] * u.arcsec,
+                "compactness_lim": 1.2,
+            },
+            Exception,
+        ),
+        (
+            {
+                "filt_name": "F444W",
+                "compare_radii": [0.16] * u.arcsec,
+                "compactness_lim": 1.2,
+            },
+            Exception,
+        ),
+        (
+            {
+                "filt_name": "F444W",
+                "compare_radii": [0.16, 0.32],
+                "compactness_lim": 1.2,
+            },
+            Exception,
+        ),
+        (
+            {
+                "filt_name": "F444W",
+                "compare_radii": [0.16, 0.32] * u.arcsec,
+                "compactness_lim": "invalid",
+            },
+            Exception,
+        ),
+        (
+            {
+                "filt_name": "F444W",
+                "compare_radii": [0.16, 0.32] * u.arcsec,
+                "compactness_lim": 1.2,
+                "psf_normed": "invalid",
+            },
+            Exception,
+        ),
+    ],
+)
+def fail_compactness_selector(request):
+    return Compactness_Selector, *request.param
 
 
 @pytest.fixture(
@@ -1630,17 +1845,58 @@ def fail_sextractor_instrument_radius_psf_fwhm_selector(request):
     return Sextractor_Instrument_Radius_PSF_FWHM_Selector, *request.param
 
 
-# Brown_Dwarf_Selector class is incomplete in the codebase
-# (missing super().__init__)
-# Adding placeholder fixtures for completeness
-@pytest.fixture(scope="module", params=[])
+@pytest.fixture(
+    scope="module",
+    params=[
+        (
+            {
+                "aper_diam": test_aper_diams[0],
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "red_chi_sq_diff": 4.0,
+                "gal_SED_fitter": "EAZY_fsps_larson",
+                "ref_filt": "F444W",
+            },
+            True,
+        ),
+        (
+            {
+                "aper_diam": test_aper_diams[0],
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "red_chi_sq_diff": 4.0,
+                "gal_SED_fitter": "EAZY_fsps_larson",
+                "ref_filt": "F444W",
+                "SNR_lim": 3.0,
+                "red_chi_sq_lim": 3.0,
+            },
+            True,
+        ),
+    ],
+)
 def call_brown_dwarf_selector(request):
-    return Brown_Dwarf_Selector, *request.param
+    inputs, outcome = request.param
+    inputs["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    return Brown_Dwarf_Selector, inputs, outcome
 
 
-@pytest.fixture(scope="module", params=[])
+@pytest.fixture(
+    scope="module",
+    params=[
+        (
+            {
+                "aper_diam": test_aper_diams[0],
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "red_chi_sq_diff": 4.0,
+                "gal_SED_fitter": "EAZY_fsps_larson",
+                "ref_filt": "not_a_filter",
+            },
+            Exception,
+        ),
+    ],
+)
 def fail_brown_dwarf_selector(request):
-    return Brown_Dwarf_Selector, *request.param
+    inputs, outcome = request.param
+    inputs["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    return Brown_Dwarf_Selector, inputs, outcome
 
 
 # Re_Selector requires a morph_fitter (Morphology_Fitter) which is complex to
@@ -1797,18 +2053,52 @@ def fail_epochs_selector(request):
     return EPOCHS_Selector, inputs_, outcome
 
 
-# Rest_Frame_Property_Kwarg_Selector requires a Rest_Frame_Property_Calculator
-# which is complex to instantiate without full test data.
-# The fixtures are left as placeholders similar to the other
-# property-based selectors.
-@pytest.fixture(scope="module", params=[])
+@pytest.fixture(
+    scope="module",
+    params=[
+        (
+            {
+                "aper_diam": test_aper_diams[0],
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "property_calculator": "uv_beta_calculator",
+                "kwarg_name": "rest_UV_wav_lims",
+                "kwarg_val": [1_250.0, 3_000.0],
+            },
+            True,
+        ),
+    ],
+)
 def call_rest_frame_property_kwarg_selector(request):
-    return Rest_Frame_Property_Kwarg_Selector, *request.param
+    inputs, outcome = request.param
+    inputs["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    inputs["property_calculator"] = request.getfixturevalue(
+        inputs["property_calculator"]
+    )
+    return Rest_Frame_Property_Kwarg_Selector, inputs, outcome
 
 
-@pytest.fixture(scope="module", params=[])
+@pytest.fixture(
+    scope="module",
+    params=[
+        (
+            {
+                "aper_diam": test_aper_diams[0],
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "property_calculator": "uv_beta_calculator",
+                "kwarg_name": 123,
+                "kwarg_val": [1_250.0, 3_000.0],
+            },
+            Exception,
+        ),
+    ],
+)
 def fail_rest_frame_property_kwarg_selector(request):
-    return Rest_Frame_Property_Kwarg_Selector, *request.param
+    inputs, outcome = request.param
+    inputs["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    inputs["property_calculator"] = request.getfixturevalue(
+        inputs["property_calculator"]
+    )
+    return Rest_Frame_Property_Kwarg_Selector, inputs, outcome
 
 
 ##################################################
@@ -1894,3 +2184,35 @@ def test_selector_call_cat(call_selector, cat):
         selector_inst = selector_cls(**inputs)
         out_cat = selector_inst(cat)
         assert isinstance(out_cat, Catalogue)
+
+
+def test_selector_repr_str_and_metadata(call_selector):
+    # repr/str/name/select_kwarg_names_dtypes are pure metadata derived
+    # only from the selector's own kwargs at construction time, so these
+    # don't need a Galaxy/Catalogue to exercise
+    selector_cls, inputs, _ = call_selector
+    selector_inst = selector_cls(**inputs)
+    assert isinstance(repr(selector_inst), str)
+    assert isinstance(str(selector_inst), str)
+    assert isinstance(selector_inst.name, str)
+    names, dtypes = selector_inst.select_kwarg_names_dtypes
+    assert isinstance(names, list)
+    assert isinstance(dtypes, list)
+    assert len(names) == len(dtypes)
+
+
+def test_shorten_kwarg_colname_short_unchanged():
+    assert Selector.shorten_kwarg_colname("short_name") == "short_name"
+
+
+def test_shorten_kwarg_colname_strips_filter_suffix():
+    long_name = "a" * 64 + "F444W"
+    assert len(long_name) > 68
+    out = Selector.shorten_kwarg_colname(long_name)
+    assert "F444W" not in out
+    assert len(out) <= 68
+
+
+def test_shorten_kwarg_colname_still_too_long_raises():
+    with pytest.raises(AssertionError):
+        Selector.shorten_kwarg_colname("x" * 100)

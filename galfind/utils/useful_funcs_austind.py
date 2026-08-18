@@ -2752,7 +2752,6 @@ def symlink(target_path, symlink_path):
         except FileExistsError:
             galfind_logger.debug(f"Symlink already exists: {symlink_path}")
     else:
-        breakpoint()
         galfind_logger.warning(
             f"Target file does not exist for symlink: {target_path}"
         )
@@ -3187,7 +3186,9 @@ def cat_from_gal(
     AssertionError
         If ``data`` is not an instance of `Data`.
     """
-    from . import Catalogue, Data, Galaxy_Creator
+    from ..catalogues import Catalogue
+    from ..galaxy.Galaxy_Creator import Galaxy_Creator
+    from ..imaging import Data
 
     assert isinstance(data, Data), galfind_logger.critical(
         f"funcs.cat_from_gal requires {type(data)}==Data!"

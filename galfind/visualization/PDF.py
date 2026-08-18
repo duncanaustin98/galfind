@@ -86,9 +86,9 @@ class PDF:
         self.property_name = property_name
         self.x = x
         self.kwargs = kwargs
-        # normalize to np.trapz(p_x, x) == 1
+        # normalize to np.trapezoid(p_x, x) == 1
         if not normed:
-            p_x /= np.trapz(p_x, x.value)
+            p_x /= np.trapezoid(p_x, x.value)
         self.p_x = p_x
 
     def __repr__(self):
@@ -493,7 +493,7 @@ class PDF:
         x = self.x[index_x_min:index_x_max]
         p_x = self.p_x[index_x_min:index_x_max]
         # integrate using trapezium rule between limits
-        return np.trapz(p_x, x)
+        return np.trapezoid(p_x, x)
 
     def get_peak(
         self: Self,

@@ -186,17 +186,22 @@ class Emission_line:
         `str`
             String with emission line name and wavelength.
         """
-        return f"Emission_Line({self.name}, {self.lambda_0})"
+        return (
+            f"Emission_Line({self.line_name}, "
+            f"{self.line_diagnostics['line_wav']})"
+        )
 
     def __str__(self):
         """Return a detailed string representation of the emission line."""
-        output_str = f"Emission Line: {self.name}\n"
-        output_str += f"  Rest wavelength: {self.lambda_0}\n"
-        if hasattr(self, "doppler_b"):
-            output_str += f"  Doppler parameter (b): {self.doppler_b}\n"
-        if hasattr(self, "oscillator_strength"):
+        output_str = f"Emission Line: {self.line_name}\n"
+        output_str += (
+            f"  Rest wavelength: {self.line_diagnostics['line_wav']}\n"
+        )
+        output_str += f"  Doppler parameter (b): {self.Doppler_b}\n"
+        if self.line_diagnostics.get("oscillator_strength") is not None:
             output_str += (
-                f"  Oscillator strength: {self.oscillator_strength}\n"
+                "  Oscillator strength: "
+                f"{self.line_diagnostics['oscillator_strength']}\n"
             )
         return output_str
 
@@ -267,11 +272,10 @@ class Emission_line:
                 )
             )
         # normalize profile
-        line_flux = np.trapz(profile["flux"], profile["wavs"])
+        line_flux = np.trapezoid(profile["flux"], profile["wavs"])
         profile["flux"] *= self.line_flux / line_flux
         return profile
 
-    @property
     def line_width(self, lim=1e-4):
         """Wavelength range containing the line above a threshold.
 
@@ -286,10 +290,9 @@ class Emission_line:
             Wavelength range of the line, or `None` if line_width is
             incomplete.
         """
-        mask = self.line_profile["flux"] < lim * np.max(
-            self.line_profile["flux"]
-        )
-        self.wavs[mask]
+        profile = self.line_profile
+        mask = profile["flux"] > lim * np.max(profile["flux"])
+        return profile["wavs"][mask]
 
     def Tepper_Garcia06_profile(self, bins=1_000):
         """Compute line profile using Tepper-Garcia+06 Voigt approximation.

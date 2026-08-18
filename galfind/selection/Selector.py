@@ -588,6 +588,10 @@ class Photometry_Selector(Selector, ABC):
     def name(self: Self) -> str:
         """`str`: Unique name of this selection, including the
         aperture diameter."""
+        return (
+            f"{self._selection_name}_"
+            f"{self.aper_diam.to(u.arcsec).value:.2f}as"
+        )
 
     def _check_phot_exists(
         self: Self,
@@ -681,10 +685,7 @@ class SED_fit_Selector(Selector, ABC):
     def requires_SED_fit(self: Self) -> bool:
         """`bool`: Whether this selector requires SED-fitting results
         (`True`)."""
-        """`bool`: Whether this selector requires SED-fitting
-        results (`True`)."""
-        """`bool`: Whether this selector requires
-        SED-fitting results (`True`)."""
+        return True
 
     @property
     def name(self: Self) -> str:
@@ -813,7 +814,7 @@ class Morphology_Selector(Selector, ABC):
         morph_fitter: Union[str, Morphology_Fitter],
         **kwargs,
     ) -> Self:
-        from . import Morphology_Fitter
+        from ..properties.Morphology import Morphology_Fitter
 
         assert isinstance(
             morph_fitter, tuple(Morphology_Fitter.__subclasses__())
@@ -2274,7 +2275,7 @@ class Rest_Frame_Property_Limit_Selector(Redshift_Selector):
 
     def _assertions(self: Self) -> bool:
         try:
-            from . import Property_Calculator
+            from ..properties.Property_calculator import Property_Calculator
 
             assert isinstance(
                 self.property_calculator,
@@ -2418,7 +2419,7 @@ class Rest_Frame_Property_Bin_Selector(Multiple_SED_fit_Selector):
         assert isinstance(property_bin, (u.Quantity, u.Magnitude, u.Dex))
         assert len(property_bin) == 2
         assert property_bin[0] < property_bin[1]
-        from . import Rest_Frame_Property_Calculator
+        from ..properties import Rest_Frame_Property_Calculator
 
         assert isinstance(
             property_calculator,
@@ -7091,7 +7092,7 @@ class Rest_Frame_Property_Kwarg_Selector(SED_fit_Selector):
         return ["property_calculator", "kwarg_name", "kwarg_val"]
 
     def _assertions(self: Self) -> bool:
-        from . import Rest_Frame_Property_Calculator
+        from ..properties import Rest_Frame_Property_Calculator
 
         try:
             assertions = []

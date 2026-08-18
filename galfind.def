@@ -13,7 +13,7 @@ From: python:3.12-slim-bookworm
     LICENCE.md /opt/galfind/LICENCE.md
 
 %post
-    set -euo pipefail
+    set -eu
 
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
@@ -22,7 +22,10 @@ From: python:3.12-slim-bookworm
         git \
         ca-certificates \
         libgomp1 \
-        sextractor
+        sextractor \
+        pandoc
+    # pandoc above is the system binary nbsphinx shells out to for notebook
+    # conversion; the "pandoc" *pip* package below is just a wrapper around it.
     # Debian's sextractor package installs the binary as `sextractor` (or
     # `source-extractor` on some releases); galfind's code shells out to `sex`.
     if ! command -v sex >/dev/null 2>&1; then
@@ -55,7 +58,7 @@ From: python:3.12-slim-bookworm
     # package-data bug for its configs/ submodule, so `import bagpipes`
     # currently fails at runtime even though it installs successfully here.
     # This is an upstream bug, not fixable from this repo. See %help.
-    WITH_OPENMP=1 python3 -m pip install --no-cache-dir ".[bagpipes]"
+    WITH_OPENMP=1 python3 -m pip install --no-cache-dir ".[bagpipes,test,docs]"
 
     # GALFIND_WORK/GALFIND_DATA in the shipped config point at this machine's
     # local paths, which won't exist elsewhere. Repoint them at mount points
@@ -73,6 +76,7 @@ From: python:3.12-slim-bookworm
     export GALFIND_CONFIG_NAME=galfind_config.ini
 
 %test
+    set -eu
     python3 -c "import galfind; print('galfind', galfind.__file__, 'imported OK')"
     python3 -c "import sep, astropy, scipy, numba, eazy; print('core deps OK')"
     command -v sex >/dev/null 2>&1 && sex --version || (echo "sex binary missing" >&2; exit 1)

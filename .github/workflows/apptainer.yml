@@ -36,10 +36,19 @@ jobs:
     - name: Install Apptainer
       uses: eWaterCycle/setup-apptainer@v2
       with:
-        apptainer-version: 1.3.6
+        apptainer-version: 1.5.3
 
     - name: Build image
-      run: apptainer build --fakeroot galfind.sif galfind.def
+      # --notest: the %test section needs /data/GALFIND_WORK bound to a
+      # writable dir, but that path only exists once %post (which creates
+      # it) has run, so it can't be bound during build. Tested separately
+      # below, once the built image actually has the mount point.
+      run: apptainer build --fakeroot --notest galfind.sif galfind.def
 
     - name: Run built-in image tests
-      run: apptainer test galfind.sif
+      run: |
+        mkdir -p /tmp/galfind_work /tmp/galfind_data
+        apptainer test \
+          --bind /tmp/galfind_work:/data/GALFIND_WORK \
+          --bind /tmp/galfind_data:/data/GALFIND_DATA \
+          galfind.sif

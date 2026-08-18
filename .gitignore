@@ -36,3 +36,4 @@ examples/ACS_SBC_testing.py
 testing/test_work
 examples
 .ruff_cache
+galfind.sif

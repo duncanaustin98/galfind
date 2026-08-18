@@ -339,16 +339,18 @@ class SED:
         )  # in f_lambda
         if detector_type == "photon":
             # calculate integral(λ * f(λ) * T(λ) dλ)
-            numerator = np.trapz(
+            numerator = np.trapezoid(
                 filter_wavs * sed_interp * filter_trans, x=filter_wavs
             )
             # calculate integral(λ * T(λ) dλ)
-            denominator = np.trapz(filter_wavs * filter_trans, x=filter_wavs)
+            denominator = np.trapezoid(
+                filter_wavs * filter_trans, x=filter_wavs
+            )
         else:  # detector_type == "energy"
             # calculate integral(f(λ) * T(λ) dλ)
-            numerator = np.trapz(sed_interp * filter_trans, x=filter_wavs)
+            numerator = np.trapezoid(sed_interp * filter_trans, x=filter_wavs)
             # calculate integral(T(λ) dλ)
-            denominator = np.trapz(filter_trans, x=filter_wavs)
+            denominator = np.trapezoid(filter_trans, x=filter_wavs)
         # calculate bandpass-averaged flux in Jy
         return numerator / denominator
 
@@ -413,7 +415,7 @@ class SED:
         if plot:
             plt.plot(wavs_AA[feature_mask], flux_lambda[feature_mask])
             plt.show()
-        # line_plus_cont_flux = np.trapz(
+        # line_plus_cont_flux = np.trapezoid(
         #     flux_lambda[feature_mask], x=wavs_AA[feature_mask]
         # )
         # calculate continuum flux and mean continuum level
@@ -438,7 +440,7 @@ class SED:
             * u.erg
             / (u.s * u.cm**2 * u.AA)
         )
-        mean_cont = np.trapz(
+        mean_cont = np.trapezoid(
             cont_flux, x=wavs_AA[feature_mask]
         )  # not 100% correct here in the case of cont > line flux
         # calculate line flux
@@ -457,12 +459,12 @@ class SED:
             * u.erg
             / (u.s * u.cm**2 * u.AA)
         )
-        line_flux = np.trapz(
+        line_flux = np.trapezoid(
             line_flux_integrand, x=wavs_AA[feature_mask]
         )  # (line_plus_cont_flux - cont_flux) * feature_width
         # emission == positive EW
         # calculate line EW
-        line_EW = np.trapz(
+        line_EW = np.trapezoid(
             line_flux_integrand / cont_flux, x=wavs_AA[feature_mask]
         )
         # save result in self

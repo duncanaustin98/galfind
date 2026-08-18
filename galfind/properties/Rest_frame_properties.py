@@ -1113,7 +1113,7 @@ class beta_fit:
             ).value
             self.wavelength_rest[filt.filt_name] = wav_rest
             self.transmission[filt.filt_name] = trans
-            self.norm[filt.filt_name] = np.trapz(
+            self.norm[filt.filt_name] = np.trapezoid(
                 self.transmission[filt.filt_name],
                 x=self.wavelength_rest[filt.filt_name],
             )
@@ -1161,7 +1161,7 @@ def get_fluxes(wav_rest, A, beta, trans, norm):
     """
     return np.array(
         [
-            np.trapz(
+            np.trapezoid(
                 (10**A) * (wav_rest[i] ** beta) * trans[i],
                 x=wav_rest[i],
             )
@@ -1565,6 +1565,8 @@ class UV_Dust_Attenuation_Calculator(Rest_Frame_Property_Calculator):
             in AUV_from_beta.__subclasses__()
         )
         assert isinstance(self.global_kwargs["keep_valid"], bool)
+        ref_wav_label = f"{self.global_kwargs['ref_wav'].to(u.AA).value:.0f}"
+        return rf"$A_{{{ref_wav_label}}}$"
 
     def _calc_obj_kwargs(
         self: Self, phot_rest: Photometry_rest
@@ -2475,14 +2477,7 @@ class SFR_UV_Calculator(Rest_Frame_Property_Calculator):
     def plot_name(self: Self) -> str:
         """`str`: Human-readable plot label for the UV-derived star
         formation rate."""
-        """`str`: Human-readable plot label for the UV-derived
-        star formation rate."""
-        """`str`: Human-readable plot label for the
-        UV-derived star formation rate."""
-        """`str`: Human-readable plot label for
-        the UV-derived star formation rate."""
-        """`str`: Human-readable plot label
-        for the UV-derived star formation rate."""
+        return r"$\mathrm{SFR}_{\mathrm{UV}}$"
 
     def _calc_obj_kwargs(
         self: Self, phot_rest: Photometry_rest
@@ -2820,14 +2815,8 @@ class Optical_Line_EW_Calculator(Rest_Frame_Property_Calculator):
     def plot_name(self: Self) -> str:
         """`str`: Human-readable plot label for the emission line
         equivalent width."""
-        """`str`: Human-readable plot label for the emission
-        line equivalent width."""
-        """`str`: Human-readable plot label for the
-        emission line equivalent width."""
-        """`str`: Human-readable plot label for
-        the emission line equivalent width."""
-        """`str`: Human-readable plot label
-        for the emission line equivalent width."""
+        line_label = "+".join(self.global_kwargs["strong_line_names"])
+        return rf"$\mathrm{{EW}}_{{\mathrm{{{line_label}}}}}$"
 
     def _kwarg_assertions(self: Self) -> None:
         assert all(

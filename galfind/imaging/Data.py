@@ -4242,14 +4242,9 @@ class Data:
     def full_name(self: Self) -> str:
         """`str`: Full survey name, combining the survey, version and
         filterset."""
-        """`str`: Full survey name, combining the survey, version
-        and filterset."""
-        """`str`: Full survey name, combining the survey,
-        version and filterset."""
-        """`str`: Full survey name, combining the
-        survey, version and filterset."""
-        """`str`: Full survey name, combining
-        the survey, version and filterset."""
+        return funcs.get_full_survey_name(
+            self.survey, self.version, self.filterset
+        )
 
     @property
     def aper_diams(self: Self) -> u.Quantity:
