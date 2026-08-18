@@ -45,7 +45,7 @@ def f444w_band_data_segmented(f444w_band_data):
 
 
 @pytest.fixture(scope="module")
-def forced_phot_stacked_band_data_from_arr(
+def local_forced_phot_stacked_band_data_from_arr(
     survey, version, data_dir_nircam, test_forced_phot_band
 ):
     band_data_arr = [
@@ -274,18 +274,20 @@ class TestBandDataDunder:
 
 
 class TestStackedBandData:
-    def test_forced_phot_stacked_band_data_from_arr_init(
-        self, forced_phot_stacked_band_data_from_arr
+    def test_local_forced_phot_stacked_band_data_from_arr_init(
+        self, local_forced_phot_stacked_band_data_from_arr
     ):
         assert isinstance(
-            forced_phot_stacked_band_data_from_arr, Stacked_Band_Data
+            local_forced_phot_stacked_band_data_from_arr, Stacked_Band_Data
         )
 
-    def test_forced_phot_stacked_band_data_from_arr_len(
-        self, forced_phot_stacked_band_data_from_arr, test_forced_phot_band
+    def test_local_forced_phot_stacked_band_data_from_arr_len(
+        self,
+        local_forced_phot_stacked_band_data_from_arr,
+        test_forced_phot_band,
     ):
         assert len(
-            forced_phot_stacked_band_data_from_arr.band_data_arr
+            local_forced_phot_stacked_band_data_from_arr.band_data_arr
         ) == len(test_forced_phot_band)
 
 
@@ -349,7 +351,7 @@ class TestBandDataSegmentation:
         assert band_data_str != band_data_segmented_str
 
     def test_load_segmap(self, f444w_band_data_segmented, output_hdr):
-        output = f444w_band_data_segmented.load_segmap(incl_hdr=output_hdr)
+        output = f444w_band_data_segmented.load_seg(incl_hdr=output_hdr)
         if output_hdr:
             segmap, segmap_header = output
             assert segmap_header is not None
@@ -362,16 +364,16 @@ class TestBandDataSegmentation:
         f444w_band_data_segmented_ = deepcopy(f444w_band_data_segmented)
         f444w_band_data_segmented_.seg_path = "invalid/path.fits"
         with pytest.raises(Exception):
-            f444w_band_data_segmented_.load_segmap(incl_hdr=True)
+            f444w_band_data_segmented_.load_seg(incl_hdr=True)
 
 
 class TestBandDataForcedPhotometry:
     @pytest.fixture(scope="class")
     def f444w_base_forced_phot(
-        self, f444w_band_data, forced_phot_stacked_band_data_from_arr
+        self, f444w_band_data, local_forced_phot_stacked_band_data_from_arr
     ):
         f444w_band_data.perform_forced_phot(
-            forced_phot_band=forced_phot_stacked_band_data_from_arr,
+            forced_phot_band=local_forced_phot_stacked_band_data_from_arr,
             overwrite=True,
         )
 

@@ -90,6 +90,14 @@ def pytest_generate_tests(metafunc):
         metafunc.parametrize("filter", params, indirect=True)
 
 
+def pytest_collection_modifyitems(items):
+    # auto-mark any test whose fixture closure includes `data`, since it
+    # requires STPSF's external calibration data to build model PSFs
+    for item in items:
+        if "data" in item.fixturenames:
+            item.add_marker(pytest.mark.requires_data)
+
+
 @pytest.fixture(scope="session")
 def facility(request):
     return request.param

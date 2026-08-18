@@ -3,7 +3,7 @@
 from .Data import Data, Multiple_Band_Data_Base
 from .Filter import Filter, Multiple_Filter
 from .Instrument import MIRI, NIRCam
-from .PSF import PSF_Cutout
+from .PSF import PSF_Base, PSF_Cutout
 
 __all__ = [
     "Data",
@@ -12,6 +12,7 @@ __all__ = [
     "NIRCam",
     "Multiple_Filter",
     "Multiple_Band_Data_Base",
+    "PSF_Base",
     "PSF_Cutout",
     "all_filt_names",
 ]

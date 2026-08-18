@@ -756,7 +756,6 @@ class Band_Data_Base(ABC):
                 galfind_logger.critical(err_message)
                 raise (Exception(err_message))
         except Exception as e:
-            breakpoint()
             raise e
         seg_hdul = fits.open(
             self.seg_path, ignore_missing_simple=True, **kwargs
@@ -5347,8 +5346,9 @@ class Data:
                 f"{self.filterset.filt_names}, cannot load "
                 f"forced photometry band!"
             )
-            assert (
-                band_data_base.filt_name in self.filterset.filt_names
+            assert all(
+                name in self.filterset.filt_names
+                for name in band_data_base.filt_name.split("+")
             ), galfind_logger.critical(filt_names_err)
         else:
             # create a forced_phot_band object from given string

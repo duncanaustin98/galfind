@@ -41,10 +41,7 @@ except KeyError:
 print("Reading GALFIND config file from:", config_path)
 
 # note whether the __init__ is running in a workflow
-if "hostedtoolcache" in galfind_dir:
-    in_workflow = True
-else:
-    in_workflow = False
+in_workflow = os.environ.get("GITHUB_ACTIONS") == "true"
 
 # configuration variables
 config = configparser.ConfigParser()
