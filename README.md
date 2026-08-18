@@ -3,6 +3,7 @@
 [![workflow](https://github.com/duncanaustin98/galfind/actions/workflows/python-app.yml/badge.svg)](https://github.com/duncanaustin98/galfind/actions)
 [![codecov](https://codecov.io/gh/duncanaustin98/galfind/branch/main/graph/badge.svg)](https://codecov.io/gh/duncanaustin98/galfind)
 [![Documentation Status](https://github.com/duncanaustin98/galfind/actions/workflows/publish_docs.yml/badge.svg)](https://galfind.readthedocs.io/en/latest/index.html)
+[![Apptainer](https://github.com/duncanaustin98/galfind/actions/workflows/apptainer.yml/badge.svg)](https://github.com/duncanaustin98/galfind/actions/workflows/apptainer.yml)
 [![Contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat)](https://github.com/flaresimulations/synthesizer/blob/main/docs/CONTRIBUTING.md)
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
@@ -48,6 +49,40 @@ sudo apt-get install sextractor
 brew install sextractor
 ```
 For this, you will need homebrew installed. Follow instructions at https://brew.sh/
+
+# Installation with Apptainer
+
+An [Apptainer](https://apptainer.org/) definition, `galfind.def`, is provided
+as a reproducible, self-contained alternative to a local venv/conda install.
+It bundles galfind, SExtractor, and EAZY + Bagpipes SED fitting (LePhare is
+not included, since it is a separately-compiled codebase rather than a pip
+package). Every build is checked automatically by the
+[Apptainer workflow](https://github.com/duncanaustin98/galfind/actions/workflows/apptainer.yml).
+
+Build the image from the repository root (needs root or `--fakeroot`):
+```bash
+apptainer build --fakeroot galfind.sif galfind.def
+```
+
+Run a script, binding your own work/data directories onto the mount points
+the shipped config expects:
+```bash
+apptainer run \
+    --bind /path/to/your/work:/data/GALFIND_WORK \
+    --bind /path/to/your/data:/data/GALFIND_DATA \
+    galfind.sif your_script.py
+```
+
+Or drop into an interactive shell:
+```bash
+apptainer shell --bind /path/to/your/work:/data/GALFIND_WORK --bind /path/to/your/data:/data/GALFIND_DATA galfind.sif
+```
+
+**_NOTE:_** `import bagpipes` currently fails at runtime inside the container
+(`ModuleNotFoundError: bagpipes.configs`) due to a missing package-data bug in
+the [tHarvey303/bagpipes](https://github.com/tHarvey303/bagpipes) fork itself,
+not in galfind or this image. galfind and its EAZY-based SED fitting are
+unaffected.
 
 ---
 **_NOTE:_** Since the contribution guidelines have not yet been written, if you intend to add any new features to galfind, please raise an issue on GitHub and inform me at duncan.austin@postgrad.manchester.ac.uk or via the EPOCHS slack channel

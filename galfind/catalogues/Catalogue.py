@@ -1686,7 +1686,8 @@ class Catalogue_Creator:
         tab = self.load_tab("mask", cropped)
         if len(tab) == 0:
             galfind_logger.warning(
-                f"No mask data in {self.cat_path} for {self.crop_name}!"
+                f"No rows in the 'mask' table extension of {self.cat_path} "
+                f"for crop '{self.cat_name}'; proceeding without a mask."
             )
             return None
         if self.load_mask_func is not None:

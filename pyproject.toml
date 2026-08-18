@@ -22,7 +22,7 @@ readme = "README.md"
 requires-python = ">=3.9" # needed for latest configparser
 
 # The licence
-license = {file = "LICENSE.md"}
+license = {file = "LICENCE.md"}
 
 # Project keywords
 keywords =[
@@ -73,7 +73,7 @@ classifiers = [  # Optional
 dependencies = [
   "asdf-astropy",
   "setuptools",
-  "numpy<2.0",
+  "numpy>=2.0",
   "matplotlib", # pillow install issue
   "astropy",
   "astroquery",
@@ -85,7 +85,7 @@ dependencies = [
   "opencv-python-headless", # headless build: no libGL/X11 dependency, needed for CI/RTD builds
   "joblib",
   "trilogy",
-  "scikit-learn",
+  "scikit-learn>=1.9.0", # earlier versions import a numpy-1.x-built pyarrow via sklearn.utils.fixes, which crashes under numpy>=2.0
   "scikit-image",
   "eazy",
   "regions",
@@ -93,7 +93,7 @@ dependencies = [
   "kneed",
   "yagmail",
   "typing_extensions", # 4.12.2
-  "numba", # 0.60.0
+  "numba>=0.67.0", # earlier versions refuse to import under numpy>=2.2
   "configparser",
   "ipykernel",
   "emcee",
@@ -102,7 +102,9 @@ dependencies = [
   "BDFit @ git+https://github.com/tHarvey303/BD-Finder/",
   "corner",
 ]
-# numpy<2.0 prevents import sep; ValueError: numpy.dtype size changed, may indicate binary incompatibility. Expected 96 from C header, got 88 from PyObject.
+# numpy>=2.0 requires numba>=0.67.0 (llvmlite pulled in automatically) and
+# scikit-learn>=1.9.0 (its numpy-1.x-built pyarrow import otherwise crashes);
+# sep itself has supported numpy>=2.0 since before this pin was added.
 #grizli
 #msaexp
 
@@ -161,12 +163,26 @@ docs = [
 galfind-config-update = "galfind.change_config:main"
 #synthesizer-download="synthesizer.download_data:download"
 
-# Package data
-#[tool.setuptools.package-data]
-# data = []
+# Package data: non-.py files that live inside the galfind/ package and are
+# needed at runtime (not just for local development), e.g. IGM attenuation
+# grids and SExtractor wrapper scripts. Without this, `pip install .` silently
+# omits them and anything touching IGM_attenuation/SExtractor crashes with a
+# FileNotFoundError on first use.
+[tool.setuptools.package-data]
+galfind = [
+    "*.sh",
+    "*.mplstyle",
+    "IGM_attenuation/*.fits",
+    "IGM_attenuation/*.h5",
+    "Aperture_corrections/*.dat",
+    "Aperture_corrections/*.txt",
+]
 
 [tool.setuptools.packages.find]
-exclude = ["unit_testing*", "NIRCam_pipeline*"]
+# build* excluded to stop each build from recursively re-packaging its own
+# previous output as if it were source (this is how build/ ended up 851MB
+# deep with nested build/lib/build/lib/... copies)
+exclude = ["unit_testing*", "NIRCam_pipeline*", "build*"]
 
 [tool.setuptools_scm]
 

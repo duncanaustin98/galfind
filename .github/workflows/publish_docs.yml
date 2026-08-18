@@ -2,7 +2,7 @@
 # still builds cleanly. Actual publishing to readthedocs.io is handled
 # by Read the Docs' own webhook, not this workflow.
 
-name: publish_docs
+name: Documentation
 
 on:
   pull_request:

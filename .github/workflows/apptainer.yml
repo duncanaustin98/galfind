@@ -1,0 +1,45 @@
+# Builds the Apptainer image from galfind.def as a check that it still
+# builds cleanly. This does not publish the resulting .sif anywhere.
+
+name: apptainer
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "galfind.def"
+      - "pyproject.toml"
+      - "galfind/**"
+      - "configs/**"
+      - ".github/workflows/apptainer.yml"
+  push:
+    branches: ["main"]
+    paths:
+      - "galfind.def"
+      - "pyproject.toml"
+      - "galfind/**"
+      - "configs/**"
+      - ".github/workflows/apptainer.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Apptainer
+      uses: eWaterCycle/setup-apptainer@v2
+      with:
+        apptainer-version: 1.3.6
+
+    - name: Build image
+      run: apptainer build --fakeroot galfind.sif galfind.def
+
+    - name: Run built-in image tests
+      run: apptainer test galfind.sif

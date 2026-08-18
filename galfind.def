@@ -1,0 +1,104 @@
+Bootstrap: docker
+From: python:3.12-slim-bookworm
+
+%labels
+    Author galfind maintainers
+    Description Apptainer image for the galfind photometry/SED-fitting pipeline (EAZY + Bagpipes; LePhare not included)
+
+%files
+    galfind /opt/galfind/galfind
+    configs /opt/galfind/configs
+    pyproject.toml /opt/galfind/pyproject.toml
+    README.md /opt/galfind/README.md
+    LICENCE.md /opt/galfind/LICENCE.md
+
+%post
+    set -euo pipefail
+
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        git \
+        ca-certificates \
+        libgomp1 \
+        sextractor
+    # Debian's sextractor package installs the binary as `sextractor` (or
+    # `source-extractor` on some releases); galfind's code shells out to `sex`.
+    if ! command -v sex >/dev/null 2>&1; then
+        SEX_BIN="$(command -v source-extractor || command -v sextractor || true)"
+        if [ -n "$SEX_BIN" ]; then
+            ln -s "$SEX_BIN" /usr/local/bin/sex
+        else
+            echo "WARNING: no sextractor/source-extractor binary found after install" >&2
+        fi
+    fi
+    rm -rf /var/lib/apt/lists/*
+
+    # This container only ships EAZY (already a base dependency) + Bagpipes.
+    # LePhare is a separate compiled Fortran/C++ codebase, not pip-installable,
+    # and is deliberately left out.
+    rm -rf /opt/galfind/configs/LePhare
+
+    # galfind's version is normally derived from git via setuptools_scm; the
+    # container build only copies the source tree (not the ~1.2GB .git
+    # history), so pin a static placeholder instead. Scoped to just galfind
+    # (not the bare SETUPTOOLS_SCM_PRETEND_VERSION) since that would also
+    # leak into other setuptools_scm-based packages further down the
+    # dependency tree (e.g. dust_extinction, pulled in via BDFit) and break
+    # their own version detection.
+    export SETUPTOOLS_SCM_PRETEND_VERSION_FOR_GALFIND=0.0.0+container
+
+    cd /opt/galfind
+    python3 -m pip install --no-cache-dir --upgrade pip
+    # NOTE: bagpipes (github.com/tHarvey303/bagpipes) has its own missing
+    # package-data bug for its configs/ submodule, so `import bagpipes`
+    # currently fails at runtime even though it installs successfully here.
+    # This is an upstream bug, not fixable from this repo. See %help.
+    WITH_OPENMP=1 python3 -m pip install --no-cache-dir ".[bagpipes]"
+
+    # GALFIND_WORK/GALFIND_DATA in the shipped config point at this machine's
+    # local paths, which won't exist elsewhere. Repoint them at mount points
+    # the container user is expected to bind their own directories onto, e.g.
+    # `apptainer run --bind /host/work:/data/GALFIND_WORK,/host/data:/data/GALFIND_DATA ...`
+    mkdir -p /data/GALFIND_WORK /data/GALFIND_DATA
+    sed -i \
+        -e 's|^GALFIND_WORK:.*|GALFIND_WORK: /data/GALFIND_WORK|' \
+        -e 's|^GALFIND_DATA:.*|GALFIND_DATA: /data/GALFIND_DATA|' \
+        /opt/galfind/configs/galfind_config.ini
+
+%environment
+    export PYTHONUNBUFFERED=1
+    export GALFIND_CONFIG_DIR=/opt/galfind/configs
+    export GALFIND_CONFIG_NAME=galfind_config.ini
+
+%test
+    python3 -c "import galfind; print('galfind', galfind.__file__, 'imported OK')"
+    python3 -c "import sep, astropy, scipy, numba, eazy; print('core deps OK')"
+    command -v sex >/dev/null 2>&1 && sex --version || (echo "sex binary missing" >&2; exit 1)
+
+%runscript
+    exec python3 "$@"
+
+%help
+    Apptainer image for galfind (https://github.com/u92876da/galfind), built
+    with EAZY and Bagpipes SED-fitting support; LePhare is not included since
+    it is a separately-compiled codebase rather than a pip package.
+
+    Known limitation: `import bagpipes` currently fails at runtime
+    (ModuleNotFoundError: bagpipes.configs) due to a missing package-data bug
+    in the tHarvey303/bagpipes fork itself, not in galfind or this image.
+    galfind and its EAZY-based SED fitting are unaffected.
+
+    Build:
+        apptainer build galfind.sif galfind.def
+
+    Run, binding your own work/data directories onto the mount points the
+    shipped config expects:
+        apptainer run \
+            --bind /path/to/your/work:/data/GALFIND_WORK \
+            --bind /path/to/your/data:/data/GALFIND_DATA \
+            galfind.sif your_script.py
+
+    Or drop into an interactive shell:
+        apptainer shell --bind ... galfind.sif

@@ -29,7 +29,7 @@ extensions = [
 
 numpydoc_show_class_members = False
 class_members_toctree = False
-nbsphinx_allow_errors = True
+nbsphinx_execute = "never"
 autosummary_generate = True
 
 intersphinx_mapping = {

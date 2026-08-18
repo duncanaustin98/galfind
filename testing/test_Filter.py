@@ -183,8 +183,8 @@ class TestFilterDunderMethods:
         assert copy_filter is not filter
         assert copy_filter == filter
         setattr(copy_filter, "test_attr", 123)
-        assert hasattr(filter, "test_attr")
-        assert filter["test_attr"] == 123
+        assert not hasattr(filter, "test_attr")
+        assert copy_filter.test_attr == 123
 
     def test_deepcopy(self, filter):
         deepcopy_filter = deepcopy(filter)
@@ -316,11 +316,11 @@ class TestMultipleFilterInstantiation:
             assert isinstance(multiple_filter, Multiple_Filter)
 
     def test_from_instrument_cls(self, instrument):
-        multiple_filter = Multiple_Filter.from_instruments(instrument)
+        multiple_filter = Multiple_Filter.from_instrument(instrument)
         assert isinstance(multiple_filter, Multiple_Filter)
 
     def test_from_instrument_inst(self, instrument_inst):
-        multiple_filter = Multiple_Filter.from_instruments(instrument_inst)
+        multiple_filter = Multiple_Filter.from_instrument(instrument_inst)
         assert isinstance(multiple_filter, Multiple_Filter)
 
     def test_from_instrument_excl_bands(
@@ -410,8 +410,8 @@ class TestMultipleFilterDunderMethods:
         assert copy_nircam_multi_filter is not nircam_multi_filter
         assert copy_nircam_multi_filter == nircam_multi_filter
         setattr(copy_nircam_multi_filter, "test_attr", 123)
-        assert hasattr(nircam_multi_filter, "test_attr")
-        assert nircam_multi_filter["test_attr"] == 123
+        assert not hasattr(nircam_multi_filter, "test_attr")
+        assert copy_nircam_multi_filter.test_attr == 123
 
     def test_deepcopy(self, nircam_multi_filter):
         deepcopy_nircam_multi_filter = deepcopy(nircam_multi_filter)
@@ -421,7 +421,7 @@ class TestMultipleFilterDunderMethods:
         assert not hasattr(nircam_multi_filter, "test_attr")
 
     def test_len(self, nircam_multi_filter):
-        assert len(nircam_multi_filter) == 27
+        assert len(nircam_multi_filter) == 29
 
     def test_multiple_filter_is_iterable(self, nircam_multi_filter):
         iterator = iter(nircam_multi_filter)

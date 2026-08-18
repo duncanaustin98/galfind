@@ -17,6 +17,7 @@ from typing import (
     NoReturn,
     Optional,
     Tuple,
+    Type,
     Union,
 )
 
@@ -1077,6 +1078,11 @@ class Multiple_Filter:
     def __len__(self) -> int:
         return len(self.filters)
 
+    def __contains__(self, other: Union[str, Filter, Type[Filter]]) -> bool:
+        if isinstance(other, type):
+            return any(isinstance(filt, other) for filt in self.filters)
+        return any(filt == other for filt in self.filters)
+
     def __iter__(self) -> Self:
         self.iter = 0
         return self
@@ -1134,11 +1140,13 @@ class Multiple_Filter:
     ) -> Self:
         # make relevant new filters from other that aren't in [self]
         new_filters = Multiple_Filter._make_new_filt(self.filters, other)
+        result = Multiple_Filter(
+            list(self.filters), sort_order=self.sort_order
+        )
         if new_filters is not None:
-            # add new filters to existing filters
-            self.filters += new_filters
-        self.sort_bands()
-        return self
+            result.filters += new_filters
+        result.sort_bands()
+        return result
 
     def __sub__(
         self,
@@ -1160,6 +1168,14 @@ class Multiple_Filter:
         remove_filt_names = []
         for i, filt in enumerate(other):
             remove = True
+            if isinstance(filt, type):
+                if issubclass(filt, Filter):
+                    filt = filt()
+                else:
+                    raise TypeError(
+                        f"Cannot subtract {filt!r}; expected a str, "
+                        "Filter instance, or Filter subclass."
+                    )
             if isinstance(filt, str):
                 # extract facility, instrument and filter name from string
                 (
@@ -1180,6 +1196,11 @@ class Multiple_Filter:
                     remove = False
                 else:
                     remove_filt_names.extend([filt])
+            else:
+                raise TypeError(
+                    f"Cannot subtract {filt!r} of type {type(filt)} from "
+                    f"{self.__class__.__name__}; expected a str or Filter."
+                )
             # print warning if filter already included
             if not remove:
                 already_included_warning = (
@@ -1194,14 +1215,19 @@ class Multiple_Filter:
             )
             galfind_logger.warning(warning_message)
             # warnings.warn(UserWarning(warning_message))
+            result = Multiple_Filter(
+                list(self.filters), sort_order=self.sort_order
+            )
         else:
-            # add new filters to existing filters
-            self.filters = [
-                filt
-                for filt in self
-                if filt.filt_name not in remove_filt_names
-            ]
-        return self
+            result = Multiple_Filter(
+                [
+                    filt
+                    for filt in self
+                    if filt.filt_name not in remove_filt_names
+                ],
+                sort_order=self.sort_order,
+            )
+        return result
 
     def __eq__(self, other: Type[Self]) -> bool:
         if isinstance(other, Multiple_Filter):

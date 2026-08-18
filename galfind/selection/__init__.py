@@ -28,6 +28,7 @@ from .Selector import (
     Redshift_Bin_Selector,
     EPOCHS_Selector,
     Redwards_Lya_Detect_Selector,
+    Stacked_Blue_Lya_Non_Detect_Selector,
     Selector,
     Depth_Region_Selector,
     Brown_Dwarf_Selector,
@@ -49,4 +50,5 @@ __all__ = [
     "Brown_Dwarf_Selector",
     "Mask_Selector",
     "EPOCHS_unmasked_criteria",
+    "Stacked_Blue_Lya_Non_Detect_Selector",
 ]

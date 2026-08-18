@@ -9,7 +9,6 @@ catalogues.
 
 from __future__ import annotations
 
-import json
 import logging
 from abc import ABC, abstractmethod
 from copy import deepcopy
@@ -370,18 +369,28 @@ class Selector(ABC):
                 disable=galfind_logger.getEffectiveLevel() > logging.INFO,
             )
         ]
-        cat._append_property_to_tab(
-            self.name,
-            hdu="SELECTION",
-            dtype=bool,
-        )
-        for kwarg_name, kwarg_dtype in zip(*self.select_kwarg_names_dtypes):
-            save_name = f"{self.name}__{kwarg_name}"
-            cat._append_property_to_tab(
-                save_name,
-                hdu="SELECTION",
-                dtype=kwarg_dtype,
+        n_cat_total = len(cat.open_cat(cropped=False))
+        if len(cat) != n_cat_total:
+            galfind_logger.warning(
+                f"Not appending {self.name!r} selection results to "
+                f".fits table: {len(cat)=} galaxies run != "
+                f"{n_cat_total=} galaxies in {repr(cat)}!"
             )
+        else:
+            cat._append_property_to_tab(
+                self.name,
+                hdu="SELECTION",
+                dtype=bool,
+            )
+            for kwarg_name, kwarg_dtype in zip(
+                *self.select_kwarg_names_dtypes
+            ):
+                save_name = f"{self.name}__{kwarg_name}"
+                cat._append_property_to_tab(
+                    save_name,
+                    hdu="SELECTION",
+                    dtype=kwarg_dtype,
+                )
         if return_copy:
             cat_copy = deepcopy(cat)
             return cat_copy.crop(self)
@@ -2666,12 +2675,7 @@ class Compactness_Selector(Data_Selector):
         try:
             assertions = []
             assertions.extend([isinstance(self.kwargs["filt_name"], str)])
-            assertions.extend(
-                [
-                    self.kwargs["filt_name"]
-                    in json.loads(config.get("Other", "ALL_BANDS"))
-                ]
-            )
+            assertions.extend([self.kwargs["filt_name"] in all_filt_names])
             assertions.extend(
                 [isinstance(self.kwargs["compare_radii"], u.Quantity)]
             )
@@ -4855,12 +4859,7 @@ class Band_Mag_Selector(Photometry_Selector):
             assertions = []
             assertions.extend([isinstance(self.kwargs["band"], (int, str))])
             if isinstance(self.kwargs["band"], str):
-                assertions.extend(
-                    [
-                        self.kwargs["band"]
-                        in json.loads(config.get("Other", "ALL_BANDS"))
-                    ]
-                )
+                assertions.extend([self.kwargs["band"] in all_filt_names])
             assertions.extend(
                 [isinstance(self.kwargs["mag_lim"], (int, float))]
             )
@@ -5028,12 +5027,7 @@ class Band_SNR_Selector(Photometry_Selector):
             assertions = []
             assertions.extend([isinstance(self.kwargs["band"], (int, str))])
             if isinstance(self.kwargs["band"], str):
-                assertions.extend(
-                    [
-                        self.kwargs["band"]
-                        in json.loads(config.get("Other", "ALL_BANDS"))
-                    ]
-                )
+                assertions.extend([self.kwargs["band"] in all_filt_names])
             assertions.extend(
                 [isinstance(self.kwargs["SNR_lim"], (int, float))]
             )
@@ -5128,7 +5122,7 @@ class Stacked_Blue_Lya_Non_Detect_Selector(SED_fit_Selector):
     Lyman-alpha.
 
     Stacks (or uses singly, if only one band qualifies) all bands
-    bluewards of the (redshifted, capped at `zmax`) Lyman-alpha line
+    bluewards of the (redshifted) Lyman-alpha line
     and requires the resulting SNR to be below `SNR_lim`.
 
     Parameters
@@ -5145,9 +5139,9 @@ class Stacked_Blue_Lya_Non_Detect_Selector(SED_fit_Selector):
         Redshift buffer subtracted from the (capped) best-fit redshift
         when determining which bands are bluewards of Lyman-alpha.
         Default is `0.0`.
-    zmax : `float`, optional
-        Maximum redshift used in place of the best-fit redshift when
-        it exceeds this value. Default is `15.0`.
+    fit_filterset : `Multiple_Filter`, optional
+        If given, restrict the bands considered to those in this
+        filterset. Default is `None`.
     """
 
     def __init__(
@@ -5158,7 +5152,7 @@ class Stacked_Blue_Lya_Non_Detect_Selector(SED_fit_Selector):
         # detect_or_non_detect: str,
         SNR_lim: Union[int, float],
         dz: float = 0.0,
-        zmax: float = 15.0,
+        fit_filterset: Optional[Multiple_Filter] = None,
     ):
         # # if string, turn filterset into a list
         # if isinstance(filterset, str):
@@ -5179,9 +5173,10 @@ class Stacked_Blue_Lya_Non_Detect_Selector(SED_fit_Selector):
             # "detect_or_non_detect": detect_or_non_detect,
             "SNR_lim": SNR_lim,
             "dz": dz,
-            "zmax": zmax,
         }
-        super().__init__(aper_diam, SED_fitter, **kwargs)
+        super().__init__(
+            aper_diam, SED_fitter, fit_filterset=fit_filterset, **kwargs
+        )
 
     @property
     def _selection_name(self) -> str:
@@ -5194,8 +5189,7 @@ class Stacked_Blue_Lya_Non_Detect_Selector(SED_fit_Selector):
         else:
             dz_str = ""
         selection_name = (
-            f"blue_Lya_stacked_SNR<{self.kwargs['SNR_lim']:.1f}"
-            f"{dz_str}_zmax{self.kwargs['zmax']:.1f}"
+            f"blue_Lya_stacked_SNR<{self.kwargs['SNR_lim']:.1f}{dz_str}"
         )
         return selection_name
 
@@ -5204,7 +5198,6 @@ class Stacked_Blue_Lya_Non_Detect_Selector(SED_fit_Selector):
         return [
             "SNR_lim",
             "dz",
-            "zmax",
         ]  # "filterset", "detect_or_non_detect",
 
     @property
@@ -5230,8 +5223,6 @@ class Stacked_Blue_Lya_Non_Detect_Selector(SED_fit_Selector):
             )
             assertions.extend([isinstance(self.kwargs["dz"], (int, float))])
             assertions.extend([self.kwargs["dz"] >= 0.0])
-            assertions.extend([isinstance(self.kwargs["zmax"], (int, float))])
-            assertions.extend([self.kwargs["zmax"] > 0.0])
             # assertions.extend(
             #     [self.kwargs["detect_or_non_detect"].lower()
             #      in ["detect", "non_detect"]]
@@ -5247,11 +5238,8 @@ class Stacked_Blue_Lya_Non_Detect_Selector(SED_fit_Selector):
         *args,
         **kwargs,
     ) -> bool:
-        blue_stack_label = self._get_blue_stack_label(gal)
-        if blue_stack_label is None:
-            return True
-        else:
-            return False
+        blue_band_names = self._get_unmasked_blue_bands(gal)
+        return blue_band_names is None
 
     def _selection_criteria(
         self: Self,
@@ -5259,17 +5247,35 @@ class Stacked_Blue_Lya_Non_Detect_Selector(SED_fit_Selector):
         *args,
         **kwargs,
     ) -> Tuple[bool, Dict[str, Any]]:
-        blue_stack_label = self._get_blue_stack_label(gal)
-        if "+" not in blue_stack_label:
-            SNR = float(
-                gal.aper_phot[self.aper_diam][blue_stack_label].SNR[0].unmasked
-            )
+        blue_band_names = self._get_unmasked_blue_bands(gal)
+        phot = gal.aper_phot[self.aper_diam]
+        filt_names = np.array(phot.filterset.filt_names)
+        indices = [
+            int(np.where(filt_names == filt_name)[0][0])
+            for filt_name in blue_band_names
+        ]
+        # inverse-variance stack the (aperture-corrected) unmasked blue
+        # bands; for a single band this reduces exactly to phot.SNR[index]
+        flux = phot.flux[indices]
+        if isinstance(flux, Masked):
+            flux = flux.unmasked
+        flux = flux.to(u.Jy).value
+        depths_1sig_Jy = phot.depths[indices].to(u.Jy).value / 5.0
+        aper_corrs = np.array(phot.aper_corrs)[indices]
+        if phot.simulated:
+            corrected_flux = flux
         else:
-            SNR = float(
-                gal.aper_phot[self.aper_diam].stacked_band_snrs[
-                    blue_stack_label
+            corrected_flux = np.array(
+                [
+                    f * 10 ** (aper_corr / -2.5) if f > 0.0 else f
+                    for f, aper_corr in zip(flux, aper_corrs)
                 ]
             )
+        weights = 1.0 / depths_1sig_Jy**2
+        stacked_flux = np.sum(corrected_flux * weights) / np.sum(weights)
+        stacked_err = np.sqrt(1.0 / np.sum(weights))
+        SNR = float(stacked_flux / stacked_err)
+        blue_stack_label = "+".join(blue_band_names)
         kwargs_out = {"bands": blue_stack_label, "SNR": SNR}
         if not np.isfinite(SNR):
             selected = False
@@ -5277,98 +5283,36 @@ class Stacked_Blue_Lya_Non_Detect_Selector(SED_fit_Selector):
             selected = SNR < self.kwargs["SNR_lim"]
         return selected, kwargs_out
 
-    def _assert_cat(
-        self: Self,
-        cat: Catalogue,
-    ) -> None:
-        req_stacked_bands = self._required_stacked_bands(cat.filterset)
-        stacked_band_data_filt_names = [
-            band_data.filt_name for band_data in cat.data.stacked_band_data_arr
-        ]
-        if not all(
-            [
-                "+".join(req_stacked_band.filt_names)
-                in stacked_band_data_filt_names
-                for req_stacked_band in req_stacked_bands
-            ]
-        ):
-            req_stacked_band_names = [
-                "+".join(req_stacked_band.filt_names)
-                for req_stacked_band in req_stacked_bands
-            ]
-            err_message = (
-                f"{repr(self)} requires the following stacked bands: "
-                + f"{req_stacked_band_names}, "
-                + "but only the following stacked bands are "
-                + f"available: {stacked_band_data_filt_names}!"
-            )
-            galfind_logger.critical(err_message)
-            raise Exception(err_message)
-        cat.load_stacked_band_data_snrs()
-        super()._assert_cat(cat)
-
-    def _required_stacked_bands(
-        self: Self,
-        filterset: Multiple_Filter,
-    ) -> List[Multiple_Filter]:
-        from . import Multiple_Filter, wav_lyman_alpha
-
-        # determine required stacked bands from maximum redshift
-        max_wav_lim = (
-            wav_lyman_alpha
-            * u.AA
-            * (1.0 + self.kwargs["zmax"] - self.kwargs["dz"])
-        )
-        blue_filters = Multiple_Filter(
-            [
-                filt
-                for filt in filterset
-                if filt.WavelengthUpper50 < max_wav_lim
-            ]
-        )
-        req_stacked_bands = [
-            Multiple_Filter(deepcopy(blue_filters)[: i + 1])
-            for i in range(len(blue_filters))
-        ][1:]
-        return req_stacked_bands
-
-    def _get_blue_stack_label(
+    def _get_unmasked_blue_bands(
         self: Self,
         gal: Galaxy,
-    ) -> str:
-        from . import wav_lyman_alpha
+    ) -> Optional[List[str]]:
+        from ..spectra.Emission_lines import wav_lyman_alpha
 
         z = gal.aper_phot[self.aper_diam].SED_results[self.SED_fitter.label].z
         if z < 0.0:
             return None
+        phot = gal.aper_phot[self.aper_diam]
+        if self.fit_filterset is None:
+            ignore_bands = []
         else:
-            z = np.min((z, self.kwargs["zmax"]))
-            blue_bands = [
-                filt.filt_name
-                for filt in gal.aper_phot[self.aper_diam].filterset
-                if filt.WavelengthUpper50
-                < wav_lyman_alpha * u.AA * (1.0 + z - self.kwargs["dz"])
+            ignore_bands = [
+                filt_name
+                for filt_name in phot.filterset.filt_names
+                if filt_name not in self.fit_filterset.filt_names
             ]
-            if len(blue_bands) == 0:
-                return None
-            elif len(blue_bands) == 1:
-                return blue_bands[0]
-            else:
-                closest_blue_band_label = blue_bands[-1]
-                label = [
-                    key
-                    for key in gal.aper_phot[
-                        self.aper_diam
-                    ].stacked_band_snrs.keys()
-                    if closest_blue_band_label in key
-                ][0]
-                assert (
-                    label.split("+")[-1] == closest_blue_band_label
-                ), galfind_logger.critical(
-                    f"{closest_blue_band_label=} not at end "
-                    f"of {closest_blue_band_label}!"
-                )
-                return label
+        masked = isinstance(phot.flux, Masked)
+        blue_band_names = [
+            filt.filt_name
+            for i, filt in enumerate(phot.filterset)
+            if filt.filt_name not in ignore_bands
+            and filt.WavelengthUpper50
+            < wav_lyman_alpha * u.AA * (1.0 + z - self.kwargs["dz"])
+            and not (masked and bool(phot.flux.mask[i]))
+        ]
+        if len(blue_band_names) == 0:
+            return None
+        return blue_band_names
 
 
 # TODO: UVJ_Selector should be specific
@@ -6296,12 +6240,7 @@ class Sextractor_Band_Radius_Selector(Data_Selector):
             self.kwargs["lim"].to(u.marcsec)
             assertions = []
             assertions.extend([isinstance(self.kwargs["filt_name"], str)])
-            assertions.extend(
-                [
-                    self.kwargs["filt_name"]
-                    in json.loads(config.get("Other", "ALL_BANDS"))
-                ]
-            )
+            assertions.extend([self.kwargs["filt_name"] in all_filt_names])
             assertions.extend(
                 [self.kwargs["gtr_or_less"].lower() in ["gtr", "less"]]
             )
@@ -6576,7 +6515,7 @@ class Unmasked_Instrument_Selector(Multiple_Mask_Selector):
         super().__init__(
             selectors,
             f"unmasked_{instrument.__class__.__name__}",
-            cat_filterset=cat_filterset,
+            fit_filterset=cat_filterset,
         )
 
     def _call_cat(
@@ -6654,7 +6593,7 @@ class Sextractor_Instrument_Radius_Selector(Multiple_Data_Selector):
             f"sex_Re_{instrument.__class__.__name__}{gtr_or_less_str}{lim_str}"
         )
         super().__init__(
-            selectors, selection_name, cat_filterset=cat_filterset
+            selectors, selection_name, fit_filterset=cat_filterset
         )
 
     def _call_cat(
@@ -6709,7 +6648,7 @@ class Sextractor_Instrument_Radius_PSF_FWHM_Selector(Multiple_Data_Selector):
             f"{instrument.__class__.__name__}_{fwhm_name}"
         )
         super().__init__(
-            selectors, selection_name, cat_filterset=cat_filterset
+            selectors, selection_name, fit_filterset=cat_filterset
         )
 
     def _call_cat(
@@ -6880,7 +6819,6 @@ class EPOCHS_unmasked_criteria(Multiple_Mask_Selector):
         SED_fitter: SED_code,
         forced_phot_band: List[str] = ["F277W", "F356W", "F444W"],
         fit_filterset: Optional[Multiple_Filter] = None,
-        # allow_lowz: bool = False, # not used
     ):
         selectors = [
             Min_Instrument_Unmasked_Band_Selector(
@@ -6923,7 +6861,6 @@ class EPOCHS_Selector(Multiple_SED_fit_Selector):
         self: Self,
         aper_diam: u.Quantity,
         SED_fitter: SED_code,
-        # allow_lowz: bool = False,
         simulated: bool = False,
         forced_phot_band: List[str] = ["F277W", "F356W", "F444W"],
         fit_filterset: Optional[Multiple_Filter] = None,
@@ -6967,12 +6904,13 @@ class EPOCHS_Selector(Multiple_SED_fit_Selector):
             Robust_zPDF_Selector(
                 aper_diam, SED_fitter, integral_lim=0.6, dz_over_z=0.1
             ),
+            Band_SNR_Selector(
+                aper_diam,
+                band=0,
+                SNR_lim=2.0,
+                detect_or_non_detect="non_detect",
+            ),
         ]
-        # # add 2σ non-detection in first band if wanted
-        # if not allow_lowz:
-        #     selectors.extend([Band_SNR_Selector( \
-        #         aper_diam, band = 0, SNR_lim = 2.0,
-        #         detect_or_non_detect = "non_detect")])
 
         if not simulated:
             # add unmasked instrument selections
@@ -6985,7 +6923,7 @@ class EPOCHS_Selector(Multiple_SED_fit_Selector):
                         fit_filterset=fit_filterset,
                     )
                 ]
-            )  # lowz here
+            )
             # add hot pixel checks in forced photometry bands
             selectors.extend(
                 [
@@ -6996,8 +6934,7 @@ class EPOCHS_Selector(Multiple_SED_fit_Selector):
                     )
                 ]
             )
-        # lowz_name = "_lowz" if allow_lowz else ""
-        selection_name = f"EPOCHS_{sample}"  # {lowz_name}"
+        selection_name = f"EPOCHS_{sample}"
         super().__init__(
             aper_diam, SED_fitter, selectors, selection_name=selection_name
         )

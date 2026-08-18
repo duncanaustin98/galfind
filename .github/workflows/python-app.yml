@@ -35,7 +35,7 @@ jobs:
       run: pre-commit run --all-files
     - name: Test with pytest
       run: |
-        pytest --cov=galfind --cov-branch --cov-report=xml -m "not requires_data" testing
+        pytest --cov=galfind --cov-branch --cov-report=xml --junitxml=junit.xml -o junit_family=legacy -m "not requires_data" testing
     - name: Upload coverage to Codecov
       if: always()
       uses: codecov/codecov-action@v4
@@ -44,3 +44,8 @@ jobs:
         files: ./coverage.xml
         flags: unittests
         fail_ci_if_error: false
+    - name: Upload test results to Codecov
+      if: ${{ !cancelled() }}
+      uses: codecov/test-results-action@v1
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}

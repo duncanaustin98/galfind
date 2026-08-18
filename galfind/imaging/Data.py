@@ -5085,7 +5085,7 @@ class Data:
 
     def psf_homogenize(
         self: Self,
-        psf: PSF_Cutout,
+        psf: Union[str, PSF_Cutout],
         use_fft_conv: bool = True,
         save_native: bool = True,
         overwrite: bool = False,
@@ -5101,8 +5101,10 @@ class Data:
 
         Parameters
         ----------
-        psf : `PSF_Cutout`
-            Target PSF to homogenize every band's imaging to.
+        psf : `str` or `PSF_Cutout`
+            Target PSF to homogenize every band's imaging to, either
+            given directly or as the name of a filter already loaded
+            in `self` (its loaded PSF is then used).
         use_fft_conv : `bool`, optional
             If `True`, use FFT-based convolution; otherwise use direct
             convolution. Default is `True`.
@@ -5128,6 +5130,12 @@ class Data:
         assert isinstance(n_jobs, int) and n_jobs > 0, galfind_logger.critical(
             f"{n_jobs=} must be a positive integer!"
         )
+        if isinstance(psf, str):
+            assert psf in self.filterset.filt_names, galfind_logger.critical(
+                f"{psf=} not in {self.filterset.filt_names}, "
+                f"cannot PSF homogenize!"
+            )
+            psf = self[psf].psf
 
         if save_native:
             self.native = deepcopy(self)
