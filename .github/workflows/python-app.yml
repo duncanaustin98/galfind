@@ -29,10 +29,14 @@ jobs:
     - name: Install SExtractor
       run: |
         sudo apt-get update
-        sudo apt-get install -y --no-install-recommends sextractor
-        # Debian's sextractor package installs the binary as `sextractor`
-        # (or `source-extractor` on some releases); galfind shells out to
-        # `sex`.
+        # Ubuntu renamed the package from `sextractor` to `source-extractor`
+        # (the old name is just a transitional dummy on some releases, and
+        # gone entirely on newer ones like noble), so try the new name
+        # first and fall back to the old one for older runners.
+        sudo apt-get install -y --no-install-recommends source-extractor \
+          || sudo apt-get install -y --no-install-recommends sextractor
+        # Either package installs the binary as `source-extractor` (or
+        # `sextractor` on older releases); galfind shells out to `sex`.
         if ! command -v sex >/dev/null 2>&1; then
           SEX_BIN="$(command -v source-extractor || command -v sextractor || true)"
           if [ -n "$SEX_BIN" ]; then
