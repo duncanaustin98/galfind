@@ -227,6 +227,10 @@ def segment(
 
     sex_config_path = f"{config['SExtractor']['SEX_CONFIG_DIR']}/{config_name}"
     params_path = f"{config['SExtractor']['SEX_CONFIG_DIR']}/{params_name}"
+    filter_path = (
+        f"{config['SExtractor']['SEX_CONFIG_DIR']}/gauss_2.5_5x5.conv"
+    )
+    starnnw_path = f"{config['SExtractor']['SEX_CONFIG_DIR']}/default.nnw"
 
     err_map_path, err_map_ext, err_map_type = get_err_map(self, err_type)
     seg_path = get_segmentation_path(self, err_map_type)
@@ -273,6 +277,8 @@ def segment(
             params_path,
             pix_aper_diams,
             str(self.is_native).lower(),
+            filter_path,
+            starnnw_path,
         ]
         # SExtractor bash script python wrapper
         galfind_logger.debug(input)
@@ -387,6 +393,10 @@ def perform_forced_phot(
 
     sex_config_path = f"{config['SExtractor']['SEX_CONFIG_DIR']}/{config_name}"
     params_path = f"{config['SExtractor']['SEX_CONFIG_DIR']}/{params_name}"
+    filter_path = (
+        f"{config['SExtractor']['SEX_CONFIG_DIR']}/gauss_2.5_5x5.conv"
+    )
+    starnnw_path = f"{config['SExtractor']['SEX_CONFIG_DIR']}/default.nnw"
 
     # make forced photometry catalogue
     start = time.time()
@@ -448,6 +458,8 @@ def perform_forced_phot(
             sex_config_path,
             params_path,
             pix_aper_diams,
+            filter_path,
+            starnnw_path,
         ]
         # SExtractor bash script python wrapper
         galfind_logger.debug(input)
