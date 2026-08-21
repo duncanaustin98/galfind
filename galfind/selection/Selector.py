@@ -6034,7 +6034,9 @@ class zPDF_High_Tail_Selector(SED_fit_Selector):
     ) -> bool:
         try:
             failed = (
-                gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label].z
+                gal.aper_phot[self.aper_diam]
+                .SED_results[self.SED_fitter.label]
+                .z
                 < 0.0
             )
         except Exception:
@@ -6044,23 +6046,32 @@ class zPDF_High_Tail_Selector(SED_fit_Selector):
     def _selection_criteria(
         self: Self,
         gal: Galaxy,
-    ) -> bool:
+    ) -> Tuple[bool, Dict[str, Any]]:
         """
         Select galaxies with integrated PDF tail P(z > z_thr) > p_lim.
         """
-        PDF = (
+        z_pdf = (
             gal.aper_phot[self.aper_diam]
-            .SED_results[self.SED_fit_label]
+            .SED_results[self.SED_fitter.label]
             .property_PDFs["z"]
         )
 
-        # integrate P(z > z_thr)
+        # integrate P(z > z_thr). Call the base PDF implementation
+        # explicitly: Redshift_PDF overrides integrate_between_lims
+        # with an incompatible (delta_z_over_z, zbest) signature, so
+        # calling z_pdf.integrate_between_lims(z_thr, 25.0) directly
+        # would silently reinterpret z_thr as a fractional window and
+        # 25.0 as the best-fit redshift instead of integrating P(z >
+        # z_thr).
+        from ..visualization.PDF import PDF
+
         p_tail = PDF.integrate_between_lims(
+            z_pdf,
             float(self.kwargs["z_thr"]),
             25.0,  # upper limit in galfind base code
         )
 
-        return p_tail > self.kwargs["p_lim"]
+        return p_tail > self.kwargs["p_lim"], {}
 
 
 class Robust_zPDF_Selector(SED_fit_Selector):
@@ -6980,7 +6991,11 @@ class COSMOS_Web_Selector(Multiple_SED_fit_Selector):
                 aper_diam, SED_fit_label, chi_sq_lim=8.0, reduced=False
             ),
             Chi_Sq_Diff_Selector(
-                aper_diam, SED_fit_label, chi_sq_diff=5.0, dz=0.5
+                aper_diam,
+                SED_fit_label,
+                chi_sq_diff=5.0,
+                dz=0.5,
+                lowz_zmax_arr=[4.0, 6.0],
             ),
             Colour_Selector(
                 aper_diam,
@@ -7017,7 +7032,7 @@ class COSMOS_Web_Selector(Multiple_SED_fit_Selector):
             selectors.extend(
                 [
                     Sextractor_Bands_Radius_Selector(
-                        band_names=["F277W", "F444W"],
+                        filt_names=["F277W", "F444W"],
                         gtr_or_less="gtr",
                         lim=45.0 * u.marcsec,
                     )

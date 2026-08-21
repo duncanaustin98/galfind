@@ -107,7 +107,7 @@ def fit_gm():
         _a = nnls(_A[clip, :], mag_int[clip, i])
         model = _A.dot(_a[0])
 
-        norm = np.trapz(model / wave_grid, wave_grid)
+        norm = np.trapezoid(model / wave_grid, wave_grid)
 
         pl = plt.plot(wave_grid, mag_int[:, i] / norm, linewidth=4, alpha=0.2)
         plt.plot(
@@ -128,7 +128,7 @@ def fit_gm():
         )
 
         mflam = model / wave_grid
-        mflam /= np.trapz(mflam, wave_grid)
+        mflam /= np.trapezoid(mflam, wave_grid)
 
         models_flam[:, i] = mflam
 

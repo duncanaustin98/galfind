@@ -666,7 +666,10 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
                         phot_rest.property_kwargs[property_name] = (
                             PDF_obj.kwargs
                         )
-                    else:
+                    elif (
+                        property_name in phot_rest.property_PDFs.keys()
+                        and not overwrite
+                    ):
                         galfind_logger.debug(
                             f"Already loaded {property_name} PDF "
                             f"in {repr(phot_rest)}"
@@ -675,6 +678,9 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
                             return phot_rest
                         else:
                             return
+                    # else: overwrite=True -> fall through and
+                    # recompute below, regardless of what's cached on
+                    # disk or already loaded in memory
 
                 if (
                     property_name not in phot_rest.property_PDFs.keys()
@@ -1552,6 +1558,10 @@ class UV_Dust_Attenuation_Calculator(Rest_Frame_Property_Calculator):
         """`str`: Human-readable plot label for the dust
         attenuation at `ref_wav`.
         """
+        ref_wav_label = f"{self.global_kwargs['ref_wav'].to(u.AA).value:.0f}"
+        return rf"$A_{{{ref_wav_label}}}$"
+
+    def _kwarg_assertions(self: Self) -> None:
         assert (
             self.global_kwargs["ref_wav"]
             > self.pre_req_properties[0].global_kwargs["rest_UV_wav_lims"][0]
@@ -1565,8 +1575,6 @@ class UV_Dust_Attenuation_Calculator(Rest_Frame_Property_Calculator):
             in AUV_from_beta.__subclasses__()
         )
         assert isinstance(self.global_kwargs["keep_valid"], bool)
-        ref_wav_label = f"{self.global_kwargs['ref_wav'].to(u.AA).value:.0f}"
-        return rf"$A_{{{ref_wav_label}}}$"
 
     def _calc_obj_kwargs(
         self: Self, phot_rest: Photometry_rest
@@ -2479,6 +2487,9 @@ class SFR_UV_Calculator(Rest_Frame_Property_Calculator):
         formation rate."""
         return r"$\mathrm{SFR}_{\mathrm{UV}}$"
 
+    def _kwarg_assertions(self: Self) -> None:
+        assert self.global_kwargs["SFR_conv"] in funcs.SFR_conversions.keys()
+
     def _calc_obj_kwargs(
         self: Self, phot_rest: Photometry_rest
     ) -> Dict[str, Any]:
@@ -3047,6 +3058,14 @@ class Dust_Attenuation_From_UV_Calculator(Rest_Frame_Property_Calculator):
         """`str`: Human-readable plot label for the dust attenuation
         at `calc_wav`."""
         return f"Dust attenuation (E(B-V)) @ {self.global_kwargs['calc_wav']}"
+
+    def _kwarg_assertions(self: Self) -> None:
+        assert u.get_physical_type(self.global_kwargs["calc_wav"]) == "length"
+        assert (
+            self.global_kwargs["dust_law"].__class__
+            in Dust_Law.__subclasses__()
+        )
+        assert isinstance(self.global_kwargs["keep_valid"], bool)
 
     def _calc_obj_kwargs(
         self: Self, phot_rest: Photometry_rest

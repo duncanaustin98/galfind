@@ -1521,6 +1521,8 @@ class LePhare(SED_code):
                         break
             f.close()
 
+        from ..visualization import Redshift_PDF
+
         pdf_out = Redshift_PDF(
             np.array(z) * u.dimensionless_unscaled,
             np.array(PDF),

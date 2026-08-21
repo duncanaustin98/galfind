@@ -615,7 +615,6 @@ class EAZY(SED_code):
             self._get_out_paths(
                 cat,
                 aper_diam,
-                overwrite,
                 save_name=save_name,
             )
         )
@@ -972,7 +971,9 @@ class EAZY(SED_code):
         )
         hf.close()
 
-    def make_fits_from_out(self, out_path: str) -> NoReturn:
+    def make_fits_from_out(
+        self, out_path: str, **kwargs: Dict[str, Any]
+    ) -> NoReturn:
         """Convert the raw output of the fit into a FITS binary table.
 
         Implements the `SED_code.make_fits_from_out` interface. Currently
@@ -983,6 +984,9 @@ class EAZY(SED_code):
         ----------
         out_path : `str`
             Path to the output catalogue produced by `fit`.
+        **kwargs : `dict`
+            Accepted for interface compatibility with
+            `SED_code.make_fits_from_out`; unused.
         """
         pass
 

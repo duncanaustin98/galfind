@@ -205,6 +205,38 @@ class PSF_Base(ABC):
             raise ValueError(err_message)
         return aper_corr
 
+    def make_kernel(
+        self: Self,
+        match_psf: PSF_Base,
+        **kwargs: Dict[str, Any],
+    ) -> None:
+        """No-op kernel construction for encircled-energy-only PSFs.
+
+        `PSF_Base` stores only an encircled energy curve, not pixel
+        data, so a pixel-based convolution kernel cannot be built.
+        Callers (e.g. `Band_Data.psf_homogenize`) treat a `None`
+        return the same as an already-matching PSF: the original
+        data is symlinked rather than convolved.
+
+        Parameters
+        ----------
+        match_psf : `PSF_Base`
+            Target PSF to match to (unused).
+        **kwargs
+            Accepted for interface compatibility with
+            `PSF_Cutout.make_kernel`; unused.
+
+        Returns
+        -------
+        `None`
+        """
+        galfind_logger.warning(
+            f"Cannot build a pixel-based kernel for {repr(self)}: "
+            "no cutout data available (only an encircled energy curve). "
+            f"Skipping PSF homogenization to {repr(match_psf)}."
+        )
+        return None
+
 
 class PSF_Cutout(PSF_Base):
     """PSF derived from a cutout image of a star or point source.

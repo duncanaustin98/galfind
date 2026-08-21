@@ -45,9 +45,11 @@ def run_in_dir(path):
                 os.makedirs(path)
             os.chdir(path)
             # print(f"Changed directory to {path}")
-            return_value = func(*args, **kwargs)
-            os.chdir(cwd)
-            # print(f"Changed directory back to {cwd}")
+            try:
+                return_value = func(*args, **kwargs)
+            finally:
+                os.chdir(cwd)
+                # print(f"Changed directory back to {cwd}")
             return return_value
 
         return wrapper
@@ -85,8 +87,10 @@ def run_in_self_dir(get_dir):
             if not os.path.exists(dir):
                 os.makedirs(dir)
             os.chdir(dir)
-            return_value = func(self, *args, **kwargs)
-            os.chdir(cwd)
+            try:
+                return_value = func(self, *args, **kwargs)
+            finally:
+                os.chdir(cwd)
             return return_value
 
         return wrapper

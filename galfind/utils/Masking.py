@@ -22,8 +22,9 @@ from typing import (
 
 import astropy.units as u
 import numpy as np
+from astropy.coordinates import SkyCoord
 from astropy.io import fits
-from astropy.table import Column
+from astropy.table import Column, Table
 from numpy.typing import NDArray
 from tqdm import tqdm
 
@@ -396,6 +397,57 @@ def get_manual_fits_mask_path(self: Type[Band_Data_Base]) -> str:
     return fits_mask_path
 
 
+def get_mask_path(self: Type[Band_Data_Base]) -> str:
+    """Generate the standard path for an automatically generated mask.
+
+    Constructs the path where the automask FITS file for this band should
+    be stored, based on survey, version, and filter name.
+
+    Parameters
+    ----------
+    self : `Type[Band_Data_Base]`
+        Band data instance providing survey, version, and filter info.
+
+    Returns
+    -------
+    `str`
+        Path to the automask FITS file.
+    """
+    mask_path = (
+        f"{config['Masking']['MASK_DIR']}/{self.survey}"
+        + f"/auto/{self.version}/{self.filt_name}_auto.fits"
+    )
+    funcs.make_dirs(mask_path)
+    return mask_path
+
+
+def get_gaia_query_path(self: Type[Band_Data_Base]) -> str:
+    """Get the path where the cached Gaia source query is stored.
+
+    Constructs the path where the raw Gaia DR3 query result (source_id,
+    ra, dec, phot_g_mean_mag, radius_sersic, classlabel_dsc_joint,
+    vari_best_class_name for every source in the footprint) is cached,
+    based on survey and version. Bands within the same survey/version
+    share a footprint, so the cache is not filter-specific.
+
+    Parameters
+    ----------
+    self : `Type[Band_Data_Base]`
+        Band data instance providing survey and version info.
+
+    Returns
+    -------
+    `str`
+        Path to the cached Gaia query result FITS table.
+    """
+    gaia_query_path = (
+        f"{config['Masking']['MASK_DIR']}/{self.survey}"
+        + f"/gaia/query_{self.version}.fits"
+    )
+    funcs.make_dirs(gaia_query_path)
+    return gaia_query_path
+
+
 def auto_mask(
     self: Type[Band_Data_Base],
     star_mask_params: Optional[dict] = None,
@@ -458,11 +510,7 @@ def auto_mask(
     """
     from astroquery.gaia import Gaia
 
-    output_mask_path = (
-        f"{config['Masking']['MASK_DIR']}/{self.survey}"
-        + f"/auto/{self.version}/{self.filt_name}_auto.fits"
-    )
-    funcs.make_dirs(output_mask_path)
+    output_mask_path = get_mask_path(self)
 
     if not Path(output_mask_path).is_file() or overwrite:
         check_star_mask_params(star_mask_params)
@@ -565,8 +613,26 @@ def auto_mask(
                 f"Making stellar mask for {self.survey} "
                 + f"{self.version} {self.filt_name}"
             )
-            # Get list of Gaia stars in the polygon region
+            # Get list of Gaia stars within a circle bounding the
+            # footprint. Gaia's TAP archive indexes CIRCLE searches
+            # (via HEALPix) but not CONTAINS(POINT, POLYGON), so a
+            # polygon constraint here would be orders of magnitude
+            # slower for the same result. The circle necessarily
+            # covers a little more area than the padded rectangular
+            # footprint, which is fine since that padding already
+            # exists to catch stars just outside the image bounds.
             Gaia.ROW_LIMIT = gaia_row_lim
+            footprint_corners = SkyCoord(
+                ra=vertices_sky[:, 0] * u.deg,
+                dec=vertices_sky[:, 1] * u.deg,
+            )
+            footprint_centre = SkyCoord(
+                ra=np.mean(vertices_sky[:, 0]) * u.deg,
+                dec=np.mean(vertices_sky[:, 1]) * u.deg,
+            )
+            search_radius = footprint_corners.separation(
+                footprint_centre
+            ).max()
             # Construct the ADQL query string
             adql_query = f"""
                 SELECT source_id, ra, dec, phot_g_mean_mag,
@@ -576,19 +642,24 @@ def auto_mask(
                 LEFT OUTER JOIN gaiadr3.galaxy_candidates USING (source_id)
                 WHERE 1 = CONTAINS(
                     POINT('ICRS', ra, dec),
-                    POLYGON('ICRS',
-                        POINT('ICRS', {vertices_sky[0][0]},
-                        {vertices_sky[0][1]}),
-                        POINT('ICRS', {vertices_sky[1][0]},
-                        {vertices_sky[1][1]}),
-                        POINT('ICRS', {vertices_sky[2][0]},
-                        {vertices_sky[2][1]}),
-                        POINT('ICRS',
-                        {vertices_sky[3][0]}, {vertices_sky[3][1]})))"""
+                    CIRCLE('ICRS', {footprint_centre.ra.deg},
+                        {footprint_centre.dec.deg},
+                        {search_radius.deg}))"""
 
-            # Execute the query asynchronously
-            job = Gaia.launch_job_async(adql_query)
-            gaia_stars = job.get_results()
+            # Cache the (slow, external) Gaia query result on disk so
+            # repeat runs over the same band/version don't have to wait
+            # on Gaia's async job queue again.
+            gaia_query_path = get_gaia_query_path(self)
+            if Path(gaia_query_path).is_file() and not overwrite:
+                galfind_logger.debug(
+                    f"Loading cached Gaia query from {gaia_query_path}"
+                )
+                gaia_stars = Table.read(gaia_query_path)
+            else:
+                # Execute the query asynchronously
+                job = Gaia.launch_job_async(adql_query)
+                gaia_stars = job.get_results()
+                gaia_stars.write(gaia_query_path, overwrite=True)
             # print(f"Found {len(gaia_stars)} stars in the region.")
             if exclude_gaia_galaxies:
                 gaia_stars = gaia_stars[
@@ -602,73 +673,86 @@ def auto_mask(
                     ~np.isnan(gaia_stars["phot_g_mean_mag"])
                 ]
 
-            ra_gaia = np.asarray(gaia_stars["ra"])
-            dec_gaia = np.asarray(gaia_stars["dec"])
-            x_gaia, y_gaia = wcs.all_world2pix(ra_gaia, dec_gaia, 0)
-
-            # Generate mask scale for each star
-            central_scale_stars = (
-                2.0
-                * star_mask_params["central"]["a"]
-                / (730.0 * self.pix_scale.to(u.arcsec).value)
-            ) * np.exp(
-                -gaia_stars["phot_g_mean_mag"]
-                / star_mask_params["central"]["b"]
-            )
-            spike_scale_stars = (
-                2.0
-                * star_mask_params["spikes"]["a"]
-                / (730.0 * self.pix_scale.to(u.arcsec).value)
-            ) * np.exp(
-                -gaia_stars["phot_g_mean_mag"]
-                / star_mask_params["spikes"]["b"]
-            )
-            # Update the catalog
-            gaia_stars.add_column(Column(data=x_gaia, name="x_pix"))
-            gaia_stars.add_column(Column(data=y_gaia, name="y_pix"))
-
-            diffraction_regions = []
-            stellar_region_strings = []
-            for pos, (row, central_scale, spike_scale) in tqdm(
-                enumerate(
-                    zip(gaia_stars, central_scale_stars, spike_scale_stars)
+            if len(gaia_stars) == 0:
+                galfind_logger.warning(
+                    "No Gaia stars found in the footprint for "
+                    f"{self.survey} {self.version} {self.filt_name}!"
                 )
-            ):
-                # Plot circle
-                # if plot:
-                #     ax.add_patch(Circle((row['x_pix'], row['y_pix']),
-                #     2 * row['rmask_arcsec'] / pixel_scale,
-                #     color = 'r', fill = False, lw = 2))
-                sky_region = composite(
-                    row["x_pix"],
-                    row["y_pix"],
-                    central_scale,
-                    spike_scale,
-                    angle,
-                )
-                from regions import Regions
+                stellar_mask = np.zeros(im_data.shape, dtype=bool)
+                stellar_region_strings = []
+            else:
+                ra_gaia = np.asarray(gaia_stars["ra"])
+                dec_gaia = np.asarray(gaia_stars["dec"])
+                x_gaia, y_gaia = wcs.all_world2pix(ra_gaia, dec_gaia, 0)
 
-                region_obj = Regions.parse(sky_region, format="ds9")
-                diffraction_regions.append(region_obj)
-                stellar_region_strings.append(
-                    region_obj.serialize(format="ds9")
+                # Generate mask scale for each star
+                central_scale_stars = (
+                    2.0
+                    * star_mask_params["central"]["a"]
+                    / (730.0 * self.pix_scale.to(u.arcsec).value)
+                ) * np.exp(
+                    -gaia_stars["phot_g_mean_mag"]
+                    / star_mask_params["central"]["b"]
                 )
+                spike_scale_stars = (
+                    2.0
+                    * star_mask_params["spikes"]["a"]
+                    / (730.0 * self.pix_scale.to(u.arcsec).value)
+                ) * np.exp(
+                    -gaia_stars["phot_g_mean_mag"]
+                    / star_mask_params["spikes"]["b"]
+                )
+                # Update the catalog
+                gaia_stars.add_column(Column(data=x_gaia, name="x_pix"))
+                gaia_stars.add_column(Column(data=y_gaia, name="y_pix"))
 
-            stellar_mask = np.zeros(im_data.shape, dtype=bool)
-            for regions in tqdm(diffraction_regions):
-                for region in regions:
-                    idx_large, idx_little = region.to_mask(
-                        mode="center"
-                    ).get_overlap_slices(im_data.shape)
-                    # idx_large is x,y box containing bounds of region in image
-                    if idx_large is not None:
-                        stellar_mask[idx_large] = np.logical_or(
-                            region.to_mask().data[idx_little],
-                            stellar_mask[idx_large],
+                diffraction_regions = []
+                stellar_region_strings = []
+                for pos, (row, central_scale, spike_scale) in tqdm(
+                    enumerate(
+                        zip(
+                            gaia_stars,
+                            central_scale_stars,
+                            spike_scale_stars,
                         )
+                    )
+                ):
+                    # Plot circle
                     # if plot:
-                    #     artist = region.as_artist()
-                    #     ax.add_patch(artist)
+                    #     ax.add_patch(Circle((row['x_pix'], row['y_pix']),
+                    #     2 * row['rmask_arcsec'] / pixel_scale,
+                    #     color = 'r', fill = False, lw = 2))
+                    sky_region = composite(
+                        row["x_pix"],
+                        row["y_pix"],
+                        central_scale,
+                        spike_scale,
+                        angle,
+                    )
+                    from regions import Regions
+
+                    region_obj = Regions.parse(sky_region, format="ds9")
+                    diffraction_regions.append(region_obj)
+                    stellar_region_strings.append(
+                        region_obj.serialize(format="ds9")
+                    )
+
+                stellar_mask = np.zeros(im_data.shape, dtype=bool)
+                for regions in tqdm(diffraction_regions):
+                    for region in regions:
+                        idx_large, idx_little = region.to_mask(
+                            mode="center"
+                        ).get_overlap_slices(im_data.shape)
+                        # idx_large is x,y box containing bounds
+                        # of region in image
+                        if idx_large is not None:
+                            stellar_mask[idx_large] = np.logical_or(
+                                region.to_mask().data[idx_little],
+                                stellar_mask[idx_large],
+                            )
+                        # if plot:
+                        #     artist = region.as_artist()
+                        #     ax.add_patch(artist)
 
         edge_mask = make_edge_mask(
             self,
@@ -1253,7 +1337,7 @@ def sort_area_mask_names(
         output_path).
     """
 
-    from . import Mask_Selector
+    from ..selection import Mask_Selector
 
     if isinstance(mask_selector, str):
         mask_selector = mask_selector.split("+")
@@ -1274,7 +1358,9 @@ def sort_area_mask_names(
             ]
         )
 
-    if isinstance(mask_selector, tuple(Mask_Selector.__subclasses__())):
+    if mask_selector is None:
+        mask_selector_name = f"All_{reg_name}"
+    elif isinstance(mask_selector, tuple(Mask_Selector.__subclasses__())):
         mask_selector_name = mask_selector.name
     else:
         mask_selector_name = f"{'+'.join(np.sort(mask_selector))}_{reg_name}"
@@ -1338,7 +1424,10 @@ def make_area_mask_from_data(
         region_name).
     """
     # try:
-    from . import Mask_Selector
+    from ..selection import Mask_Selector
+
+    if isinstance(mask_type, str):
+        mask_type = mask_type.split("+")
 
     mask_selector_name, mask_save_name, reg_name, mask_save_path = (
         sort_area_mask_names(
@@ -1512,7 +1601,10 @@ def make_area_mask_from_band_data(
         Tuple containing (combined_mask, mask_selector_name, mask_save_name,
         region_name).
     """
-    from . import Mask_Selector
+    from ..selection import Mask_Selector
+
+    if isinstance(mask_type, str):
+        mask_type = mask_type.split("+")
 
     mask_selector_name, mask_save_name, reg_name, mask_save_path = (
         sort_area_mask_names(
@@ -1531,6 +1623,12 @@ def make_area_mask_from_band_data(
         )
         if isinstance(mask_selector, tuple(Mask_Selector.__subclasses__())):
             masks = [mask_selector.load_mask(self, invert=False, **kwargs)]
+        elif mask_selector is None:
+            # no selector restriction: use this band's own mask(s) directly
+            masks = [
+                self.load_mask(mask_type_, invert=True, **kwargs)[0]
+                for mask_type_ in mask_type
+            ]
         else:
             masks = []
             for name in mask_selector:

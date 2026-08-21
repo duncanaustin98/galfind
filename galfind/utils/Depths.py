@@ -34,7 +34,7 @@ from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.table import Table, vstack
 from astropy.visualization.mpl_normalize import ImageNormalize
-from matplotlib import cm
+from matplotlib import colormaps
 from matplotlib.colors import LinearSegmentedColormap
 from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
 from numba import jit
@@ -2154,6 +2154,8 @@ def plot_band_data_area_depth(
     # from . import Stacked_Band_Data
     # if isinstance(self, Stacked_Band_Data):
     #     breakpoint()
+    if ax is None:
+        fig, ax = plt.subplots()
     ax.plot(
         total_depths,
         cum_dist,
@@ -2362,7 +2364,7 @@ def plot_data_area_depth(
     if not Path(save_path).is_file() or overwrite:
         if fig is None or ax is None:
             fig, ax = plt.subplots(1, 1, figsize=(4, 4))
-        cmap = plt.cm.get_cmap(cmap_name)
+        cmap = colormaps.get_cmap(cmap_name)
         colours = cmap(np.linspace(0, 1, len(self.band_data_arr)))
 
         for band_data, colour in zip(self.band_data_arr, colours):
@@ -2638,7 +2640,7 @@ def plot_depth_diagnostic(
         fontsize="large",
         fontweight="bold",
     )
-    cmap_ = cm.get_cmap(cmap)
+    cmap_ = colormaps.get_cmap(cmap)
     cmap_.set_bad(color="black")
 
     labels_arr, possible_labels, colours, labels_cmap = _get_labels(
@@ -2814,13 +2816,16 @@ def _get_labels(
     num_labels = len(np.unique(hf_output["labels_grid"]))
     labels_cmap = LinearSegmentedColormap.from_list(
         "custom",
-        [cm.get_cmap(cmap_name)(i / num_labels) for i in range(num_labels)],
+        [
+            colormaps.get_cmap(cmap_name)(i / num_labels)
+            for i in range(num_labels)
+        ],
         num_labels,
     )
     if len(av_depths) == 1:
         labels_arr = ["Single Region"]
         possible_labels = [0]
-        colours = [cm.get_cmap(cmap_name)(0)]
+        colours = [colormaps.get_cmap(cmap_name)(0)]
     elif len(av_depths) == 2:
         labels_arr = ["Shallow", "Deep"]
         colours = [

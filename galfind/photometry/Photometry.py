@@ -772,7 +772,7 @@ class Photometry:
         return [
             Photometry(
                 self.filterset,
-                scattered_fluxes[:, i],
+                scattered_fluxes[i, :],
                 self.flux_errs,
                 self.depths,
             )

@@ -48,7 +48,7 @@ class PDF:
         from the ``.meta.npy`` file). Default is `{}`.
     normed : `bool`, optional
         Whether `p_x` is already normalised such that
-        ``numpy.trapz(p_x, x) == 1``. If `False`, `p_x` is normalised
+        ``numpy.trapezoid(p_x, x) == 1``. If `False`, `p_x` is normalised
         in place upon construction. Default is `False`.
 
     Attributes

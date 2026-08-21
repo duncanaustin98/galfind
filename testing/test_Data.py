@@ -2,9 +2,14 @@ import inspect
 import os
 from copy import copy, deepcopy
 
+import numpy as np
 import pytest
+from astropy.table import Table
 
-os.environ["GALFIND_CONFIG_DIR"] = f"{os.getcwd()}/testing"
+# anchor to this file's own location, not the process cwd, so
+# GALFIND_WORK/GALFIND_DATA always land under <repo_root>/testing/
+# test_work regardless of the directory tests are invoked from
+os.environ["GALFIND_CONFIG_DIR"] = os.path.dirname(os.path.abspath(__file__))
 os.environ["GALFIND_CONFIG_NAME"] = "test_galfind_config.ini"
 
 from galfind.imaging import Data, Filter
@@ -32,16 +37,47 @@ def f444w_band_data(f444w, survey, version, data_dir_nircam, aper_diams):
     )
 
 
+def _mock_gaia_launch_job_async(*args, **kwargs):
+    # Stands in for a live astroquery.gaia.Gaia.launch_job_async call,
+    # returning an empty result table (no Gaia stars in the footprint)
+    # so masking tests don't depend on the live Gaia archive.
+    class _MockJob:
+        @staticmethod
+        def get_results():
+            return Table(
+                {
+                    "source_id": np.array([], dtype=np.int64),
+                    "ra": np.array([], dtype=np.float64),
+                    "dec": np.array([], dtype=np.float64),
+                    "phot_g_mean_mag": np.array([], dtype=np.float64),
+                    "radius_sersic": np.array([], dtype=np.float64),
+                    "classlabel_dsc_joint": np.array([], dtype="U16"),
+                    "vari_best_class_name": np.array([], dtype="U16"),
+                }
+            )
+
+    return _MockJob()
+
+
 @pytest.fixture(scope="module")
 def f444w_band_data_masked(f444w_band_data):
-    f444w_band_data.mask(overwrite=True)
-    return f444w_band_data
+    from astroquery.gaia import Gaia
+
+    band_data = deepcopy(f444w_band_data)
+    mp = pytest.MonkeyPatch()
+    mp.setattr(Gaia, "launch_job_async", _mock_gaia_launch_job_async)
+    try:
+        band_data.mask(overwrite=True)
+    finally:
+        mp.undo()
+    return band_data
 
 
 @pytest.fixture(scope="module")
 def f444w_band_data_segmented(f444w_band_data):
-    f444w_band_data.segment(overwrite=True)
-    return f444w_band_data
+    band_data = deepcopy(f444w_band_data)
+    band_data.segment(overwrite=True)
+    return band_data
 
 
 @pytest.fixture(scope="module")
@@ -241,7 +277,10 @@ class TestBandDataDunder:
         assert f444w_band_data.filt == f444w
         assert f444w_band_data.survey == survey
         assert f444w_band_data.version == version
-        assert f444w_band_data.im_path == (
+        # im_path is normalized to an absolute path in __init__ (relative
+        # paths break under methods decorated with `run_in_dir`, which
+        # change the working directory before running)
+        assert f444w_band_data.im_path == os.path.abspath(
             f"{data_dir_nircam}/{f444w.filt_name}_{survey}.fits"
         )
         assert f444w_band_data.im_ext == 1
@@ -256,8 +295,7 @@ class TestBandDataDunder:
         copy_band_data is not f444w_band_data
         assert copy_band_data == f444w_band_data
         setattr(copy_band_data, "test_attr", 123)
-        assert hasattr(f444w_band_data, "test_attr")
-        assert getattr(f444w_band_data, "test_attr") == 123
+        assert not hasattr(f444w_band_data, "test_attr")
 
     def test_f444w_band_data_deepcopy(self, f444w_band_data):
         deepcopy_band_data = deepcopy(f444w_band_data)
@@ -266,10 +304,13 @@ class TestBandDataDunder:
         setattr(deepcopy_band_data, "test_attr", 123)
         assert not hasattr(f444w_band_data, "test_attr")
 
-    def test_f444w_band_data_eq(self, f444w_band_data, aper_diams):
+    def test_f444w_band_data_eq(self, f444w_band_data):
         deepcopy_band_data = deepcopy(f444w_band_data)
         assert deepcopy_band_data == f444w_band_data
-        deepcopy_band_data.set_aper_diams(aper_diams)
+        # im_path is one of the attributes compared by __eq__, so changing
+        # it (unlike aper_diams, which set_aper_diams refuses to overwrite
+        # once loaded, and which __eq__ does not compare) must break equality
+        deepcopy_band_data.im_path = "invalid/path.fits"
         assert deepcopy_band_data != f444w_band_data
 
 
@@ -299,7 +340,13 @@ class TestBandDataMask:
         )
         assert hasattr(f444w_band_data_masked, "mask_args")
         sig = inspect.signature(f444w_band_data_masked.mask)
-        for key in self.seg_args.keys():
+        for key in f444w_band_data_masked.mask_args.keys():
+            if key == "angle":
+                # angle=None (the default) is resolved to a concrete value
+                # computed from the image WCS/header by auto_mask, so the
+                # stored mask_args value need not match the raw signature
+                # default
+                continue
             assert f444w_band_data_masked.mask_args[key] == (
                 sig.parameters[key].default
             )
@@ -334,11 +381,16 @@ class TestBandDataSegmentation:
         }
         assert sig.parameters["method"].default in method_name.keys()
         seg_path_func = method_name[sig.parameters["method"].default]
-        assert f444w_band_data_segmented.seg_path == seg_path_func(
+        # get_segmentation_path takes the *converted* error map type
+        # ("MAP_RMS"/"MAP_WEIGHT"), not the raw "rms_err"/"wht" err_type
+        _, _, err_map_type = SExtractor.get_err_map(
             f444w_band_data_segmented, sig.parameters["err_type"].default
         )
+        assert f444w_band_data_segmented.seg_path == seg_path_func(
+            f444w_band_data_segmented, err_map_type
+        )
         assert hasattr(f444w_band_data_segmented, "seg_args")
-        for key in self.seg_args.keys():
+        for key in f444w_band_data_segmented.seg_args.keys():
             assert f444w_band_data_segmented.seg_args[key] == (
                 sig.parameters[key].default
             )
@@ -376,6 +428,7 @@ class TestBandDataForcedPhotometry:
             forced_phot_band=local_forced_phot_stacked_band_data_from_arr,
             overwrite=True,
         )
+        return f444w_band_data
 
     def test_f444w_base_forced_phot(self, f444w_base_forced_phot):
         assert isinstance(f444w_base_forced_phot, Band_Data)
@@ -384,7 +437,10 @@ class TestBandDataForcedPhotometry:
 
 class TestBandDataPSFHomogenize:
     def test_f444w_band_data_psf_homogenize(self, f444w_band_data):
-        with pytest.raises(NotImplementedError):
+        # f444w_band_data has no PSF loaded (self.psf defaults to None),
+        # so psf_homogenize should refuse to run rather than raise
+        # NotImplementedError (it is fully implemented)
+        with pytest.raises(AssertionError):
             f444w_band_data.psf_homogenize("PSF")
 
 
@@ -393,16 +449,43 @@ def test_data(data):
 
 
 class TestBandDataDepths:
-    def test_f444w_area_depth_plot(
+    # `run_depths` (the actual method; `calc_depths` does not exist) requires
+    # forced photometry to already have been run, which in turn requires
+    # masking + segmentation, so build a dedicated, independent band_data
+    # taken through the full pipeline rather than reusing the shared
+    # (unmasked/unsegmented) `f444w_band_data` fixture.
+    @pytest.fixture(scope="class")
+    def f444w_band_data_depths_ready(
         self,
         f444w_band_data,
+        local_forced_phot_stacked_band_data_from_arr,
         aper_diams,
     ):
-        # f444w_band_data.calc_depths(aper_diams, overwrite = True)
-        f444w_band_data.plot_area_depth(
+        from astroquery.gaia import Gaia
+
+        band_data = deepcopy(f444w_band_data)
+        mp = pytest.MonkeyPatch()
+        mp.setattr(Gaia, "launch_job_async", _mock_gaia_launch_job_async)
+        try:
+            band_data.mask(overwrite=True)
+        finally:
+            mp.undo()
+        band_data.segment(overwrite=True)
+        band_data.perform_forced_phot(
+            forced_phot_band=local_forced_phot_stacked_band_data_from_arr,
+            overwrite=True,
+        )
+        band_data.run_depths(plot=False, overwrite=True)
+        return band_data
+
+    def test_f444w_area_depth_plot(
+        self,
+        f444w_band_data_depths_ready,
+        aper_diams,
+    ):
+        f444w_band_data_depths_ready.plot_area_depth(
             aper_diam=aper_diams[0],
             show=False,
-            # save_path = None,
         )
 
 

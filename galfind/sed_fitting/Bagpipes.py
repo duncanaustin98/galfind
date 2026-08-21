@@ -301,7 +301,7 @@ class Bagpipes(SED_code):
                     + "'z_calculator' for 'continuity' SFH"
                 )
 
-                from . import Redshift_Extractor
+                from ..properties import Redshift_Extractor
 
                 if self.SED_fit_params["z_calculator"] == "spec":
                     z_label = "zspec"

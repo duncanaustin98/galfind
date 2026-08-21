@@ -1240,7 +1240,7 @@ class Catalogue_Creator:
             # make an array of galaxy objects to be stored in the catalogue
             galfind_logger.debug(
                 f"Loading {self.survey} {self.version} "
-                f"{self.cat_name} galaxies!"
+                f"{self.crop_name} galaxies!"
             )
             # , origin_survey = self.survey
             gals = [
@@ -1274,7 +1274,7 @@ class Catalogue_Creator:
         else:
             galfind_logger.info(
                 f"Not loading galaxies for {self.survey} {self.version} "
-                f"{self.cat_name} catalogue!"
+                f"{self.crop_name} catalogue!"
             )
             gals = []
         cat = Catalogue(gals, self)
@@ -1287,21 +1287,33 @@ class Catalogue_Creator:
                 galfind_logger.info(f"Performing {repr(crop)}!")
                 crop(cat, return_copy=False)
                 crops_performed.add(id(crop))
-            # Only recurse if there are new crops to perform
+            # Recompute which crops still need performing now that the
+            # ones above have (hopefully) had their columns persisted
             self.load_crops(self.crops)
-            if self._crops_to_perform and not all(
+            still_stuck = self._crops_to_perform and all(
                 id(c) in crops_performed for c in self._crops_to_perform
-            ):
+            )
+            if still_stuck:
+                # crops were run but their columns didn't persist to the
+                # SELECTION table (e.g. a partial/mismatched catalogue);
+                # avoid recursing forever and return what we have uncropped
+                galfind_logger.warning(
+                    f"Could not resolve crop(s) "
+                    f"{[c.name for c in self._crops_to_perform]} for "
+                    f"{self.cat_path}; returning uncropped catalogue!"
+                )
+                if hasattr(self, "data"):
+                    cat.data = self.data
+            else:
+                # either the crops just performed are now resolved (so we
+                # need to reload with cropped=True to actually apply the
+                # freshly computed crop_mask), or new crops remain to be
+                # performed - either way, reload
                 cat = self(
                     psfs=psfs,
                     cropped=True,
                     load_gals=load_gals,
                 )
-            else:
-                # point to data if provided
-                if hasattr(self, "data"):
-                    cat.data = self.data
-                galfind_logger.info(f"Made {self.cat_path} catalogue!")
         else:
             # point to data if provided
             if hasattr(self, "data"):
@@ -1310,7 +1322,7 @@ class Catalogue_Creator:
         return cat
 
     @property
-    def cat_name(self) -> str:
+    def crop_name(self) -> str:
         """`str`: Name describing the crop(s) currently applied via `crops`."""
         return funcs.get_crop_name(self.crops)
 
@@ -1687,7 +1699,7 @@ class Catalogue_Creator:
         if len(tab) == 0:
             galfind_logger.warning(
                 f"No rows in the 'mask' table extension of {self.cat_path} "
-                f"for crop '{self.cat_name}'; proceeding without a mask."
+                f"for crop '{self.crop_name}'; proceeding without a mask."
             )
             return None
         if self.load_mask_func is not None:
@@ -1950,7 +1962,9 @@ class Catalogue_Creator:
             gal_instr_mask = np.array(hf["has_data_mask"])
             galfind_logger.info(f"Loaded 'has_data_mask' from {save_path}")
         else:
-            galfind_logger.info(f"Making 'has_data_mask' for {self.cat_name}!")
+            galfind_logger.info(
+                f"Making 'has_data_mask' for {self.crop_name}!"
+            )
             # calculate the mask that is used to crop photometry to
             # only bands including data
             tab = self.load_tab("phot", cropped=False)
@@ -2057,7 +2071,7 @@ class Catalogue_Creator:
         if self.apply_gal_instr_mask:
             # create set of filtersets to be pointed to by sources
             # with these bands available
-            galfind_logger.debug(f"Making {self.cat_name} unique filtersets!")
+            galfind_logger.debug(f"Making {self.crop_name} unique filtersets!")
             if cropped and self.crop_mask is not None:
                 gal_instr_mask = self.gal_instr_mask[self.crop_mask]
             else:
@@ -2075,7 +2089,7 @@ class Catalogue_Creator:
                 ]
                 for data_comb in gal_instr_mask
             ]
-            galfind_logger.debug(f"Made {self.cat_name} unique filtersets!")
+            galfind_logger.debug(f"Made {self.crop_name} unique filtersets!")
         else:
             filterset_arr = list(itertools.repeat(self.filterset, length))
         return filterset_arr

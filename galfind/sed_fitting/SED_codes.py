@@ -307,7 +307,7 @@ class SED_code(ABC):
         pass
 
     @abstractmethod
-    def make_fits_from_out(self, out_path):
+    def make_fits_from_out(self, out_path, **kwargs):
         """Convert the raw output of the external code into a FITS
         binary table.
 
@@ -315,6 +315,9 @@ class SED_code(ABC):
         ----------
         out_path : `str`
             Path to the raw output catalogue produced by `fit`.
+        **kwargs : `dict`
+            Additional keyword arguments forwarded by the concrete
+            implementation (e.g. `save_name`).
         """
         pass
 

@@ -36,7 +36,7 @@ from typing import (
 )
 
 import astropy
-from matplotlib import cm
+from matplotlib import colormaps
 from matplotlib.colors import LinearSegmentedColormap
 from numpy.typing import NDArray
 
@@ -189,13 +189,18 @@ class Band_Data_Base(ABC):
         """
         self.survey = survey
         self.version = version
-        self.im_path = im_path
+        # store paths as absolute, since methods decorated with
+        # `run_in_dir` change the working directory before running, which
+        # would otherwise break resolution of relative paths
+        self.im_path = os.path.abspath(im_path)
         self.im_ext = im_ext
         self.im_ext_name = im_ext_name
-        self.rms_err_path = rms_err_path
+        self.rms_err_path = (
+            None if rms_err_path is None else os.path.abspath(rms_err_path)
+        )
         self.rms_err_ext = rms_err_ext
         self.rms_err_ext_name = rms_err_ext_name
-        self.wht_path = wht_path
+        self.wht_path = None if wht_path is None else os.path.abspath(wht_path)
         self.wht_ext = wht_ext
         self.wht_ext_name = wht_ext_name
         self.pix_scale = pix_scale
@@ -896,7 +901,7 @@ class Band_Data_Base(ABC):
         AssertionError
             If no PSF has been loaded for this band (`self.psf` not set).
         """
-        assert hasattr(self, "psf"), galfind_logger.critical(
+        assert self.psf is not None, galfind_logger.critical(
             f"PSF not loaded for {self.filt_name}! "
             f"Cannot make PSF homogenization kernel!"
         )
@@ -1621,11 +1626,11 @@ class Band_Data_Base(ABC):
         hf_output = Depths.get_hf_output(self, aper_diam)
         if plot_type.lower() == "rolling_average":
             Depths._plot_rolling_average(
-                fig, ax, hf_output, cm.get_cmap(cmap_name)
+                fig, ax, hf_output, colormaps.get_cmap(cmap_name)
             )
         elif plot_type.lower() == "rolling_average_diag":
             Depths._plot_rolling_average_diagnostic(
-                fig, ax, hf_output, cm.get_cmap(cmap_name)
+                fig, ax, hf_output, colormaps.get_cmap(cmap_name)
             )
         elif plot_type.lower() in ["labels", "hist"]:
             num_labels = len(np.unique(hf_output["labels_grid"]))
@@ -1633,7 +1638,7 @@ class Band_Data_Base(ABC):
             (
                 "custom",
                 [
-                    cm.get_cmap("Set2")(i / num_labels)
+                    colormaps.get_cmap("Set2")(i / num_labels)
                     for i in range(num_labels)
                 ],
                 num_labels,
@@ -1656,7 +1661,7 @@ class Band_Data_Base(ABC):
                     title=title,
                 )
         elif plot_type.lower() in ["cat_depths", "cat_diag"]:
-            cmap = cm.get_cmap(cmap_name)
+            cmap = colormaps.get_cmap(cmap_name)
             cmap.set_bad(color="black")
             cat_x, cat_y = Depths.get_cat_xy(hf_output)
             combined_mask = Depths._combine_seg_data_and_mask(self)
@@ -3859,7 +3864,7 @@ class Data:
         #     version_substr = version
         # if len(version.split("_")) > 1:
         #     version_substr += f"_{'_'.join(version.split('_')[1:])}"
-        out_dir = (
+        out_dir = os.path.abspath(
             f"{data_dir}/{instrument.facility.__class__.__name__.lower()}"
             + f"/{survey}/{instrument.__class__.__name__}/{version}/"
             + f"{Band_Data_Base._pix_scale_to_str(pix_scale)}"
@@ -6290,7 +6295,7 @@ class Data:
         """
         if fig is None or ax is None:
             fig, ax = plt.subplots()
-        colours = cm.get_cmap(cmap)(np.linspace(0.0, 1.0, len(self)))
+        colours = colormaps.get_cmap(cmap)(np.linspace(0.0, 1.0, len(self)))
         labels = [band_data.filt_name for band_data in self]
         for i, band_data in enumerate(self):
             plot_kwargs = deepcopy(kwargs)
@@ -6701,7 +6706,7 @@ class Data:
                         ]
                     )
             if not overwrite:
-                from . import Catalogue
+                from ..catalogues import Catalogue
 
                 Catalogue.update_fits_cat(
                     tab,
@@ -6942,7 +6947,7 @@ class Data:
             Unmasked area in the specified units.
         """
 
-        from . import Mask_Selector
+        from ..selection import Mask_Selector
 
         if not hasattr(self, "unmasked_area"):
             self.unmasked_area = {}
@@ -7076,7 +7081,7 @@ class Data:
         reg_name: str,
         zbin: Optional[Tuple[float, float]] = None,
     ) -> str:
-        from . import Mask_Selector
+        from ..selection import Mask_Selector
 
         if isinstance(mask_selector, tuple(Mask_Selector.__subclasses__())):
             mask_selector_name = mask_selector.name

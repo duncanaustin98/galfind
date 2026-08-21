@@ -21,3 +21,47 @@ from galfind.catalogues import Catalogue
 @pytest.mark.requires_data
 def test_cat_custom_lephare_loaded(cat_custom_lephare_loaded):
     assert isinstance(cat_custom_lephare_loaded, Catalogue)
+
+
+@pytest.mark.slow
+def test_real_eazy_fit_recovers_high_z_dropout(
+    synthetic_eazy_cat, eazy_fsps_larson_sed_fitter, aper_diams
+):
+    """Run the *real* EAZY fitting pipeline (actual templates/binary --
+    not a hand-attached fake SED_result) on `synthetic_eazy_cat`, a
+    minimal hand-authored FITS catalogue (see `synthetic_eazy_cat_path`
+    in conftest.py) holding the same two synthetic sources as
+    `high_z_gal`/`garbage_gal`: one genuine z~9.5 Lyman-break dropout
+    and one all-noise contaminant. Unlike Selectors/property
+    calculators, SED fitting needs a real FITS-backed Catalogue at
+    multiple stages (SED_code.__call__ checks/writes results via
+    cat.open_cat()), so it can't run on the in-memory-only
+    high_z_gal/garbage_gal/synthetic_test_cat fixtures directly.
+
+    Checks that EAZY's own, independently-derived best fit recovers
+    the dropout's input redshift with a good fit, and does not find a
+    high-z solution for the noise source.
+    """
+    aper_diam = aper_diams[0]
+    out_cat = eazy_fsps_larson_sed_fitter(
+        synthetic_eazy_cat, aper_diam, update=True, overwrite=True, fit=True
+    )
+    results = {}
+    for gal in out_cat:
+        sed_result = gal.aper_phot[aper_diam].SED_results[
+            eazy_fsps_larson_sed_fitter.label
+        ]
+        z = sed_result.z
+        chi_sq = sed_result.chi_sq
+        results[gal.ID] = {
+            "z": z.value if hasattr(z, "value") else z,
+            "chi_sq": chi_sq.value if hasattr(chi_sq, "value") else chi_sq,
+        }
+    # genuine dropout (ID=1): EAZY should independently recover a
+    # redshift close to the true input value (9.5), with a good
+    # (low) fit chi-squared
+    assert abs(results[1]["z"] - 9.5) < 1.0, results[1]
+    assert results[1]["chi_sq"] < 10.0, results[1]
+    # pure noise contaminant (ID=2): EAZY should not claim a
+    # high-z solution
+    assert results[2]["z"] < 5.0, results[2]

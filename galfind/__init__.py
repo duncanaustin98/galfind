@@ -54,6 +54,12 @@ if os.environ.get("READTHEDOCS") == "True":
     config.set("DEFAULT", "GALFIND_WORK", "/tmp/galfind_docs_build")
     config.set("DEFAULT", "GALFIND_DATA", "/tmp/galfind_docs_build")
 
+# resolve to absolute paths so downstream-derived paths (which lean on
+# these via configparser interpolation) still work once code temporarily
+# os.chdir()s elsewhere (e.g. run_in_dir-decorated SExtractor/EAZY calls)
+for _root_key in ("GALFIND_WORK", "GALFIND_DATA"):
+    config.set("DEFAULT", _root_key, os.path.abspath(config["DEFAULT"][_root_key]))
+
 # Make IS_CLUSTER variable from the config parameters
 if config["DEFAULT"]["SURVEY"] in json.loads(config.get("Other", "CLUSTER_FIELDS")):
     config.set("DEFAULT", "IS_CLUSTER", "YES")

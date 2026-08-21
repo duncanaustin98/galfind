@@ -8,7 +8,10 @@ import numpy as np
 import pytest
 from pytest_lazy_fixtures import lf
 
-os.environ["GALFIND_CONFIG_DIR"] = f"{os.getcwd()}/testing"
+# anchor to this file's own location, not the process cwd, so
+# GALFIND_WORK/GALFIND_DATA always land under <repo_root>/testing/
+# test_work regardless of the directory tests are invoked from
+os.environ["GALFIND_CONFIG_DIR"] = os.path.dirname(os.path.abspath(__file__))
 os.environ["GALFIND_CONFIG_NAME"] = "test_galfind_config.ini"
 
 
@@ -35,6 +38,7 @@ from galfind.selection.Selector import (
     Chi_Sq_Template_Diff_Selector,
     Colour_Selector,
     Compactness_Selector,
+    COSMOS_Web_Selector,
     Depth_Region_Selector,
     Ds9_Region_Selector,
     EPOCHS_Selector,
@@ -62,11 +66,13 @@ from galfind.selection.Selector import (
     Sextractor_Bands_Radius_Selector,
     Sextractor_Instrument_Radius_PSF_FWHM_Selector,
     Sextractor_Instrument_Radius_Selector,
+    Stacked_Blue_Lya_Non_Detect_Selector,
     Unmasked_Band_Selector,
     Unmasked_Bands_Selector,
     Unmasked_Bluewards_Lya_Selector,
     Unmasked_Instrument_Selector,
     Unmasked_Redwards_Lya_Selector,
+    zPDF_High_Tail_Selector,
 )
 
 
@@ -1036,6 +1042,64 @@ def fail_unmasked_redwards_lya_selector(fail_unmasked_bluewards_lya_selector):
         (
             {
                 "aper_diam": 0.32 * u.arcsec,
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "SNR_lim": 2.0,
+            },
+            True,
+        ),
+        (
+            {
+                "aper_diam": 0.32 * u.arcsec,
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "SNR_lim": 2.0,
+                "dz": 0.2,
+            },
+            True,
+        ),
+    ],
+)
+def call_stacked_blue_lya_non_detect_selector(request):
+    inputs, outcome = request.param
+    inputs_ = inputs.copy()
+    inputs_["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    return Stacked_Blue_Lya_Non_Detect_Selector, inputs_, outcome
+
+
+@pytest.fixture(
+    scope="module",
+    params=[
+        (
+            {
+                "aper_diam": 0.32,  # missing units
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "SNR_lim": 2.0,
+            },
+            Exception,
+        ),
+        (
+            {
+                "aper_diam": 0.32 * u.arcsec,
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "SNR_lim": 2.0,
+                "dz": -1.0,
+            },
+            Exception,
+        ),
+    ],
+)
+def fail_stacked_blue_lya_non_detect_selector(request):
+    inputs, outcome = request.param
+    inputs_ = inputs.copy()
+    inputs_["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
+    return Stacked_Blue_Lya_Non_Detect_Selector, inputs_, outcome
+
+
+@pytest.fixture(
+    scope="module",
+    params=[
+        (
+            {
+                "aper_diam": 0.32 * u.arcsec,
                 "band": "F444W",
                 "detect_or_non_detect": "detect",
                 "SNR_lim": 5.0,
@@ -1513,6 +1577,88 @@ def fail_robust_zPDF_selector(request):
     inputs_ = inputs.copy()
     inputs_["SED_fitter"] = request.getfixturevalue(inputs["SED_fitter"])
     return Robust_zPDF_Selector, inputs_, outcome
+
+
+@pytest.fixture(
+    scope="module",
+    params=[
+        (
+            {
+                "aper_diam": 0.32 * u.arcsec,
+                "SED_fit_label": "eazy_fsps_larson_sed_fitter",
+                "z_thr": 8.0,
+                "p_lim": 0.8,
+            },
+            True,
+        ),
+        (
+            {
+                "aper_diam": 0.32 * u.arcsec,
+                "SED_fit_label": "eazy_fsps_larson_sed_fitter",
+                "z_thr": 0.1,
+                "p_lim": 0.1,
+            },
+            True,
+        ),
+    ],
+)
+def call_zpdf_high_tail_selector(request):
+    inputs, outcome = request.param
+    inputs_ = inputs.copy()
+    inputs_["SED_fit_label"] = request.getfixturevalue(
+        inputs["SED_fit_label"]
+    )
+    return zPDF_High_Tail_Selector, inputs_, outcome
+
+
+@pytest.fixture(
+    scope="module",
+    params=[
+        (
+            {
+                "aper_diam": 0.32 * u.arcsec,
+                "SED_fit_label": "eazy_fsps_larson_sed_fitter",
+                "z_thr": -1.0,
+                "p_lim": 0.8,
+            },
+            Exception,
+        ),
+        (
+            {
+                "aper_diam": 0.32 * u.arcsec,
+                "SED_fit_label": "eazy_fsps_larson_sed_fitter",
+                "z_thr": 8.0,
+                "p_lim": 1,  # must be float, not int
+            },
+            Exception,
+        ),
+        (
+            {
+                "aper_diam": 0.32 * u.arcsec,
+                "SED_fit_label": "eazy_fsps_larson_sed_fitter",
+                "z_thr": 8.0,
+                "p_lim": 1.5,
+            },
+            Exception,
+        ),
+        (
+            {
+                "aper_diam": 0.32 * u.arcsec,
+                "SED_fit_label": "eazy_fsps_larson_sed_fitter",
+                "z_thr": 8.0,
+                "p_lim": 0.0,
+            },
+            Exception,
+        ),
+    ],
+)
+def fail_zpdf_high_tail_selector(request):
+    inputs, outcome = request.param
+    inputs_ = inputs.copy()
+    inputs_["SED_fit_label"] = request.getfixturevalue(
+        inputs["SED_fit_label"]
+    )
+    return zPDF_High_Tail_Selector, inputs_, outcome
 
 
 @pytest.fixture(
@@ -2058,6 +2204,70 @@ def fail_epochs_selector(request):
     params=[
         (
             {
+                "band_names": ["F200W", "F444W"],
+                "aper_diam": test_aper_diams[0],
+                "SED_fit_label": "eazy_fsps_larson_sed_fitter",
+            },
+            # F277W is hardcoded internally (colour/hot-pixel checks)
+            # but isn't in the local test filterset
+            Exception,
+        ),
+        (
+            {
+                "band_names": ["F200W", "F444W"],
+                "aper_diam": test_aper_diams[0],
+                "SED_fit_label": "eazy_fsps_larson_sed_fitter",
+                "allow_lowz": True,
+            },
+            Exception,
+        ),
+        (
+            {
+                "band_names": ["F200W", "F444W"],
+                "aper_diam": test_aper_diams[0],
+                "SED_fit_label": "eazy_fsps_larson_sed_fitter",
+                "simulated": True,
+            },
+            Exception,
+        ),
+    ],
+)
+def call_cosmos_web_selector(request):
+    inputs, outcome = request.param
+    inputs_ = inputs.copy()
+    inputs_["SED_fit_label"] = request.getfixturevalue(
+        inputs["SED_fit_label"]
+    )
+    return COSMOS_Web_Selector, inputs_, outcome
+
+
+@pytest.fixture(
+    scope="module",
+    params=[
+        (
+            {
+                "band_names": ["F200W", "F444W"],
+                "aper_diam": 0.32,  # missing units
+                "SED_fit_label": "eazy_fsps_larson_sed_fitter",
+            },
+            Exception,
+        ),
+    ],
+)
+def fail_cosmos_web_selector(request):
+    inputs, outcome = request.param
+    inputs_ = inputs.copy()
+    inputs_["SED_fit_label"] = request.getfixturevalue(
+        inputs["SED_fit_label"]
+    )
+    return COSMOS_Web_Selector, inputs_, outcome
+
+
+@pytest.fixture(
+    scope="module",
+    params=[
+        (
+            {
                 "aper_diam": test_aper_diams[0],
                 "SED_fitter": "eazy_fsps_larson_sed_fitter",
                 "property_calculator": "uv_beta_calculator",
@@ -2216,3 +2426,277 @@ def test_shorten_kwarg_colname_strips_filter_suffix():
 def test_shorten_kwarg_colname_still_too_long_raises():
     with pytest.raises(AssertionError):
         Selector.shorten_kwarg_colname("x" * 100)
+
+
+class TestHighZSyntheticGalaxy:
+    """Run selectors' actual runtime logic against the hand-built
+    z~9.5 dropout `high_z_gal`, asserting concrete, reasoned selection
+    outcomes -- independent of any real imaging/masking/EAZY data."""
+
+    def test_redshift_limit_selector(
+        self, high_z_gal, eazy_fsps_larson_sed_fitter
+    ):
+        selector = Redshift_Limit_Selector(
+            test_aper_diams[0],
+            eazy_fsps_larson_sed_fitter,
+            z_lim=8.5,
+            gtr_or_less="gtr",
+        )
+        out = selector(high_z_gal)
+        assert out.selection_flags[selector.name]
+
+    def test_robust_zPDF_selector(
+        self, high_z_gal, eazy_fsps_larson_sed_fitter
+    ):
+        selector = Robust_zPDF_Selector(
+            test_aper_diams[0],
+            eazy_fsps_larson_sed_fitter,
+            integral_lim=0.6,
+            dz_over_z=0.1,
+        )
+        out = selector(high_z_gal)
+        assert out.selection_flags[selector.name]
+
+    @pytest.mark.parametrize(
+        "z_thr,expected",
+        [
+            (8.0, True),  # well below the z=9.5 peak
+            (10.5, False),  # above the peak, in the PDF's tail
+        ],
+    )
+    def test_zPDF_high_tail_selector(
+        self, high_z_gal, eazy_fsps_larson_sed_fitter, z_thr, expected
+    ):
+        selector = zPDF_High_Tail_Selector(
+            test_aper_diams[0],
+            eazy_fsps_larson_sed_fitter,
+            z_thr=z_thr,
+            p_lim=0.8,
+        )
+        out = selector(high_z_gal)
+        assert bool(out.selection_flags[selector.name]) == expected
+
+    def test_chi_sq_lim_selector(
+        self, high_z_gal, eazy_fsps_larson_sed_fitter
+    ):
+        selector = Chi_Sq_Lim_Selector(
+            test_aper_diams[0],
+            eazy_fsps_larson_sed_fitter,
+            chi_sq_lim=3.0,
+            reduced=True,
+        )
+        out = selector(high_z_gal)
+        assert out.selection_flags[selector.name]
+
+    def test_chi_sq_diff_selector(
+        self, high_z_gal, eazy_fsps_larson_sed_fitter
+    ):
+        selector = Chi_Sq_Diff_Selector(
+            test_aper_diams[0],
+            eazy_fsps_larson_sed_fitter,
+            chi_sq_diff=4.0,
+            dz=0.5,
+            lowz_zmax_arr=[4.0, 6.0],
+        )
+        out = selector(high_z_gal)
+        assert out.selection_flags[selector.name]
+
+    def test_bluewards_lya_non_detect_selector(
+        self, high_z_gal, eazy_fsps_larson_sed_fitter
+    ):
+        selector = Bluewards_Lya_Non_Detect_Selector(
+            test_aper_diams[0], eazy_fsps_larson_sed_fitter, SNR_lim=2.0
+        )
+        out = selector(high_z_gal)
+        assert out.selection_flags[selector.name]
+
+    def test_redwards_lya_detect_selector(
+        self, high_z_gal, eazy_fsps_larson_sed_fitter
+    ):
+        selector = Redwards_Lya_Detect_Selector(
+            test_aper_diams[0],
+            eazy_fsps_larson_sed_fitter,
+            SNR_lims=5.0,
+            widebands_only=False,
+        )
+        out = selector(high_z_gal)
+        assert out.selection_flags[selector.name]
+
+    def test_stacked_blue_lya_non_detect_selector(
+        self, high_z_gal, eazy_fsps_larson_sed_fitter
+    ):
+        selector = Stacked_Blue_Lya_Non_Detect_Selector(
+            test_aper_diams[0], eazy_fsps_larson_sed_fitter, SNR_lim=2.0
+        )
+        out = selector(high_z_gal)
+        assert out.selection_flags[selector.name]
+
+    def test_band_snr_selector_non_detect(self, high_z_gal):
+        selector = Band_SNR_Selector(
+            test_aper_diams[0],
+            band="F090W",
+            detect_or_non_detect="non_detect",
+            SNR_lim=2.0,
+        )
+        out = selector(high_z_gal)
+        assert out.selection_flags[selector.name]
+
+    def test_band_mag_selector_detect(self, high_z_gal):
+        selector = Band_Mag_Selector(
+            test_aper_diams[0],
+            band="F444W",
+            detect_or_non_detect="detect",
+            mag_lim=30.0,
+        )
+        out = selector(high_z_gal)
+        assert out.selection_flags[selector.name]
+
+    def test_colour_selector(self, high_z_gal):
+        selector = Colour_Selector(
+            test_aper_diams[0],
+            colour_bands=["F277W", "F444W"],
+            bluer_or_redder="bluer",
+            colour_val=1.0,
+        )
+        out = selector(high_z_gal)
+        assert out.selection_flags[selector.name]
+
+    def test_epochs_selector(self, high_z_gal, eazy_fsps_larson_sed_fitter):
+        selector = EPOCHS_Selector(
+            test_aper_diams[0], eazy_fsps_larson_sed_fitter
+        )
+        out = selector(high_z_gal)
+        assert out.selection_flags[selector.name]
+
+    def test_cosmos_web_selector(
+        self, high_z_gal, eazy_fsps_larson_sed_fitter
+    ):
+        # COSMOS-Web's stricter Redwards_Lya_Detect_Selector requires
+        # SNR > 10 in the first two redwards-of-Lya bands; high_z_gal is
+        # built at SNR = 8, so this composite selection is correctly
+        # *not* satisfied even though the galaxy is a genuine z~9.5
+        # dropout -- demonstrating COSMOS_Web_Selector now runs
+        # end-to-end (construction previously raised unconditionally,
+        # see call_cosmos_web_selector) without erroring.
+        selector = COSMOS_Web_Selector(
+            ["F200W", "F444W"],
+            test_aper_diams[0],
+            eazy_fsps_larson_sed_fitter,
+        )
+        out = selector(high_z_gal)
+        assert not out.selection_flags[selector.name]
+
+
+class TestSyntheticCatalogue:
+    """A 2-source hand-built `Catalogue` (`synthetic_test_cat`: one
+    genuine z~9.5 dropout, `high_z_gal`, plus one undetected/poorly-fit
+    contaminant, `garbage_gal`) run through selectors per-galaxy. Note
+    `synthetic_test_cat` has no real FITS file backing it, so selectors
+    are applied to each galaxy directly rather than to the catalogue
+    object itself -- Catalogue-level dispatch (`selector(cat)`) needs
+    `cat.open_cat()` to persist results, which requires a real FITS
+    catalogue (this is also why the existing `call_*_selector`-driven
+    `test_selector_call_cat` tests are marked `requires_data`).
+    """
+
+    def test_catalogue_has_both_sources(self, synthetic_test_cat):
+        assert len(synthetic_test_cat) == 2
+        assert [gal.ID for gal in synthetic_test_cat] == [1, 2]
+
+    @pytest.mark.parametrize(
+        "gal_fixture,expected",
+        [
+            (lf("high_z_gal"), True),
+            (lf("garbage_gal"), False),
+        ],
+    )
+    def test_epochs_selector_distinguishes_sources(
+        self,
+        synthetic_test_cat,
+        eazy_fsps_larson_sed_fitter,
+        gal_fixture,
+        expected,
+    ):
+        # sanity check the fixture galaxy is actually the one held in
+        # the catalogue, not just an equivalent copy
+        assert any(gal_fixture is gal for gal in synthetic_test_cat)
+        selector = EPOCHS_Selector(
+            test_aper_diams[0], eazy_fsps_larson_sed_fitter
+        )
+        out = selector(gal_fixture)
+        assert bool(out.selection_flags[selector.name]) == expected
+
+    @pytest.mark.parametrize(
+        "gal_fixture,expected",
+        [
+            (lf("high_z_gal"), True),
+            (lf("garbage_gal"), False),
+        ],
+    )
+    def test_robust_zPDF_selector_distinguishes_sources(
+        self,
+        synthetic_test_cat,
+        eazy_fsps_larson_sed_fitter,
+        gal_fixture,
+        expected,
+    ):
+        selector = Robust_zPDF_Selector(
+            test_aper_diams[0],
+            eazy_fsps_larson_sed_fitter,
+            integral_lim=0.6,
+            dz_over_z=0.1,
+        )
+        out = selector(gal_fixture)
+        assert bool(out.selection_flags[selector.name]) == expected
+
+    @pytest.mark.parametrize(
+        "gal_fixture,expected",
+        [
+            (lf("high_z_gal"), True),
+            (lf("garbage_gal"), False),
+        ],
+    )
+    def test_chi_sq_diff_selector_distinguishes_sources(
+        self,
+        synthetic_test_cat,
+        eazy_fsps_larson_sed_fitter,
+        gal_fixture,
+        expected,
+    ):
+        # the garbage source's best fit (z~1.3) is already below both
+        # candidate lowz_zmax_arr caps (4.0, 6.0), so neither is even
+        # an applicable "low-z alternative" to compare against -> the
+        # chi-sq-difference dropout test isn't meaningful here and
+        # correctly does not select it
+        selector = Chi_Sq_Diff_Selector(
+            test_aper_diams[0],
+            eazy_fsps_larson_sed_fitter,
+            chi_sq_diff=4.0,
+            dz=0.5,
+            lowz_zmax_arr=[4.0, 6.0],
+        )
+        out = selector(gal_fixture)
+        assert bool(out.selection_flags[selector.name]) == expected
+
+    @pytest.mark.parametrize(
+        "gal_fixture,expected",
+        [
+            (lf("high_z_gal"), True),
+            (lf("garbage_gal"), False),
+        ],
+    )
+    def test_bluewards_lya_non_detect_selector_distinguishes_sources(
+        self,
+        synthetic_test_cat,
+        eazy_fsps_larson_sed_fitter,
+        gal_fixture,
+        expected,
+    ):
+        # the garbage source has no bands redwards of its (low, ~1.3)
+        # best-fit redshift's Lyman-alpha, so nothing is bluewards of
+        # it either -> not selected
+        selector = Bluewards_Lya_Non_Detect_Selector(
+            test_aper_diams[0], eazy_fsps_larson_sed_fitter, SNR_lim=2.0
+        )
+        out = selector(gal_fixture)
+        assert bool(out.selection_flags[selector.name]) == expected

@@ -85,7 +85,7 @@ def go(
         pz = z_grid ** gamma_grid[i] * np.exp(
             -((z_grid / z0_grid[i]) ** gamma_grid[i])
         )
-        pz /= np.trapz(pz, z_grid)
+        pz /= np.trapezoid(pz, z_grid)
         plt.plot(z_grid, pz, label=mag_grid[i])
         out_matrix[:, i + 1] = pz
 

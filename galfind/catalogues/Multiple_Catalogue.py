@@ -11,10 +11,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable, List, Optional, Union
 
 import astropy.units as u
-import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 import numpy as np
 from astropy.table import Table, vstack
+from matplotlib import colormaps
 
 try:
     from typing import Self, Type  # python 3.11+
@@ -22,10 +22,10 @@ except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
 if TYPE_CHECKING:
+    from ..sed_fitting import SED_code
     from . import (
         Catalogue,
         Galaxy,
-        SED_code,
         Selector,
     )
 
@@ -290,7 +290,7 @@ class Combined_Catalogue(Catalogue_Base):
         if not Path(cat_path).is_file() or overwrite:
             # TODO: Make the loading of these not require to
             # indiviudally specify code names
-            from . import SED_code
+            from ..sed_fitting import SED_code
 
             unique_hdu_names, unique_hdu_counts = np.unique(
                 list(
@@ -745,7 +745,7 @@ class Combined_Catalogue(Catalogue_Base):
         ax.set_xlabel(r"Area (arcmin$^{2}$)")
         ax.set_ylabel(r"5$\sigma$ Depth (AB mag)")
 
-        colors = cm.get_cmap(cmap)(np.linspace(0, 1, len(bands)))
+        colors = colormaps.get_cmap(cmap)(np.linspace(0, 1, len(bands)))
         for pos, band in enumerate(bands):
             total_depths = np.flip(np.sort(depth_array_band[band]))
 

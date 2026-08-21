@@ -895,7 +895,7 @@ class SED_obs(SED):
             f"{wav_range[0]=}!<{wav_range[1]=}"
         )
         # create tophat filter in rest frame
-        from galfind import Tophat_Filter
+        from ..imaging.Filter import Tophat_Filter
 
         obs_wav_range = wav_range * (1.0 + self.z)
         # wavs = np.arange(obs_wav_range[0].value,

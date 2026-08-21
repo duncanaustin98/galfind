@@ -28,12 +28,13 @@ galfind/configs
 htmlcov
 .coverage
 coverage.xml
+junit.xml
 .pytest_cache
 configs/DJA_spectral_catalogues
 configs/EAZY_templates/templates/PEGASE2.0
 configs/DJA_spectral_catalogues/DJA_v4_2.csv
 examples/ACS_SBC_testing.py
-testing/test_work
+**/test_work
 examples
 .ruff_cache
 galfind.sif

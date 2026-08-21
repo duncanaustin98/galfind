@@ -2111,7 +2111,7 @@ class Galaxy:
         NotImplementedError
             If `unmasked_area` is not a recognised type/value.
         """
-        from . import Mask_Selector
+        from ..selection import Mask_Selector
 
         if hasattr(data, "regions"):
             galfind_logger.debug(

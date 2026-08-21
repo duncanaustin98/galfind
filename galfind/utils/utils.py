@@ -50,7 +50,7 @@ def get_data_dir(
     `numpy.ndarray` of `str`
         One data directory path per entry in `instrument_names`.
     """
-    from . import Instrument
+    from ..imaging.Instrument import Instrument
 
     out_dirs = []
     for instrument_name in instrument_names:
