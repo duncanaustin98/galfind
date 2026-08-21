@@ -26,6 +26,21 @@ jobs:
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v3
 
+    - name: Install SExtractor
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends sextractor
+        # Debian's sextractor package installs the binary as `sextractor`
+        # (or `source-extractor` on some releases); galfind shells out to
+        # `sex`.
+        if ! command -v sex >/dev/null 2>&1; then
+          SEX_BIN="$(command -v source-extractor || command -v sextractor || true)"
+          if [ -n "$SEX_BIN" ]; then
+            sudo ln -s "$SEX_BIN" /usr/local/bin/sex
+          else
+            echo "WARNING: no sextractor/source-extractor binary found after install" >&2
+          fi
+        fi
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip

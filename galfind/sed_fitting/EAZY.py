@@ -113,6 +113,69 @@ from .SED_codes import SED_code
 }"""
 
 
+def _resolve_templates_file(
+    templates_file_path: str, eazy_templates_path: str
+) -> str:
+    """Rewrite a ``.param`` template list to use the local template dir.
+
+    Some checked-in template list files (e.g. the Larson/Nakajima/sfhz/hot
+    sets, unlike EAZY's own bundled fsps templates) list their constituent
+    ``.dat``/``.fits`` template paths as machine-specific absolute paths
+    (from whichever machine they were generated on) rather than paths
+    relative to `eazy_templates_path`. Since these directories aren't
+    shipped with eazy-py, such paths break on any other machine (e.g. CI).
+
+    This locates the last ``/templates/`` segment in each such path and
+    replaces everything up to and including it with `eazy_templates_path`,
+    writing a resolved copy into the current working directory (the
+    per-run EAZY_DIR) if any line needed rewriting.
+
+    Parameters
+    ----------
+    templates_file_path : `str`
+        Path to the original ``.param`` template list file.
+    eazy_templates_path : `str`
+        Local, correctly resolved ``EAZY_TEMPLATE_DIR`` for this machine.
+
+    Returns
+    -------
+    `str`
+        Path to the resolved ``.param`` file (the original path if no
+        line needed rewriting).
+    """
+    with open(templates_file_path) as f:
+        lines = f.readlines()
+
+    changed = False
+    new_lines = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            new_lines.append(line)
+            continue
+        tokens = line.split()
+        path_token = tokens[1]
+        marker = "/templates/"
+        if path_token.startswith("/") and marker in path_token:
+            suffix = path_token.rsplit(marker, 1)[1]
+            resolved_path = f"{eazy_templates_path}/{suffix}"
+            if resolved_path != path_token:
+                tokens[1] = resolved_path
+                line = " ".join(tokens) + "\n"
+                changed = True
+        new_lines.append(line)
+
+    if not changed:
+        return templates_file_path
+
+    resolved_file_path = os.path.abspath(
+        f"resolved_{os.path.basename(templates_file_path)}"
+    )
+    with open(resolved_file_path, "w") as f:
+        f.writelines(new_lines)
+    return resolved_file_path
+
+
 class EAZY(SED_code):
     """`SED_code` wrapper around the external EAZY-py photo-z /
     SED-fitting tool.
@@ -694,6 +757,10 @@ class EAZY(SED_code):
             params["TEMPLATES_FILE"] = (
                 f"{eazy_templates_path}/pegase13.spectra_galfind.param"
             )
+
+        params["TEMPLATES_FILE"] = _resolve_templates_file(
+            params["TEMPLATES_FILE"], eazy_templates_path
+        )
 
         # Redshift limits
         params["Z_MIN"] = z_min  # Setting minimum Z
