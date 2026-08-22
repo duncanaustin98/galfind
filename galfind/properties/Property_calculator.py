@@ -2538,7 +2538,7 @@ class Property_Divider(Multiple_Property_Calculator):
             input array by the second's, with any `astropy.units.Dex`
             input arrays converted to physical units first.
         """
-        from . import PDF
+        from ..visualization.PDF import PDF
 
         # calculate relevant PDFs using each calculator
         pdfs_arr = [

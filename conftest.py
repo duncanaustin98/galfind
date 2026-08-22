@@ -52,6 +52,29 @@ test_aper_diams = [0.32] * u.arcsec
 test_forced_phot_band_ = ["F200W", "F444W"]
 
 
+def _mock_gaia_launch_job_async(*args, **kwargs):
+    # Stands in for a live astroquery.gaia.Gaia.launch_job_async call,
+    # returning an empty result table (no Gaia stars in the footprint) so
+    # masking doesn't depend on the live Gaia archive, which is flaky/
+    # rate-limited and unsuitable for automated test runs.
+    class _MockJob:
+        @staticmethod
+        def get_results():
+            return Table(
+                {
+                    "source_id": np.array([], dtype=np.int64),
+                    "ra": np.array([], dtype=np.float64),
+                    "dec": np.array([], dtype=np.float64),
+                    "phot_g_mean_mag": np.array([], dtype=np.float64),
+                    "radius_sersic": np.array([], dtype=np.float64),
+                    "classlabel_dsc_joint": np.array([], dtype="U16"),
+                    "vari_best_class_name": np.array([], dtype="U16"),
+                }
+            )
+
+    return _MockJob()
+
+
 @pytest.fixture(scope="session")
 def test_bands():
     return test_bands_
@@ -505,14 +528,21 @@ def data(
     aper_diams,
     forced_phot_stacked_band_data_from_arr,
 ):
-    return Data.pipeline(
-        survey,
-        version,
-        instrument_names,
-        aper_diams=aper_diams,
-        forced_phot_band=forced_phot_stacked_band_data_from_arr,
-        im_str=["test"],
-    )
+    from astroquery.gaia import Gaia
+
+    mp = pytest.MonkeyPatch()
+    mp.setattr(Gaia, "launch_job_async", _mock_gaia_launch_job_async)
+    try:
+        return Data.pipeline(
+            survey,
+            version,
+            instrument_names,
+            aper_diams=aper_diams,
+            forced_phot_band=forced_phot_stacked_band_data_from_arr,
+            im_str=["test"],
+        )
+    finally:
+        mp.undo()
 
 
 @pytest.fixture(scope="session")
@@ -536,8 +566,13 @@ def gal(cat):
 def cat_eazy_loaded(data, eazy_fsps_larson_sed_fitter, aper_diams):
     # load catalogue from data
     cat = Catalogue.from_data(data)
-    # load/run SED fitting
-    eazy_fsps_larson_sed_fitter(cat, aper_diams[0], update=True)
+    # load/run SED fitting; overwrite=True forces a fresh fit rather than
+    # trusting a cached .h5 fit-result file that may be stale (e.g. written
+    # by an older template config with a different tempfilt_data shape) --
+    # this fit is cheap (~0s) on the tiny synthetic test catalogue
+    eazy_fsps_larson_sed_fitter(
+        cat, aper_diams[0], update=True, overwrite=True
+    )
     return cat
 
 
@@ -550,8 +585,9 @@ def gal_eazy_loaded(cat_eazy_loaded):
 def cat_lephare_loaded(data, lephare_sed_fitter, aper_diams):
     # load catalogue from data
     cat = Catalogue.from_data(data)
-    # load/run SED fitting
-    lephare_sed_fitter(cat, aper_diams[0], update=True)
+    # load/run SED fitting; overwrite=True forces a fresh fit rather than
+    # trusting a possibly-stale cached fit-result file (see cat_eazy_loaded)
+    lephare_sed_fitter(cat, aper_diams[0], update=True, overwrite=True)
     return cat
 
 
@@ -579,8 +615,10 @@ def cat_lephare_eazy_loaded(
     eazy_fsps_larson_sed_fitter,
     aper_diams,
 ):
-    # load/run EAZY SED fitting
-    eazy_fsps_larson_sed_fitter(cat_lephare_loaded, aper_diams[0], update=True)
+    # load/run EAZY SED fitting; overwrite=True as in cat_eazy_loaded
+    eazy_fsps_larson_sed_fitter(
+        cat_lephare_loaded, aper_diams[0], update=True, overwrite=True
+    )
     return cat_lephare_loaded
 
 
@@ -608,9 +646,14 @@ def custom_lephare_sed_fitter():
 
 @pytest.fixture(scope="session")
 def cat_custom_lephare_loaded(cat, custom_lephare_sed_fitter, aper_diams):
-    # load custom lephare
+    # load custom lephare; overwrite=True as in cat_eazy_loaded
     custom_lephare_sed_fitter(
-        cat, aper_diams[0], load_PDFs=True, load_SEDs=True, update=True
+        cat,
+        aper_diams[0],
+        load_PDFs=True,
+        load_SEDs=True,
+        update=True,
+        overwrite=True,
     )
     return cat
 
@@ -626,9 +669,12 @@ def cat_custom_lephare_eazy_loaded(
     eazy_fsps_larson_sed_fitter,
     aper_diams,
 ):
-    # load/run EAZY SED fitting
+    # load/run EAZY SED fitting; overwrite=True as in cat_eazy_loaded
     eazy_fsps_larson_sed_fitter(
-        cat_custom_lephare_loaded, aper_diams[0], update=True
+        cat_custom_lephare_loaded,
+        aper_diams[0],
+        update=True,
+        overwrite=True,
     )
     return cat_custom_lephare_loaded
 

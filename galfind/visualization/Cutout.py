@@ -471,7 +471,7 @@ class Band_Cutout_Base(Cutout_Base, ABC):
             `morph_fits` dictionary is reset before adding the new results.
             Default is `False`.
         """
-        from . import Morphology_Result
+        from ..properties.Morphology import Morphology_Result
 
         if overwrite or not hasattr(self, "morph_fits"):
             self.morph_fits = {}

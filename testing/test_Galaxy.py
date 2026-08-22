@@ -10,6 +10,10 @@ import pytest
     params=[
         {
             "overwrite": True,
+            # dynamic (n_cutout_rows=None, the default) sizing is not
+            # yet implemented (Galaxy.plot_phot_diagnostic raises
+            # NotImplementedError); pass an explicit row count instead
+            "n_cutout_rows": 1,
         },
     ],
 )
@@ -19,6 +23,7 @@ def plot_phot_diagnostic_kwargs(request):
 
 # TODO: Generalize to run with all sed fitters
 @pytest.mark.requires_data
+@pytest.mark.lephare
 def test_gal_lephare_loaded_plot_phot_diagnostic(
     gal_custom_lephare_loaded,
     custom_lephare_sed_fitter,
@@ -35,6 +40,7 @@ def test_gal_lephare_loaded_plot_phot_diagnostic(
 
 
 @pytest.mark.requires_data
+@pytest.mark.lephare
 def test_gal_lephare_eazy_plot_phot_diagnostic(
     gal_custom_lephare_eazy_loaded,
     custom_lephare_sed_fitter,

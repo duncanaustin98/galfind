@@ -356,7 +356,32 @@ class EAZY(SED_code):
             h5_path = self._get_out_paths(cat, aper_diam, save_name=save_name)[
                 2
             ].replace(".fits", ".h5")
-            fit = hdf5.initialize_from_hdf5(h5file=h5_path, verbose=False)
+            # eazy-py's hdf5.initialize_from_hdf5() -> cat_from_hdf5()
+            # reconstructs an identity translate table (rows "F5"->"F5",
+            # "E5"->"E5", etc.) for catalogues that already use eazy's own
+            # native F<n>/E<n> column naming, as GALFIND's saved catalogues
+            # do. PhotoZ's read_catalog() then matches each such column
+            # *twice* -- once via that redundant translate table, once via
+            # its own native F<n> column-name recognition -- doubling
+            # NFILT and producing a reloaded template grid shape
+            # ((NZ, NTEMP, 2*NFILT)) that doesn't match the real one,
+            # below. The native-column pass alone is correct and
+            # sufficient here, so temporarily empty the translate table's
+            # rows (an astropy Table, not a TranslateFile) that
+            # cat_from_hdf5() hands back before initialize_from_hdf5()
+            # builds the PhotoZ object with it.
+            _orig_cat_from_hdf5 = hdf5.cat_from_hdf5
+
+            def _cat_from_hdf5_no_dup_translate(h5file):
+                cat_, trans_ = _orig_cat_from_hdf5(h5file)
+                trans_.remove_rows(slice(None))
+                return cat_, trans_
+
+            hdf5.cat_from_hdf5 = _cat_from_hdf5_no_dup_translate
+            try:
+                fit = hdf5.initialize_from_hdf5(h5file=h5_path, verbose=False)
+            finally:
+                hdf5.cat_from_hdf5 = _orig_cat_from_hdf5
             lowz_zmax_arr = np.sort(lowz_zmax_arr)
             save_dict_arr = np.full(len(cat), deepcopy({}))
             zbest_arr = {}

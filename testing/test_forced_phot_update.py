@@ -26,6 +26,7 @@ os.environ["GALFIND_CONFIG_DIR"] = os.path.dirname(os.path.abspath(__file__))
 os.environ["GALFIND_CONFIG_NAME"] = "test_galfind_config.ini"
 
 import galfind
+from conftest import _mock_gaia_launch_job_async
 from galfind.imaging import Data
 
 
@@ -56,20 +57,27 @@ def _run_pipeline(
     forced_phot_stacked_band_data_from_arr,
     update,
 ):
-    return Data.pipeline(
-        survey,
-        update_test_version,
-        instrument_names,
-        aper_diams=aper_diams,
-        forced_phot_band=forced_phot_stacked_band_data_from_arr,
-        version_to_dir_dict={
-            update_test_version.split("_")[0]: update_test_version.split(
-                "_"
-            )[0]
-        },
-        im_str=["test"],
-        update=update,
-    )
+    from astroquery.gaia import Gaia
+
+    mp = pytest.MonkeyPatch()
+    mp.setattr(Gaia, "launch_job_async", _mock_gaia_launch_job_async)
+    try:
+        return Data.pipeline(
+            survey,
+            update_test_version,
+            instrument_names,
+            aper_diams=aper_diams,
+            forced_phot_band=forced_phot_stacked_band_data_from_arr,
+            version_to_dir_dict={
+                update_test_version.split("_")[0]: update_test_version.split(
+                    "_"
+                )[0]
+            },
+            im_str=["test"],
+            update=update,
+        )
+    finally:
+        mp.undo()
 
 
 @pytest.mark.requires_data

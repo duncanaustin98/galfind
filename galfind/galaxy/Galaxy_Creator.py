@@ -181,6 +181,12 @@ class Galaxy_Creator(Catalogue_Creator):
             simulated=simulated,
         )
 
+    def __repr__(self: Self) -> str:
+        return (
+            f"{self.__class__.__name__}({self.survey},"
+            f"{self.version},{self.id})"
+        )
+
     @classmethod
     def from_data(
         cls: Type[Self],
