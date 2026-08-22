@@ -661,13 +661,19 @@ class Galaxy:
             label += "_native"
         if hasattr(self, "multi_band_cutout"):
             # point to relevant cutout that has already been made
-            if cutout_size_str in self.multi_band_cutout.keys() and any(
-                band_data_base.filt_name == cutout.filt_name
-                for cutout in self.multi_band_cutout[cutout_size_str]
-            ):
-                cutout_ = self.multi_band_cutout[cutout_size_str][
-                    band_data_base.filt_name
-                ]
+            # (multi_band_cutout is a single Multiple_Band_Cutout -- a
+            # list-like collection of Band_Cutouts for one cutout_size --
+            # not a dict keyed by size, so match on each cutout's own
+            # filt_name/cutout_size directly)
+            cutout_ = next(
+                (
+                    cutout
+                    for cutout in self.multi_band_cutout
+                    if cutout.filt_name == band_data_base.filt_name
+                    and cutout.cutout_size == cutout_size
+                ),
+                None,
+            )
         if cutout_ is None:
             # if isinstance(band_data_base, Stacked_Band_Data):
             #     from . import Stacked_Band_Cutout

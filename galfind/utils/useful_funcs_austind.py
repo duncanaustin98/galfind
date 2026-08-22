@@ -3027,7 +3027,14 @@ def get_ext_src_corr(
                 + "Unable to compute extended source correction!"
             )
             return np.nan
-    if not hasattr(phot_rest, "ext_src_corrs"):
+    # ext_src_corrs is always initialized (as an empty dict) rather than
+    # ever being genuinely absent, so "not yet computed" shows up as an
+    # empty dict rather than a missing attribute -- check for both so this
+    # actually raises instead of failing later with an opaque KeyError
+    if (
+        not hasattr(phot_rest, "ext_src_corrs")
+        or len(phot_rest.ext_src_corrs) == 0
+    ):
         err_message = (
             f"{repr(phot_rest)} has no attribute ext_src_corrs! "
             + "Unable to compute extended source correction!"

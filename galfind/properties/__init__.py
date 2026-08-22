@@ -21,6 +21,7 @@ from .Rest_frame_properties import (
     Lya_Break_Strength_Calculator,
 )
 from ..utils import useful_funcs_austind
+from .PySersic import PySersic_Fitter, PySersic_Result
 
 # Import all modules containing calculator subclasses to ensure they're loaded
 from . import Property_calculator, Rest_frame_properties
@@ -36,4 +37,5 @@ __all__ = (
     ["Redshift_Extractor", "Property_Extractor", "SED_Property_Calculator", "Rest_Frame_Property_Calculator"]
     + [cls.__name__ for cls in _extractors]
     + [cls.__name__ for cls in _rest_frame_calcs]
+    + ["PySersic_Fitter", "PySersic_Result"]
 )

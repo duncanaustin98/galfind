@@ -1348,7 +1348,7 @@ class LePhare(SED_code):
         SED_path: str,
         type: str = "GAL",
     ) -> SED_obs:
-        from galfind import SED_obs
+        from ..spectra.SED import SED_obs
 
         assert type in ["GAL", "STAR", "QSO"], galfind_logger.critical(
             f"{type=} not in ['GAL', 'STAR', 'QSO']"

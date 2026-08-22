@@ -23,6 +23,7 @@ fitting spectral energy distributions (SEDs), and analyzing galaxy properties.
    sed_fitting/sed_fitting
    selection/selection
    cutouts/cutouts
+   morphology/morphology
    api
 
 .. seds/seds

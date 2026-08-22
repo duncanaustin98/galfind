@@ -12,7 +12,6 @@ import time
 from pathlib import Path
 
 import astropy.units as u
-import numpy as np
 
 try:
     from typing import Type  # python 3.11+
@@ -249,8 +248,14 @@ def segment(
             .to(u.dimensionless_unscaled)
             .value
         )
+        # round() on a plain float (not np.round(), which returns a
+        # numpy.float64 whose repr() is "np.float64(x)" under numpy>=2.0)
+        # -- str()'ing a list of those garbles the -PHOT_APERTURES value
+        # passed to SExtractor below, silently producing a degenerate
+        # aperture and zero flux for every source
         pix_aper_list = [
-            np.round(pix_aper_diam, 2) for pix_aper_diam in pix_scale_aper_val
+            round(float(pix_aper_diam), 2)
+            for pix_aper_diam in pix_scale_aper_val
         ]
         pix_aper_diams = (
             str(pix_aper_list)
@@ -427,8 +432,14 @@ def perform_forced_phot(
             .to(u.dimensionless_unscaled)
             .value
         )
+        # round() on a plain float (not np.round(), which returns a
+        # numpy.float64 whose repr() is "np.float64(x)" under numpy>=2.0)
+        # -- str()'ing a list of those garbles the -PHOT_APERTURES value
+        # passed to SExtractor below, silently producing a degenerate
+        # aperture and zero flux for every source
         pix_aper_list = [
-            np.round(pix_aper_diam, 2) for pix_aper_diam in pix_scale_aper_val
+            round(float(pix_aper_diam), 2)
+            for pix_aper_diam in pix_scale_aper_val
         ]
         pix_aper_diams = (
             str(pix_aper_list)

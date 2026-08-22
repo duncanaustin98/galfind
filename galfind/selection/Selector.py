@@ -427,7 +427,11 @@ class Selector(ABC):
 
         Strips JWST/HST filter prefixes/suffixes (e.g. `F444W` -> `444`)
         from the column name if it exceeds `max_len` characters, since
-        FITS binary table column names have a fixed length limit.
+        FITS binary table column names have a fixed length limit. If
+        that alone isn't enough (e.g. no filter names to strip), falls
+        back to truncating with a short content hash suffix, so two
+        different overlong names that happen to share a common prefix
+        don't collide once shortened.
 
         Parameters
         ----------
@@ -439,13 +443,10 @@ class Selector(ABC):
         Returns
         -------
         `str`
-            The (possibly shortened) column name.
-
-        Raises
-        ------
-        AssertionError
-            If the shortened name still exceeds `max_len` characters.
+            The (possibly shortened) column name, always `<= max_len`
+            characters.
         """
+        import hashlib
         import re
 
         if len(kwarg_colname) > max_len:
@@ -461,6 +462,14 @@ class Selector(ABC):
             )
         else:
             save_property_name = kwarg_colname
+        if len(save_property_name) > max_len:
+            digest = hashlib.md5(kwarg_colname.encode()).hexdigest()[:8]
+            keep = max_len - len(digest) - 1
+            save_property_name = f"{save_property_name[:keep]}_{digest}"
+            galfind_logger.debug(
+                f"Removing band prefix/suffixes was not enough to shorten "
+                f"{kwarg_colname=}; truncated to {save_property_name=}"
+            )
         assert len(save_property_name) <= max_len, galfind_logger.critical(
             f"{len(save_property_name)=}>{max_len}. "
             + f"Please shorten '{save_property_name}'"
@@ -6263,6 +6272,21 @@ class Sextractor_Band_Radius_Selector(Data_Selector):
             passed = False
         return passed
 
+    def _failure_criteria(
+        self: Self,
+        gal: Galaxy,
+        *args,
+        **kwargs,
+    ) -> bool:
+        # a filt_name absent from this galaxy's sex_Re (e.g. not in the
+        # catalogue's filterset) must fail gracefully here, since -- unlike
+        # the Multiple_Data_Selector.__call__ cat path, which silently
+        # crops out-of-filterset bands via crop_to_filterset -- calling
+        # this selector directly on a Galaxy skips that cropping entirely
+        return not (
+            hasattr(gal, "sex_Re") and self.kwargs["filt_name"] in gal.sex_Re
+        )
+
     def _selection_criteria(
         self: Self,
         gal: Galaxy,
@@ -6748,12 +6772,15 @@ class Brown_Dwarf_Selector(Multiple_SED_fit_Selector):
             selection_name=selection_name,
         )
 
-    def __call__(self, cat, return_copy=True, *args, **kwargs):
+    def _call_cat(self, cat, return_copy=True, *args, **kwargs):
+        # only Catalogue objects carry a `.data` back-reference to resolve
+        # `band_data` from; a bare Galaxy (as passed to _call_gal) must
+        # already have `band_data` supplied via kwargs by its caller
         if "band_data" not in kwargs.keys():
             kwargs["band_data"] = cat.data.native[
                 self.selectors[1].kwargs["filt_name"]
             ]
-        return super().__call__(cat, return_copy, *args, **kwargs)
+        return super()._call_cat(cat, return_copy, *args, **kwargs)
 
 
 class Hainline24_TY_Brown_Dwarf_Selector_1(Multiple_Photometry_Selector):
@@ -7131,16 +7158,21 @@ class Rest_Frame_Property_Kwarg_Selector(SED_fit_Selector):
         *args,
         **kwargs,
     ) -> bool:
-        if (
-            self.kwargs["kwarg_name"]
-            not in gal.aper_phot[self.aper_diam]
-            .SED_results[self.SED_fitter.label]
-            .phot_rest.property_kwargs[self.kwargs["property_calculator"].name]
-            .keys()
-        ):
+        try:
+            return (
+                self.kwargs["kwarg_name"]
+                not in gal.aper_phot[self.aper_diam]
+                .SED_results[self.SED_fitter.label]
+                .phot_rest.property_kwargs[
+                    self.kwargs["property_calculator"].name
+                ]
+                .keys()
+            )
+        except (KeyError, AttributeError):
+            # property_calculator's name isn't a key in property_kwargs at
+            # all yet (as opposed to being a key missing kwarg_name), which
+            # is equally a "not yet computed for this galaxy" failure
             return True
-        else:
-            return False
 
     def _selection_criteria(
         self: Self,

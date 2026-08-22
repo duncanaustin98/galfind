@@ -246,7 +246,6 @@ class Galfit_Result(Morphology_Result):
         )
 
     @property
-    @property
     def id(self: Self) -> str:
         """Galaxy identifier extracted from file path.
 
@@ -666,6 +665,156 @@ class Morphology_Fitter(ABC):
     def _available_models(self: Self) -> List[str]:
         pass
 
+    @staticmethod
+    def _neighbours_path(
+        cutout: Type[Band_Cutout_Base], out_dir: str = ""
+    ) -> str:
+        path = f"{out_dir}{cutout.ID}_neighbours.h5"
+        funcs.make_dirs(path)
+        return path
+
+    def _get_neighbours(
+        self: Self,
+        cutout: Type[Band_Cutout_Base],
+        in_dir: str = "",
+        cat: Optional[Catalogue] = None,
+        seg_data: Optional[NDArray[int]] = None,
+    ) -> Dict[str, Any]:
+        """Find sources overlapping the primary source's Kron aperture
+        within `cutout`, for simultaneous/neighbour-aware fitting.
+
+        Shared by any `Morphology_Fitter` subclass that supports
+        neighbour fitting (`Galfit_Fitter`, `PySersic_Fitter`) -- pure
+        segmentation-map/catalogue geometry, no fitting-code-specific
+        logic.
+        """
+        neighbours_path = self._neighbours_path(cutout, in_dir)
+        if not Path(neighbours_path).is_file():
+            galfind_logger.info(
+                f"Extracting {repr(cutout)} neighbours from catalogue "
+                + "for Kron masking"
+            )
+            if seg_data is None:
+                seg_data = [
+                    hdu
+                    for hdu in fits.open(cutout.band_data.seg_path)
+                    if hdu.name == "SEG"
+                ][0].data
+                # determine object id as closest seg_data value to x0, y0
+                if np.all(seg_data == 0):
+                    galfind_logger.warning(
+                        f"{repr(cutout)} segmentation map is empty!"
+                    )
+                    primary_id = 0
+                else:
+                    nonzero_yx = np.argwhere(seg_data != 0)
+                    distances = np.hypot(
+                        nonzero_yx[:, 0] - int((seg_data.shape[0] // 2)),
+                        nonzero_yx[:, 1] - int((seg_data.shape[1] // 2)),
+                    )
+                    closest_yx = nonzero_yx[np.argmin(distances)]
+                    primary_id = seg_data[closest_yx[0], closest_yx[1]]
+                seg_data[seg_data == primary_id] = 0
+            pix_scale = cutout.meta["SIZE_AS"] / cutout.meta["SIZE_PIX"]
+            kron_aper = EllipticalAperture(
+                (cutout.meta["SIZE_PIX"] / 2, cutout.meta["SIZE_PIX"] / 2),
+                cutout.meta["A_IMAGE_AS"] / pix_scale,
+                cutout.meta["B_IMAGE_AS"] / pix_scale,
+                cutout.meta["THETA_IMAGE"],
+            )
+            primary_kron_mask = kron_aper.to_mask(method="center")
+            primary_source_extent = primary_kron_mask.to_image(
+                seg_data.shape
+            ).astype(bool)
+            secondary_source_ids = np.unique(seg_data[primary_source_extent])
+            secondary_source_ids = secondary_source_ids[
+                secondary_source_ids != 0
+            ]
+            # include only those sources not touching an image edge
+            edge_mask = np.zeros_like(seg_data, dtype=bool)
+            edge_mask[0, :] = True
+            edge_mask[-1, :] = True
+            edge_mask[:, 0] = True
+            edge_mask[:, -1] = True
+            secondary_source_ids = np.array(
+                [
+                    id
+                    for id in secondary_source_ids
+                    if not np.any(edge_mask[seg_data == id])
+                ]
+            )
+            cutout_band_seg_cat_path = cat.data[
+                cutout.band_data.filt_name
+            ].seg_path.replace("_seg.fits", ".fits")
+            tab = cat.cat_creator.open_cat(
+                cutout_band_seg_cat_path, "sky_coord"
+            )
+            wcs = cutout.band_data.load_wcs()
+            new_tab = tab[
+                np.isin(
+                    tab[
+                        cat.data[cutout.band_data.filt_name].forced_phot_args[
+                            "id_label"
+                        ]
+                    ],
+                    secondary_source_ids,
+                )
+            ]
+            secondary_xpos, secondary_ypos = wcs.world_to_pixel(
+                cat.cat_creator.load_skycoords_func(
+                    new_tab,
+                    cat.cat_creator.skycoords_labels,
+                    cat.cat_creator.skycoords_units,
+                )
+            )
+            a_image = new_tab["A_IMAGE"]
+            b_image = new_tab["B_IMAGE"]
+            kron_radius = new_tab["KRON_RADIUS"]
+            theta_image = new_tab["THETA_IMAGE"]
+            mag_auto = new_tab["MAG_AUTO"]
+            flux_radius = new_tab["FLUX_RADIUS"] * pix_scale
+            # write .h5 file for future loading
+            with h5py.File(neighbours_path, "w") as f:
+                f.create_dataset(
+                    "ID",
+                    data=new_tab[
+                        cat.data[cutout.band_data.filt_name].forced_phot_args[
+                            "id_label"
+                        ]
+                    ],
+                )
+                f.create_dataset("X_IMAGE", data=secondary_xpos)
+                f.create_dataset("Y_IMAGE", data=secondary_ypos)
+                f.create_dataset("A_IMAGE", data=a_image)
+                f.create_dataset("B_IMAGE", data=b_image)
+                f.create_dataset("KRON_RADIUS", data=kron_radius)
+                f.create_dataset("THETA_IMAGE", data=theta_image)
+                f.create_dataset("MAG_AUTO", data=mag_auto)
+                f.create_dataset("FLUX_RADIUS", data=flux_radius)
+        else:
+            # load from .h5
+            with h5py.File(neighbours_path, "r") as f:
+                secondary_source_ids = f["ID"][:]
+                secondary_xpos = f["X_IMAGE"][:]
+                secondary_ypos = f["Y_IMAGE"][:]
+                a_image = f["A_IMAGE"][:]
+                b_image = f["B_IMAGE"][:]
+                kron_radius = f["KRON_RADIUS"][:]
+                theta_image = f["THETA_IMAGE"][:]
+                mag_auto = f["MAG_AUTO"][:]
+                flux_radius = f["FLUX_RADIUS"][:]
+        return {
+            "ID": secondary_source_ids,
+            "X_IMAGE": secondary_xpos,
+            "Y_IMAGE": secondary_ypos,
+            "A_IMAGE": a_image,
+            "B_IMAGE": b_image,
+            "KRON_RADIUS": kron_radius,
+            "THETA_IMAGE": theta_image,
+            "MAG_AUTO": mag_auto,
+            "FLUX_RADIUS": flux_radius,
+        }
+
     def _make_results_table(
         self: Self,
         results: List[Type[Morphology_Result]],
@@ -820,7 +969,18 @@ class Galfit_Fitter(Morphology_Fitter):
                 [self.primary_constraints, self.neighbour_constraints],
             )
         ):
-            if i == 1 or self.neighbours_model is None:
+            # Primary constraints must always be loaded (e.g. so
+            # self.fixed_params["sersic"] exists for `_sersic_txt`, even
+            # with no neighbours). Neighbour constraints aren't parsed
+            # yet regardless of neighbours_model (pre-existing gap,
+            # unchanged here). This was previously `if i == 1 or
+            # self.neighbours_model is None: continue`, which --
+            # because i==1 short-circuits the `or` -- also skipped
+            # *primary* constraint loading whenever neighbours_model
+            # was None, making Galfit_Fitter(..., neighbours_model=None)
+            # unconditionally crash later in `_sersic_txt`'s
+            # self.fixed_params["sersic"] lookup.
+            if i == 1:
                 continue
             if constraints is not None:
                 for model, params in constraints.items():
@@ -1041,7 +1201,18 @@ class Galfit_Fitter(Morphology_Fitter):
                 annotate_properties = ["mag"]
             fitting_result.plot(
                 annotate_properties=annotate_properties,
-                neighbours=self._get_neighbours(cutout, in_dir, cat=cat),
+                # `_get_neighbours` needs a real `Catalogue` to look up
+                # the segmentation catalogue the first time (no
+                # `.h5` neighbour cache yet, since `neighbours_model`
+                # wasn't necessarily set) -- `cat` is a documented
+                # optional parameter of `_fit_cutout`, so skip the
+                # (purely cosmetic) neighbour overlay rather than
+                # crashing the whole fit when it's `None`.
+                neighbours=(
+                    self._get_neighbours(cutout, in_dir, cat=cat)
+                    if cat is not None
+                    else None
+                ),
                 save=True,
             )
         # update Cutout object with Morphology results
@@ -1104,14 +1275,6 @@ class Galfit_Fitter(Morphology_Fitter):
         out_dir: str = "",
     ) -> str:
         path = f"{out_dir}{cutout.ID}_mask_in.fits"
-        funcs.make_dirs(path)
-        return path
-
-    @staticmethod
-    def _neighbours_path(
-        cutout: Type[Band_Cutout_Base], out_dir: str = ""
-    ) -> str:
-        path = f"{out_dir}{cutout.ID}_neighbours.h5"
         funcs.make_dirs(path)
         return path
 
@@ -1266,166 +1429,6 @@ class Galfit_Fitter(Morphology_Fitter):
             new_hdu.writeto(mask_path, overwrite=True)
             funcs.change_file_permissions(mask_path)
             galfind_logger.info(f"{repr(cutout)} mask saved as {mask_path}")
-
-    def _get_neighbours(
-        self: Self,
-        cutout: Type[Band_Cutout_Base],
-        in_dir: str = "",
-        cat: Optional[Catalogue] = None,
-        seg_data: Optional[NDArray[int]] = None,
-    ) -> Dict[str, Any]:
-        neighbours_path = self._neighbours_path(cutout, in_dir)
-        if not Path(neighbours_path).is_file():
-            galfind_logger.info(
-                f"Extracting {repr(cutout)} neighbours from catalogue "
-                + "for Kron masking"
-            )
-            if seg_data is None:
-                seg_data = [
-                    hdu
-                    for hdu in fits.open(cutout.band_data.seg_path)
-                    if hdu.name == "SEG"
-                ][0].data
-                # determine object id as closest seg_data value to x0, y0
-                if np.all(seg_data == 0):
-                    galfind_logger.warning(
-                        f"{repr(cutout)} segmentation map is empty!"
-                    )
-                    primary_id = 0
-                else:
-                    nonzero_yx = np.argwhere(seg_data != 0)
-                    distances = np.hypot(
-                        nonzero_yx[:, 0] - int((seg_data.shape[0] // 2)),
-                        nonzero_yx[:, 1] - int((seg_data.shape[1] // 2)),
-                    )
-                    closest_yx = nonzero_yx[np.argmin(distances)]
-                    primary_id = seg_data[closest_yx[0], closest_yx[1]]
-                seg_data[seg_data == primary_id] = 0
-            pix_scale = cutout.meta["SIZE_AS"] / cutout.meta["SIZE_PIX"]
-            kron_aper = EllipticalAperture(
-                (cutout.meta["SIZE_PIX"] / 2, cutout.meta["SIZE_PIX"] / 2),
-                cutout.meta["A_IMAGE_AS"] / pix_scale,
-                cutout.meta["B_IMAGE_AS"] / pix_scale,
-                cutout.meta["THETA_IMAGE"],
-            )
-            primary_kron_mask = kron_aper.to_mask(method="center")
-            primary_source_extent = primary_kron_mask.to_image(
-                seg_data.shape
-            ).astype(bool)
-            secondary_source_ids = np.unique(seg_data[primary_source_extent])
-            secondary_source_ids = secondary_source_ids[
-                secondary_source_ids != 0
-            ]
-            # include only those sources not touching an image edge
-            edge_mask = np.zeros_like(seg_data, dtype=bool)
-            edge_mask[0, :] = True
-            edge_mask[-1, :] = True
-            edge_mask[:, 0] = True
-            edge_mask[:, -1] = True
-            secondary_source_ids = np.array(
-                [
-                    id
-                    for id in secondary_source_ids
-                    if not np.any(edge_mask[seg_data == id])
-                ]
-            )
-            cutout_band_seg_cat_path = cat.data[
-                cutout.band_data.filt_name
-            ].seg_path.replace("_seg.fits", ".fits")
-            tab = cat.cat_creator.open_cat(
-                cutout_band_seg_cat_path, "sky_coord"
-            )
-            wcs = cutout.band_data.load_wcs()
-            new_tab = tab[
-                np.isin(
-                    tab[
-                        cat.data[cutout.band_data.filt_name].forced_phot_args[
-                            "id_label"
-                        ]
-                    ],
-                    secondary_source_ids,
-                )
-            ]
-            secondary_xpos, secondary_ypos = wcs.world_to_pixel(
-                cat.cat_creator.load_skycoords_func(
-                    new_tab,
-                    cat.cat_creator.skycoords_labels,
-                    cat.cat_creator.skycoords_units,
-                )
-            )
-            # secondary_kron_apers = [
-            #     EllipticalAperture(
-            #         (xpos, ypos),
-            #         row["A_IMAGE"] * row["KRON_RADIUS"],
-            #         row["B_IMAGE"] * row["KRON_RADIUS"],
-            #         row["THETA_IMAGE"]
-            #     ) for row, xpos, ypos in zip(
-            #         new_tab, secondary_xpos, secondary_ypos
-            #     )
-            # ]
-            a_image = new_tab["A_IMAGE"]
-            b_image = new_tab["B_IMAGE"]
-            kron_radius = new_tab["KRON_RADIUS"]
-            theta_image = new_tab["THETA_IMAGE"]
-            mag_auto = new_tab["MAG_AUTO"]
-            flux_radius = new_tab["FLUX_RADIUS"] * pix_scale
-            # write .h5 file for future loading
-            with h5py.File(neighbours_path, "w") as f:
-                f.create_dataset(
-                    "ID",
-                    data=new_tab[
-                        cat.data[cutout.band_data.filt_name].forced_phot_args[
-                            "id_label"
-                        ]
-                    ],
-                )
-                f.create_dataset("X_IMAGE", data=secondary_xpos)
-                f.create_dataset("Y_IMAGE", data=secondary_ypos)
-                f.create_dataset("A_IMAGE", data=a_image)
-                f.create_dataset("B_IMAGE", data=b_image)
-                f.create_dataset("KRON_RADIUS", data=kron_radius)
-                f.create_dataset("THETA_IMAGE", data=theta_image)
-                f.create_dataset("MAG_AUTO", data=mag_auto)
-                f.create_dataset("FLUX_RADIUS", data=flux_radius)
-        else:
-            # load from .h5
-            with h5py.File(neighbours_path, "r") as f:
-                secondary_source_ids = f["ID"][:]
-                secondary_xpos = f["X_IMAGE"][:]
-                secondary_ypos = f["Y_IMAGE"][:]
-                a_image = f["A_IMAGE"][:]
-                b_image = f["B_IMAGE"][:]
-                kron_radius = f["KRON_RADIUS"][:]
-                theta_image = f["THETA_IMAGE"][:]
-                mag_auto = f["MAG_AUTO"][:]
-                flux_radius = f["FLUX_RADIUS"][:]
-                # secondary_kron_apers = [
-                #     EllipticalAperture(
-                #         (xpos, ypos),
-                #         a * kron_rad,
-                #         b * kron_rad,
-                #         theta
-                #     ) for xpos, ypos, a, b, kron_rad, theta in zip(
-                #         secondary_xpos,
-                #         secondary_ypos,
-                #         a_image,
-                #         b_image,
-                #         kron_radius,
-                #         theta_image
-                #     )
-                # ]
-        return {
-            "ID": secondary_source_ids,
-            "X_IMAGE": secondary_xpos,
-            "Y_IMAGE": secondary_ypos,
-            "A_IMAGE": a_image,
-            "B_IMAGE": b_image,
-            "KRON_RADIUS": kron_radius,
-            "THETA_IMAGE": theta_image,
-            # "KRON": secondary_kron_apers,
-            "MAG_AUTO": mag_auto,
-            "FLUX_RADIUS": flux_radius,
-        }
 
     def _make_input_file(
         self: Self,
@@ -1666,7 +1669,7 @@ class Galfit_Fitter(Morphology_Fitter):
             crashed = False
 
         # Make (and output) fitting result object
-        from . import PDF
+        from ..visualization.PDF import PDF
 
         # unordered PDFs - i.e. chain 1 for sersic is not the same as
         # chain 1 for r_e

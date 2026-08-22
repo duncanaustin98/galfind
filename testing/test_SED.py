@@ -54,6 +54,7 @@ def sed_plot_params(request):
 
 
 @pytest.mark.requires_data
+@pytest.mark.lephare
 def test_plot_gal_sed_custom_lephare(custom_lephare_sed, sed_plot_params):
     fig, ax = plt.subplots()
     wav_unit = sed_plot_params.get("wav_units", u.AA)

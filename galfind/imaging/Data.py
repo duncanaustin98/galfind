@@ -1990,7 +1990,7 @@ class Band_Data_Base(ABC):
                 f"Finished making {self.survey} {self.version} "
                 f"{self.filt} rms_err map"
             )
-        galfind_logger.info(
+        galfind_logger.debug(
             f"Loading galfind created rms_err for {self.filt_name}"
         )
         self.rms_err_path = save_path

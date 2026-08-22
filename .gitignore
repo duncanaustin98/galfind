@@ -1,5 +1,6 @@
 .DS_Store
 __pycache__
+.claude/settings.local.json
 galfind.egg-info
 test_pipeline.py
 galfind/_version.py

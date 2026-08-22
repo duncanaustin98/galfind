@@ -1848,11 +1848,18 @@ class Catalogue_Creator:
                 for i in range(len(tab))
             ]
             # TODO: Generalize for non galfind-like tables
+            # match on the "<select_label>__" prefix exactly (not just
+            # `startswith(select_label)`), since one selector's name can
+            # be a plain string prefix of another's (e.g. a compactness
+            # selector's name with vs without its "*psf" suffix), which
+            # would otherwise pull another selector's kwarg columns in
+            # here under the wrong, non-existent "<select_label>__<kwarg>"
+            # column name
             selection_kwarg_colnames = {
                 select_label: [
-                    colname.split("__")[1]
+                    colname[len(select_label) + 2 :]
                     for colname in tab.colnames
-                    if colname.startswith(select_label)
+                    if colname.startswith(f"{select_label}__")
                     and tab[colname].dtype not in (bool, np.bool_)
                 ]
                 for select_label in select_labels
@@ -2843,74 +2850,110 @@ class Catalogue(Catalogue_Base):
         from SExtractor catalogues for morphological analysis.
         """
         if hasattr(self, "data"):
-            # load Kron radius from SExtractor
-            kron_radii = self.load_band_properties_from_cat(
-                "KRON_RADIUS",
-                "sex_KRON_RADIUS",
-            )
-            try:
-                A_image_arr = self.load_band_properties_from_cat(
-                    "A_IMAGE", "sex_A_IMAGE", update=False
-                )
-                [
-                    setattr(
-                        gal, "sex_A_IMAGE", A_image[self.data[0].filt_name]
-                    )
-                    for gal, A_image in zip(self, A_image_arr)
-                ]
-                A_image_as_arr = [
-                    {
-                        band_data.filt_name: kron_radius[band_data.filt_name]
-                        * A_image[band_data.filt_name]
-                        * band_data.pix_scale
-                        for band_data in self.data
-                    }
-                    for kron_radius, A_image in zip(kron_radii, A_image_arr)
-                ]
-                [
-                    gal.load_property(A_image_as, "sex_A_IMAGE_AS")
-                    for gal, A_image_as in zip(self, A_image_as_arr)
-                ]
-                B_image_arr = self.load_band_properties_from_cat(
-                    "B_IMAGE",
-                    "sex_B_IMAGE",
-                    update=False,
-                )
-                [
-                    setattr(
-                        gal, "sex_B_IMAGE", B_image[self.data[0].filt_name]
-                    )
-                    for gal, B_image in zip(self, B_image_arr)
-                ]
-                B_image_as_arr = [
-                    {
-                        band_data.filt_name: kron_radius[band_data.filt_name]
-                        * B_image[band_data.filt_name]
-                        * band_data.pix_scale
-                        for band_data in self.data
-                    }
-                    for kron_radius, B_image in zip(kron_radii, B_image_arr)
-                ]
-                [
-                    gal.load_property(B_image_as, "sex_B_IMAGE_AS")
-                    for gal, B_image_as in zip(self, B_image_as_arr)
-                ]
-                theta_image_arr = self.load_band_properties_from_cat(
-                    "THETA_IMAGE",
+            if all(
+                hasattr(self[0], name)
+                for name in (
+                    "sex_A_IMAGE_AS",
+                    "sex_B_IMAGE_AS",
                     "sex_THETA_IMAGE",
-                    multiply_factor=u.deg,
-                    update=False,
                 )
-                [
-                    setattr(
-                        gal,
-                        "sex_THETA_IMAGE",
-                        theta_image[self.data[0].filt_name],
-                    )
-                    for gal, theta_image in zip(self, theta_image_arr)
-                ]
-            except Exception:
+            ):
+                # Already loaded by an earlier call on this Catalogue.
+                # `load_band_properties_from_cat` short-circuits and
+                # returns `None` (rather than the per-galaxy values)
+                # once a property is already set on every galaxy, and
+                # every array below used to get fed straight into a
+                # `zip(...)`/dict comprehension without checking for
+                # this, so re-entering this method a *second* time (e.g.
+                # via `load_sextractor_params()` after an earlier call
+                # already populated these attributes) raised
+                # "TypeError: 'NoneType' object is not iterable", which
+                # a bare `except Exception: pass` then silently
+                # swallowed -- there is nothing to recompute in that
+                # case anyway, so just skip straight to the aper_phot
+                # propagation loop below.
                 pass
+            else:
+                # load Kron radius from SExtractor
+                kron_radii = self.load_band_properties_from_cat(
+                    "KRON_RADIUS",
+                    "sex_KRON_RADIUS",
+                )
+                try:
+                    A_image_arr = self.load_band_properties_from_cat(
+                        "A_IMAGE", "sex_A_IMAGE", update=False
+                    )
+                    [
+                        setattr(
+                            gal, "sex_A_IMAGE", A_image[self.data[0].filt_name]
+                        )
+                        for gal, A_image in zip(self, A_image_arr)
+                    ]
+                    A_image_as_arr = [
+                        {
+                            band_data.filt_name: kron_radius[
+                                band_data.filt_name
+                            ]
+                            * A_image[band_data.filt_name]
+                            * band_data.pix_scale
+                            for band_data in self.data
+                        }
+                        for kron_radius, A_image in zip(
+                            kron_radii, A_image_arr
+                        )
+                    ]
+                    [
+                        gal.load_property(A_image_as, "sex_A_IMAGE_AS")
+                        for gal, A_image_as in zip(self, A_image_as_arr)
+                    ]
+                    B_image_arr = self.load_band_properties_from_cat(
+                        "B_IMAGE",
+                        "sex_B_IMAGE",
+                        update=False,
+                    )
+                    [
+                        setattr(
+                            gal, "sex_B_IMAGE", B_image[self.data[0].filt_name]
+                        )
+                        for gal, B_image in zip(self, B_image_arr)
+                    ]
+                    B_image_as_arr = [
+                        {
+                            band_data.filt_name: kron_radius[
+                                band_data.filt_name
+                            ]
+                            * B_image[band_data.filt_name]
+                            * band_data.pix_scale
+                            for band_data in self.data
+                        }
+                        for kron_radius, B_image in zip(
+                            kron_radii, B_image_arr
+                        )
+                    ]
+                    [
+                        gal.load_property(B_image_as, "sex_B_IMAGE_AS")
+                        for gal, B_image_as in zip(self, B_image_as_arr)
+                    ]
+                    theta_image_arr = self.load_band_properties_from_cat(
+                        "THETA_IMAGE",
+                        "sex_THETA_IMAGE",
+                        multiply_factor=u.deg,
+                        update=False,
+                    )
+                    [
+                        setattr(
+                            gal,
+                            "sex_THETA_IMAGE",
+                            theta_image[self.data[0].filt_name],
+                        )
+                        for gal, theta_image in zip(self, theta_image_arr)
+                    ]
+                except Exception as e:
+                    galfind_logger.warning(
+                        "Failed to load SExtractor Kron-scaled morphological "
+                        f"parameters (A_IMAGE_AS/B_IMAGE_AS/THETA_IMAGE) for "
+                        f"{repr(self)}: {e}"
+                    )
 
             for gal in self:
                 for aper_diam in gal.aper_phot.keys():

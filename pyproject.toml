@@ -101,6 +101,7 @@ dependencies = [
   "spectres",
   "BDFit @ git+https://github.com/tHarvey303/BD-Finder/",
   "corner",
+  "stpsf", # PSF.py imports this to build model PSFs; needs $STPSF_PATH calibration data at runtime
 ]
 # numpy>=2.0 requires numba>=0.67.0 (llvmlite pulled in automatically) and
 # scikit-learn>=1.9.0 (its numpy-1.x-built pyarrow import otherwise crashes);
@@ -127,6 +128,12 @@ test = [
 
 bagpipes = [
   "bagpipes @ git+https://github.com/tHarvey303/bagpipes/",
+]
+
+# PySersic morphology fitting (galfind.properties.PySersic); pulls in
+# jax/numpyro transitively
+pysersic = [
+  "pysersic",
 ]
 
 # Downloading data
@@ -271,4 +278,5 @@ markers = [
   "slow: marks slow tests",
   "instrument: tests that require instrument setup",
   "requires_data: marks tests requiring data to run",
+  "lephare: tests requiring the custom LePhare SED fitter, currently producing empty SED results for the synthetic test galaxy (unresolved)",
 ]

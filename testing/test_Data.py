@@ -2,9 +2,9 @@ import inspect
 import os
 from copy import copy, deepcopy
 
+import astropy.units as u
 import numpy as np
 import pytest
-from astropy.table import Table
 
 # anchor to this file's own location, not the process cwd, so
 # GALFIND_WORK/GALFIND_DATA always land under <repo_root>/testing/
@@ -12,7 +12,8 @@ from astropy.table import Table
 os.environ["GALFIND_CONFIG_DIR"] = os.path.dirname(os.path.abspath(__file__))
 os.environ["GALFIND_CONFIG_NAME"] = "test_galfind_config.ini"
 
-from galfind.imaging import Data, Filter
+from conftest import _mock_gaia_launch_job_async
+from galfind.imaging import Data, Filter, Multiple_Filter
 from galfind.imaging.Data import Band_Data, Stacked_Band_Data
 from galfind.photometry import SExtractor
 from galfind.utils import Masking
@@ -35,28 +36,6 @@ def f444w_band_data(f444w, survey, version, data_dir_nircam, aper_diams):
         wht_ext_name="WHT",
         aper_diams=aper_diams,
     )
-
-
-def _mock_gaia_launch_job_async(*args, **kwargs):
-    # Stands in for a live astroquery.gaia.Gaia.launch_job_async call,
-    # returning an empty result table (no Gaia stars in the footprint)
-    # so masking tests don't depend on the live Gaia archive.
-    class _MockJob:
-        @staticmethod
-        def get_results():
-            return Table(
-                {
-                    "source_id": np.array([], dtype=np.int64),
-                    "ra": np.array([], dtype=np.float64),
-                    "dec": np.array([], dtype=np.float64),
-                    "phot_g_mean_mag": np.array([], dtype=np.float64),
-                    "radius_sersic": np.array([], dtype=np.float64),
-                    "classlabel_dsc_joint": np.array([], dtype="U16"),
-                    "vari_best_class_name": np.array([], dtype="U16"),
-                }
-            )
-
-    return _MockJob()
 
 
 @pytest.fixture(scope="module")
@@ -331,6 +310,81 @@ class TestStackedBandData:
             local_forced_phot_stacked_band_data_from_arr.band_data_arr
         ) == len(test_forced_phot_band)
 
+    def test_stacked_band_data_dunder_len(
+        self,
+        local_forced_phot_stacked_band_data_from_arr,
+        test_forced_phot_band,
+    ):
+        assert len(local_forced_phot_stacked_band_data_from_arr) == len(
+            test_forced_phot_band
+        )
+
+    def test_stacked_band_data_dunder_iter(
+        self,
+        local_forced_phot_stacked_band_data_from_arr,
+        test_forced_phot_band,
+    ):
+        filt_names = [
+            band_data.filt_name
+            for band_data in local_forced_phot_stacked_band_data_from_arr
+        ]
+        assert sorted(filt_names) == sorted(test_forced_phot_band)
+
+    def test_stacked_band_data_dunder_getitem(
+        self, local_forced_phot_stacked_band_data_from_arr
+    ):
+        band_data = local_forced_phot_stacked_band_data_from_arr[0]
+        assert isinstance(band_data, Band_Data)
+
+    def test_stacked_band_data_instr_name(
+        self, local_forced_phot_stacked_band_data_from_arr
+    ):
+        assert (
+            local_forced_phot_stacked_band_data_from_arr.instr_name
+            == "NIRCam"
+        )
+
+    def test_stacked_band_data_filt_name(
+        self,
+        local_forced_phot_stacked_band_data_from_arr,
+        test_forced_phot_band,
+    ):
+        filt_name = local_forced_phot_stacked_band_data_from_arr.filt_name
+        assert filt_name == "+".join(test_forced_phot_band)
+
+    def test_stacked_band_data_zp(
+        self, local_forced_phot_stacked_band_data_from_arr
+    ):
+        # despite the `Dict[str, float]` type hint, Stacked_Band_Data.ZP
+        # returns a single float: the common ZP of its constituent filters
+        # (or the stacked image's ZEROPNT header value if they differ)
+        zp = local_forced_phot_stacked_band_data_from_arr.ZP
+        assert isinstance(zp, float)
+
+
+class TestBandDataAdd:
+    def test_band_data_add_disjoint_filter(
+        self, f444w_band_data, two_band_data_arr
+    ):
+        f200w_band_data = two_band_data_arr[0]
+        combined = f444w_band_data + f200w_band_data
+        assert isinstance(combined, Data)
+        assert sorted(band_data.filt_name for band_data in combined) == [
+            "F200W",
+            "F444W",
+        ]
+
+    def test_band_data_add_duplicate_filter_raises(self, f444w_band_data):
+        with pytest.raises(Exception):
+            f444w_band_data + deepcopy(f444w_band_data)
+
+    def test_band_data_add_different_survey_raises(self, f444w_band_data):
+        mismatched_band = deepcopy(f444w_band_data)
+        mismatched_band.filt = Filter.from_SVO("JWST", "NIRCam", "F200W")
+        mismatched_band.survey = "a_different_survey"
+        with pytest.raises(Exception):
+            f444w_band_data + mismatched_band
+
 
 class TestBandDataMask:
     def test_f444w_base_mask(self, f444w_band_data_masked):
@@ -446,6 +500,166 @@ class TestBandDataPSFHomogenize:
 
 def test_data(data):
     assert isinstance(data, Data)
+
+
+# `Data.pipeline` (used by the `data` fixture) loads PSFs via STPSF, whose
+# calibration data isn't available in CI, so any test depending on `data`
+# is auto-marked `requires_data` by conftest.py's pytest_collection_modifyitems
+# and skipped there. Build a `Data` object directly from `Band_Data`
+# instances instead, so these tests actually run in CI.
+@pytest.fixture(scope="module")
+def two_band_data_arr(survey, version, data_dir_nircam, aper_diams):
+    filt_names = ["F200W", "F444W"]
+    band_data_arr = []
+    for filt_name in filt_names:
+        fits_path = f"{data_dir_nircam}/{filt_name}_{survey}.fits"
+        band_data_arr.append(
+            Band_Data(
+                filt=Filter.from_SVO("JWST", "NIRCam", filt_name),
+                survey=survey,
+                version=version,
+                im_path=fits_path,
+                rms_err_path=fits_path,
+                wht_path=fits_path,
+                im_ext=1,
+                rms_err_ext=3,
+                wht_ext=4,
+                rms_err_ext_name="RMS_ERR",
+                wht_ext_name="WHT",
+                aper_diams=aper_diams,
+            )
+        )
+    return band_data_arr
+
+
+@pytest.fixture(scope="module")
+def two_band_data(two_band_data_arr):
+    return Data(two_band_data_arr)
+
+
+class TestDataDunder:
+    def test_data_len(self, two_band_data):
+        assert len(two_band_data) == 2
+
+    def test_data_iter(self, two_band_data):
+        band_names = [band_data.filt_name for band_data in two_band_data]
+        assert sorted(band_names) == ["F200W", "F444W"]
+
+    def test_data_getitem_int(self, two_band_data):
+        assert isinstance(two_band_data[0], Band_Data)
+
+    def test_data_getitem_slice(self, two_band_data):
+        sliced = two_band_data[0:2]
+        assert len(sliced) == 2
+        assert all(isinstance(band_data, Band_Data) for band_data in sliced)
+
+    def test_data_getitem_filt_name_str(self, two_band_data):
+        band_data = two_band_data["F444W"]
+        assert isinstance(band_data, Band_Data)
+        assert band_data.filt_name == "F444W"
+
+    def test_data_getitem_filt_name_list(self, two_band_data):
+        band_data_arr = two_band_data[["F444W", "F200W"]]
+        assert {band_data.filt_name for band_data in band_data_arr} == {
+            "F444W",
+            "F200W",
+        }
+
+    def test_data_getitem_bool_mask(self, two_band_data):
+        mask = np.array(
+            [band_data.filt_name == "F444W" for band_data in two_band_data]
+        )
+        band_data = two_band_data[mask]
+        assert isinstance(band_data, Band_Data)
+        assert band_data.filt_name == "F444W"
+
+    def test_data_getattr_pluralized(self, two_band_data):
+        # __getattr__ pluralizes an attribute shared by every band_data,
+        # returning a {filt_name: value} dict rather than raising
+        im_paths = two_band_data.im_paths
+        assert isinstance(im_paths, dict)
+        assert set(im_paths.keys()) == {
+            band_data.filt_name for band_data in two_band_data
+        }
+        for band_data in two_band_data:
+            assert im_paths[band_data.filt_name] == band_data.im_path
+
+    def test_data_getattr_missing_raises(self, two_band_data):
+        with pytest.raises(AttributeError):
+            two_band_data.definitely_not_a_real_attr
+
+    def test_data_repr(self, two_band_data, survey, version):
+        data_repr = repr(two_band_data)
+        assert survey in data_repr
+        assert version in data_repr
+
+    def test_data_str(self, two_band_data, survey, version):
+        data_str = str(two_band_data)
+        assert survey in data_str
+        assert version in data_str
+
+    def test_data_eq(self, two_band_data):
+        assert two_band_data != "not a Data object"
+        data_copy = deepcopy(two_band_data)
+        assert data_copy == two_band_data
+        data_copy.band_data_arr = data_copy.band_data_arr[:-1]
+        assert data_copy != two_band_data
+
+    def test_data_deepcopy(self, two_band_data):
+        data_copy = deepcopy(two_band_data)
+        assert data_copy is not two_band_data
+        assert data_copy == two_band_data
+        assert data_copy.band_data_arr is not two_band_data.band_data_arr
+
+
+class TestDataProperties:
+    def test_data_survey(self, two_band_data, survey):
+        assert two_band_data.survey == survey
+
+    def test_data_version(self, two_band_data, version):
+        assert two_band_data.version == version
+
+    def test_data_filterset(self, two_band_data):
+        assert isinstance(two_band_data.filterset, Multiple_Filter)
+        assert len(two_band_data.filterset) == 2
+
+    def test_data_full_name(self, two_band_data):
+        full_name = two_band_data.full_name
+        assert isinstance(full_name, str)
+        assert two_band_data.survey in full_name
+
+    def test_data_aper_diams(self, two_band_data, aper_diams):
+        result_aper_diams = two_band_data.aper_diams
+        assert len(result_aper_diams) == len(aper_diams)
+        for result, expected in zip(result_aper_diams, aper_diams):
+            assert abs(
+                result.to(u.arcsec).value - expected.to(u.arcsec).value
+            ) < 1e-8
+
+
+class TestDataAdd:
+    def test_data_add_disjoint_filters(self, two_band_data_arr):
+        left = Data([two_band_data_arr[0]])
+        right = Data([two_band_data_arr[1]])
+        combined = left + right
+        assert isinstance(combined, Data)
+        assert len(combined) == 2
+        assert sorted(band_data.filt_name for band_data in combined) == [
+            "F200W",
+            "F444W",
+        ]
+
+    def test_data_add_duplicate_filter_raises(self, two_band_data_arr):
+        left = Data([two_band_data_arr[1]])
+        with pytest.raises(Exception):
+            left + two_band_data_arr[1]
+
+    def test_data_add_different_survey_raises(self, two_band_data_arr):
+        left = Data([two_band_data_arr[1]])
+        mismatched_band = deepcopy(two_band_data_arr[0])
+        mismatched_band.survey = "a_different_survey"
+        with pytest.raises(Exception):
+            left + mismatched_band
 
 
 class TestBandDataDepths:

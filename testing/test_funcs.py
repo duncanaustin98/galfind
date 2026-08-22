@@ -29,10 +29,19 @@ def test_get_ext_src_corr_pass(
 
 @pytest.mark.requires_data
 def test_get_ext_src_corr_no_sex_params_fail(phot_rest, ext_src_corr_inputs):
-    # expect this to fail due to not having extended source
-    # corrections pre-loaded
+    # phot_rest is a shared session fixture that other tests/fixtures may
+    # have already populated ext_src_corrs onto by the time this runs, so
+    # explicitly clear it on a copy to reliably exercise "not pre-loaded"
+    # regardless of test order, rather than relying on phot_rest happening
+    # to still be untouched
+    from copy import deepcopy
+
+    phot_rest_no_ext_src_corrs = deepcopy(phot_rest)
+    phot_rest_no_ext_src_corrs.ext_src_corrs = {}
     with pytest.raises(AttributeError):
-        funcs.get_ext_src_corr(phot_rest, **ext_src_corr_inputs)
+        funcs.get_ext_src_corr(
+            phot_rest_no_ext_src_corrs, **ext_src_corr_inputs
+        )
 
 
 def test_blank_phot_rest_ext_src_corr_nan(
