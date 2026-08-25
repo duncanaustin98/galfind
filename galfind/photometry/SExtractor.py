@@ -7,6 +7,7 @@ maps and forced photometry catalogues.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -49,6 +50,12 @@ def get_code() -> str:
             .decode("utf-8")
             .replace("\n", "")
         )
+        # Debian's `source-extractor` package (installed as the `sex`
+        # binary on some CI/container builds) reports its version as
+        # "source extractor version X.Y.Z (date)" rather than the
+        # upstream "SExtractor version X.Y.Z (date)". Normalise so
+        # downstream 'sextractor' in method.lower() checks still match.
+        output = re.sub(r"(?i)source\s*extractor", "SExtractor", output)
     except Exception:
         output = "SExtractor"
         galfind_logger.warning(
