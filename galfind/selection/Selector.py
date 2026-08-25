@@ -3052,10 +3052,11 @@ class Compactness_Selector(Data_Selector):
                 ).to(u.arcsec),
                 overwrite=False,
             )
-        if cutout_label not in gal.cutouts.keys():
+        gal_cutouts = getattr(gal, "cutouts", {})
+        if cutout_label not in gal_cutouts.keys():
             raise MissingDataError(
                 f"cutout_label={cutout_label!r} not found in "
-                f"gal.cutouts.keys()={list(gal.cutouts.keys())!r}."
+                f"gal.cutouts.keys()={list(gal_cutouts.keys())!r}."
             )
         cutout = gal.cutouts[cutout_label]
         flux_ratio, flux_ratio_kwargs = self._compute_flux_ratio(

@@ -102,6 +102,7 @@ dependencies = [
   "BDFit @ git+https://github.com/tHarvey303/BD-Finder/",
   "corner",
   "stpsf", # PSF.py imports this to build model PSFs; needs $STPSF_PATH calibration data at runtime
+  "pypher", # PSF.py's make_kernel() shells out to the `pypher`/`addpixscl` CLIs it installs
 ]
 # numpy>=2.0 requires numba>=0.67.0 (llvmlite pulled in automatically) and
 # scikit-learn>=1.9.0 (its numpy-1.x-built pyarrow import otherwise crashes);

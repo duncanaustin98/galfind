@@ -64,6 +64,7 @@ from galfind.selection.Selector import (
     Rest_Frame_Property_Kwarg_Selector,
     Rest_Frame_Property_Limit_Selector,
     Robust_zPDF_Selector,
+    SED_fit_Selector,
     Selector,
     Sextractor_Band_Radius_Selector,  # up to here
     Sextractor_Bands_Radius_Selector,
@@ -2452,7 +2453,7 @@ def test_fail_selector_init(fail_selector):
 
 
 @pytest.mark.requires_data
-def test_selector_call_gal(call_selector, gal):
+def test_selector_call_gal(call_selector, gal, cat):
     selector_cls, inputs, outcome = call_selector
     outcome_ = copy(outcome)
     if isinstance(outcome_, dict):
@@ -2463,7 +2464,35 @@ def test_selector_call_gal(call_selector, gal):
             selector_inst(gal)
     else:
         selector_inst = selector_cls(**inputs)
-        out_gal = selector_inst(gal)
+        if isinstance(selector_inst, SED_fit_Selector):
+            # Selector.__call__ requires SED-fit results to already be
+            # loaded for a lone Galaxy -- there's no catalogue context to
+            # run the fit in there, unlike the Catalogue case, which runs
+            # it automatically (see SED_fit_Selector._assert_SED_fitter).
+            # Load it here via that same catalogue-level path, on the
+            # shared session `cat` gal belongs to, rather than relying on
+            # some other (alphabetically earlier) selector's cat-call
+            # having already triggered it as a side effect.
+            if (
+                selector_inst.SED_fitter.label
+                not in gal.aper_phot[
+                    selector_inst.aper_diam
+                ].SED_results.keys()
+            ):
+                selector_inst.SED_fitter(
+                    cat, selector_inst.aper_diam, update=True
+                )
+        call_kwargs = {}
+        if isinstance(selector_inst, Brown_Dwarf_Selector):
+            # Compactness_Selector (one of Brown_Dwarf_Selector's
+            # sub-selectors) needs a `band_data` kwarg to build its
+            # cutout on a lone Galaxy -- there's no catalogue context to
+            # resolve it from automatically the way
+            # Brown_Dwarf_Selector._call_cat does for a Catalogue. Mirror
+            # that same resolution here.
+            ref_filt = selector_inst.selectors[1].kwargs["filt_name"]
+            call_kwargs["band_data"] = cat.data.native[ref_filt]
+        out_gal = selector_inst(gal, **call_kwargs)
         assert isinstance(out_gal, Galaxy)
 
 

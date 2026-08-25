@@ -80,6 +80,10 @@ From: python:3.12-slim-bookworm
     python3 -c "import galfind; print('galfind', galfind.__file__, 'imported OK')"
     python3 -c "import sep, astropy, scipy, numba, eazy; print('core deps OK')"
     command -v sex >/dev/null 2>&1 && sex --version || (echo "sex binary missing" >&2; exit 1)
+    # pypher/addpixscl: CLIs PSF.py's make_kernel() shells out to for PSF
+    # homogenization kernels; installed by the pip `pypher` package above.
+    command -v pypher >/dev/null 2>&1 || (echo "pypher binary missing" >&2; exit 1)
+    command -v addpixscl >/dev/null 2>&1 || (echo "addpixscl binary missing" >&2; exit 1)
 
 %runscript
     exec python3 "$@"
