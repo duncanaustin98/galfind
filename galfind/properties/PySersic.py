@@ -29,8 +29,15 @@ try:
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from .. import config, galfind_logger
+from .. import config
 from ..utils import useful_funcs_austind as funcs
+from ..utils.exceptions import (
+    GalfindTypeError,
+    IncompatibleKwargsError,
+    InvalidOptionError,
+    LengthMismatchError,
+    RangeError,
+)
 from ..visualization.PDF import PDF
 from .Morphology import Morphology_Fitter, Morphology_Result
 
@@ -120,6 +127,11 @@ class PySersic_Result(Morphology_Result):
             Base path (without extension) to save the residual plot to;
             the corner plot is saved alongside it with a `_corner`
             suffix. Required if `save` is `True`.
+
+        Raises
+        ------
+        IncompatibleKwargsError
+            If `save` is `True` but `out_path` is `None`.
         """
         import matplotlib.pyplot as plt
         from pysersic.results import plot_residual
@@ -140,9 +152,11 @@ class PySersic_Result(Morphology_Result):
                 vmax=3 * residual_std,
             )
             if save:
-                assert out_path is not None, galfind_logger.critical(
-                    "out_path must be given to save PySersic_Result plot!"
-                )
+                if out_path is None:
+                    raise IncompatibleKwargsError(
+                        "out_path must be given when save=True in "
+                        "PySersic_Result.plot()."
+                    )
                 funcs.make_dirs(out_path)
                 fig.savefig(out_path, dpi=150, bbox_inches="tight")
             if show:
@@ -165,10 +179,11 @@ class PySersic_Result(Morphology_Result):
                 quantiles=[0.16, 0.5, 0.84],
             )
             if save:
-                assert out_path is not None, galfind_logger.critical(
-                    "out_path must be given to save PySersic_Result "
-                    "corner plot!"
-                )
+                if out_path is None:
+                    raise IncompatibleKwargsError(
+                        "out_path must be given when save=True in "
+                        "PySersic_Result.plot() (corner plot)."
+                    )
                 corner_path = str(
                     Path(out_path).with_name(
                         f"{Path(out_path).stem}_corner{Path(out_path).suffix}"
@@ -274,6 +289,20 @@ class PySersic_Fitter(Morphology_Fitter):
     ) -> Tuple[Dict[str, float], Dict[str, Tuple[float, float]]]:
         """Split a `{model: {param: value_or_[lo,hi]}}` spec into
         fixed-value and `[lo, hi]`-bounded dicts for a single `model`.
+
+        Raises
+        ------
+        InvalidOptionError
+            If `model` is not a valid `pysersic` profile type, or if a
+            parameter name in `priors[model]` is not valid for `model`.
+        LengthMismatchError
+            If a `[lo, hi]`-style prior bound does not have exactly 2
+            elements.
+        RangeError
+            If a `[lo, hi]`-style prior bound does not satisfy `lo < hi`.
+        GalfindTypeError
+            If a prior value is neither a `[lo, hi]` list/tuple nor a
+            single `int`/`float`.
         """
         from pysersic.priors import base_profile_params
 
@@ -281,35 +310,41 @@ class PySersic_Fitter(Morphology_Fitter):
         bounded: Dict[str, Tuple[float, float]] = {}
         if not priors or model is None or model not in priors:
             return fixed, bounded
-        assert model in base_profile_params, galfind_logger.critical(
-            f"{model=} not a valid pysersic profile_type! Must be one "
-            f"of {sorted(base_profile_params.keys())}"
-        )
+        if model not in base_profile_params:
+            raise InvalidOptionError(
+                f"model={model!r} is not a valid pysersic profile_type; "
+                f"must be one of {sorted(base_profile_params.keys())}."
+            )
         valid_params = set(base_profile_params[model])
         for param, val in priors[model].items():
-            assert param in valid_params, galfind_logger.critical(
-                f"{param=} not a valid parameter for {model=}! Must be "
-                f"one of {sorted(valid_params)}"
-            )
+            if param not in valid_params:
+                raise InvalidOptionError(
+                    f"param={param!r} is not a valid parameter for "
+                    f"model={model!r}; must be one of "
+                    f"{sorted(valid_params)}."
+                )
             if isinstance(val, (list, tuple)):
-                assert len(val) == 2, galfind_logger.critical(
-                    f"{param} prior bound must be a [lo, hi] pair! "
-                    f"Got {val=}"
-                )
+                if len(val) != 2:
+                    raise LengthMismatchError(
+                        f"Prior bound for param={param!r} must be a "
+                        f"[lo, hi] pair of length 2; got val={val!r} "
+                        f"with length {len(val)}."
+                    )
                 lo, hi = float(val[0]), float(val[1])
-                assert lo < hi, galfind_logger.critical(
-                    f"{param} prior bound must have lo < hi! Got {val=}"
-                )
+                if not lo < hi:
+                    raise RangeError(
+                        f"Prior bound for param={param!r} must have "
+                        f"lo < hi; got val={val!r}."
+                    )
                 bounded[param] = (lo, hi)
             elif isinstance(val, (int, float)):
                 fixed[param] = float(val)
             else:
-                err_message = (
-                    f"Invalid prior for {param!r} in {model=}! Must be "
-                    f"a [lo, hi] list or a single int/float. Got {val=}"
+                raise GalfindTypeError(
+                    f"Invalid prior for param={param!r} in model={model!r}; "
+                    f"must be a [lo, hi] list or a single int/float. Got "
+                    f"val={val!r} with type {type(val).__name__}."
                 )
-                galfind_logger.critical(err_message)
-                raise TypeError(err_message)
         return fixed, bounded
 
     @staticmethod

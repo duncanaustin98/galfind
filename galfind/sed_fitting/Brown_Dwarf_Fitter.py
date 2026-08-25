@@ -24,6 +24,7 @@ except ImportError:
 from .. import config, galfind_logger
 from ..spectra.SED import SED_obs
 from ..utils import useful_funcs_austind as funcs
+from ..utils.exceptions import MissingDataError, MissingKeyError
 from .SED_codes import SED_code
 
 
@@ -301,7 +302,7 @@ class Template_Fitter(SED_code):
 
         Raises
         ------
-        AssertionError
+        MissingDataError
             If `cat.filterset` contains no filters with
             ``instrument_name == self.fit_instrument``.
         """
@@ -318,10 +319,11 @@ class Template_Fitter(SED_code):
                 ]
             )
             fit_instrument_filterset = cat.filterset[fit_instrument_indices]
-            assert len(fit_instrument_filterset) > 0, galfind_logger.critical(
-                "No filters in cat.filterset with instrument_name = "
-                f"{self.fit_instrument=}"
-            )
+            if len(fit_instrument_filterset) == 0:
+                raise MissingDataError(
+                    "No filters in cat.filterset with "
+                    f"instrument_name={self.fit_instrument!r}."
+                )
             facilities_to_search = {}
             for filt in fit_instrument_filterset:
                 if filt.facility_name not in facilities_to_search.keys():
@@ -543,12 +545,20 @@ class Template_Fitter(SED_code):
         Implements the `SED_code._assert_SED_fit_params` interface. Checks
         that all required keys are present in `SED_fit_params` and initializes
         ``excl_bands`` if not already present.
+
+        Raises
+        ------
+        MissingKeyError
+            If any key in `required_SED_fit_params` is missing from
+            `SED_fit_params`.
         """
         for key in self.required_SED_fit_params:
-            assert key in self.SED_fit_params.keys(), galfind_logger.critical(
-                f"'{key}' not in SED_fit_params keys = "
-                f"{list(self.SED_fit_params.keys())}"
-            )
+            if key not in self.SED_fit_params.keys():
+                raise MissingKeyError(
+                    f"'{key}' not in SED_fit_params keys = "
+                    f"{list(self.SED_fit_params.keys())}; required by "
+                    f"{self.__class__.__name__}."
+                )
         if "excl_bands" not in self.SED_fit_params.keys():
             self.SED_fit_params["excl_bands"] = []
 

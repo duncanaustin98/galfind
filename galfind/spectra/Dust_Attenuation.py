@@ -26,6 +26,7 @@ except ImportError:
 
 from .. import config
 from ..utils import useful_funcs_austind as funcs
+from ..utils.exceptions import InvalidOptionError
 
 
 class Dust_Law(ABC):
@@ -871,7 +872,7 @@ class Reddy18(AUV_from_beta):
 
     Raises
     ------
-    AssertionError
+    InvalidOptionError
         If `dust_law` is not an instance of `SMC`, `Calzetti00` or
         `Reddy15`, or if `BPASS_age` is not 100 or 300 Myr.
     KeyError
@@ -894,8 +895,19 @@ class Reddy18(AUV_from_beta):
         BPASS_age : `astropy.units.Quantity`, optional
             BPASS stellar population age (100 or 300 Myr). Default is 100 Myr.
         """
-        assert dust_law.__class__.__name__ in ["SMC", "Calzetti00", "Reddy15"]
-        assert BPASS_age in [100 * u.Myr, 300 * u.Myr]
+        if dust_law.__class__.__name__ not in [
+            "SMC",
+            "Calzetti00",
+            "Reddy15",
+        ]:
+            raise InvalidOptionError(
+                f"dust_law has type {dust_law.__class__.__name__}; must "
+                "be an instance of SMC, Calzetti00 or Reddy15."
+            )
+        if BPASS_age not in [100 * u.Myr, 300 * u.Myr]:
+            raise InvalidOptionError(
+                f"BPASS_age={BPASS_age!r} not in [100 * u.Myr, 300 * u.Myr]."
+            )
         beta_int = {100 * u.Myr: -2.520, 300 * u.Myr: -2.616}
         slope = {"Reddy15": 0.55}
         super().__init__(

@@ -1,0 +1,63 @@
+# CodeRabbit configuration for galfind
+# https://docs.coderabbit.ai/reference/configuration
+
+language: en-US
+early_access: false
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  collapse_walkthrough: true
+  auto_review:
+    enabled: true
+    drafts: false
+
+  path_filters:
+    - "!build/**"
+    - "!galfind.egg-info/**"
+    - "!htmlcov/**"
+    - "!coverage.xml"
+    - "!junit.xml"
+    - "!**/__pycache__/**"
+    - "!.ruff_cache/**"
+    - "!.pytest_cache/**"
+    - "!docs/**"
+    - "!configs/**"
+    - "!NIRCam_pipeline/**"
+    - "!examples/**"
+    - "!data/**"
+    - "!*.sif"
+    - "!*.pdf"
+
+  path_instructions:
+    - path: "galfind/**/*.py"
+      instructions: >
+        This is the core galfind pipeline (photometry, SED fitting,
+        selection, imaging). Flag correctness issues around numpy dtype
+        handling (this project targets numpy>=2.0 and has previously hit
+        bugs from np.float64 stringification), unit handling with
+        astropy.units, and any place external tool output (SExtractor,
+        EAZY, LePhare) is parsed or shelled out to. Prefer flagging silent
+        failures (broad except, dead hasattr checks) over style nits.
+    - path: "testing/**/*.py"
+      instructions: >
+        Pytest suite. Check fixture scope/ordering assumptions (several
+        fixtures are session-scoped and share mutable state), correct use
+        of the `requires_data`, `slow`, `instrument`, and `lephare`
+        markers, and that new tests requiring real data are marked
+        `requires_data` so CI collection stays correct.
+    - path: ".github/workflows/**"
+      instructions: >
+        CI workflow. Pay attention to cache keys/paths and any hardcoded
+        paths that must match what the code under test actually expects
+        at runtime (e.g. STPSF_PATH), since mismatches here fail silently
+        rather than erroring.
+
+  tools:
+    ruff:
+      enabled: true
+
+chat:
+  auto_reply: true

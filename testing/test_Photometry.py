@@ -5,6 +5,13 @@ import pytest
 from galfind.photometry.Photometry import Mock_Photometry, Photometry
 from galfind.photometry.Photometry_obs import Photometry_obs
 from galfind.photometry.Photometry_rest import Photometry_rest
+from galfind.utils.exceptions import (
+    GalfindTypeError,
+    IncompatibleKwargsError,
+    InvalidUnitError,
+    LengthMismatchError,
+    MissingKeyError,
+)
 
 
 @pytest.mark.requires_data
@@ -86,7 +93,7 @@ class TestPhotometry:
         test_bands,
     ):
         depths_dict = {band: 27.0 * u.ABmag for band in test_bands[:-1]}
-        with pytest.raises(AssertionError):
+        with pytest.raises(MissingKeyError, match="depths dict missing"):
             Photometry(
                 multi_filter_test_bands,
                 simple_flux,
@@ -102,7 +109,7 @@ class TestPhotometry:
         test_bands,
     ):
         bad_depths = np.linspace(27.0, 28.5, len(test_bands)) * u.mag
-        with pytest.raises(AssertionError):
+        with pytest.raises(InvalidUnitError, match="ABmag"):
             Photometry(
                 multi_filter_test_bands,
                 simple_flux,
@@ -114,7 +121,7 @@ class TestPhotometry:
         self, multi_filter_test_bands, simple_flux_errs, simple_depths
     ):
         bad_flux = np.array([1.0, 2.0]) * u.uJy
-        with pytest.raises(AssertionError):
+        with pytest.raises(LengthMismatchError, match="flux"):
             Photometry(
                 multi_filter_test_bands,
                 bad_flux,
@@ -127,6 +134,10 @@ class TestPhotometry:
         assert isinstance(single, Photometry)
         assert len(single) == 1
 
+    def test_getitem_invalid_type_raises(self, simple_phot):
+        with pytest.raises(GalfindTypeError, match="__getitem__"):
+            simple_phot[3.5]
+
     def test_getitem_str(self, simple_phot, test_bands):
         single = simple_phot[test_bands[0]]
         assert len(single) == 1
@@ -137,11 +148,29 @@ class TestPhotometry:
         scattered = simple_phot.scatter_fluxes(n_scatter=3)
         assert scattered.shape == (3, len(test_bands))
 
+    def test_plot_log_scale_abmag_raises(self, simple_phot):
+        with pytest.raises(IncompatibleKwargsError, match="log_scale"):
+            simple_phot.plot(mag_units=u.ABmag, log_scale=True)
+
     def test_scatter_single(self, simple_phot):
         np.random.seed(0)
         scattered_phot = simple_phot.scatter(n_scatter=1)
         assert isinstance(scattered_phot, Photometry)
         assert len(scattered_phot) == len(simple_phot)
+
+    def test_scatter_fluxes_abmag_raises(
+        self, multi_filter_test_bands, simple_depths, test_bands
+    ):
+        abmag_flux = np.linspace(27.0, 28.0, len(test_bands)) * u.ABmag
+        abmag_flux_errs = np.full(len(test_bands), 0.1) * u.ABmag
+        phot = Photometry(
+            multi_filter_test_bands,
+            abmag_flux,
+            abmag_flux_errs,
+            simple_depths,
+        )
+        with pytest.raises(InvalidUnitError, match="ABmag"):
+            phot.scatter_fluxes()
 
 
 class TestMockPhotometry:
@@ -165,7 +194,7 @@ class TestMockPhotometry:
         self, multi_filter_test_bands, simple_flux
     ):
         bad_depths = np.array([27.0, 28.0]) * u.ABmag
-        with pytest.raises(AssertionError):
+        with pytest.raises(LengthMismatchError, match="flux"):
             Mock_Photometry(
                 multi_filter_test_bands,
                 simple_flux,
@@ -215,6 +244,42 @@ class TestPhotometryObs:
         )
         assert "Photometry_obs" in repr(phot_obs)
         assert str(aper_diams[0]) in repr(phot_obs)
+
+    def test_psfs_length_mismatch_raises(
+        self,
+        multi_filter_test_bands,
+        simple_flux,
+        simple_flux_errs,
+        simple_depths,
+        aper_diams,
+    ):
+        with pytest.raises(LengthMismatchError, match="psfs"):
+            Photometry_obs(
+                multi_filter_test_bands,
+                simple_flux,
+                simple_flux_errs,
+                simple_depths,
+                aper_diams[0],
+                psfs=[None, None],
+            )
+
+    def test_psfs_invalid_type_raises(
+        self,
+        multi_filter_test_bands,
+        simple_flux,
+        simple_flux_errs,
+        simple_depths,
+        aper_diams,
+    ):
+        with pytest.raises(GalfindTypeError, match="psfs"):
+            Photometry_obs(
+                multi_filter_test_bands,
+                simple_flux,
+                simple_flux_errs,
+                simple_depths,
+                aper_diams[0],
+                psfs="not a valid psfs value",
+            )
 
 
 class TestPhotometryRestFromPhot:

@@ -68,6 +68,14 @@ from ..imaging.Data import Band_Data, Stacked_Band_Data
 from ..imaging.Filter import Filter
 from ..utils import Depths
 from ..utils import useful_funcs_austind as funcs
+from ..utils.exceptions import (
+    GalfindTypeError,
+    InvalidOptionError,
+    LengthMismatchError,
+    MissingFileError,
+    MissingKeyError,
+    RangeError,
+)
 
 
 class Cutout_Base(ABC):
@@ -155,7 +163,11 @@ class Cutout_Base(ABC):
             for plot_region in plot_regions:
                 skip_region = False
                 if isinstance(plot_region, dict):
-                    assert "aper_diam" in plot_region.keys()
+                    if "aper_diam" not in plot_region.keys():
+                        raise MissingKeyError(
+                            f"plot_region={plot_region!r} is missing "
+                            "required key 'aper_diam'."
+                        )
                     pix_scale = (
                         self.meta["SIZE_AS"] * u.arcsec / self.meta["SIZE_PIX"]
                     )
@@ -203,7 +215,12 @@ class Cutout_Base(ABC):
                         .items()
                         if key in kwarg_names
                     }
-                    assert len(blank_kwargs) == len(reg_kwargs)
+                    if len(blank_kwargs) != len(reg_kwargs):
+                        raise LengthMismatchError(
+                            f"len(blank_kwargs)={len(blank_kwargs)} != "
+                            f"len(reg_kwargs)={len(reg_kwargs)} for "
+                            f"plot_region={plot_region!r}."
+                        )
                     added_reg_kwargs = {
                         key: value
                         for key, value in reg_kwargs.items()
@@ -262,9 +279,10 @@ class Band_Cutout_Base(Cutout_Base, ABC):
         band_data: Band_Data,
         cutout_size: u.Quantity,
     ) -> Self:
-        assert Path(cutout_path).is_file(), galfind_logger.critical(
-            f"Cutout path {cutout_path} does not exist!"
-        )
+        if not Path(cutout_path).is_file():
+            raise MissingFileError(
+                f"cutout_path={cutout_path!r} does not exist!"
+            )
         self.cutout_path = cutout_path
         self.band_data = band_data
         self.cutout_size = cutout_size
@@ -372,12 +390,11 @@ class Band_Cutout_Base(Cutout_Base, ABC):
         instr_name: Optional[str],
         data_type: str,
     ) -> str:
-        assert data_type in [
-            "data",
-            "png",
-            "svg",
-            "pdf",
-        ], galfind_logger.critical(f"Invalid {data_type=}")
+        allowed_data_types = ["data", "png", "svg", "pdf"]
+        if data_type not in allowed_data_types:
+            raise InvalidOptionError(
+                f"data_type={data_type!r} not in {allowed_data_types}."
+            )
         if data_type == "data":
             ext = ".fits"
         elif data_type == "png":
@@ -568,10 +585,12 @@ class Band_Cutout_Base(Cutout_Base, ABC):
             # colour by unique values set to be between 0 and 1 to
             # increase the imshow contrast
             unique_ids = np.unique(cutout_data.copy())
-            assert unique_ids[0] == 0, galfind_logger.warning(
-                "Unique IDs in SEG cutout should start at 0, "
-                + f"but got {unique_ids[0]}!"
-            )
+            if unique_ids[0] != 0:
+                raise RangeError(
+                    "Unique IDs in SEG cutout should start at 0, "
+                    f"but got unique_ids[0]={unique_ids[0]}!",
+                    log_level="warning",
+                )
             mapping = {
                 uid: i / (len(unique_ids) - 1)
                 for i, uid in enumerate(unique_ids)
@@ -615,22 +634,27 @@ class Band_Cutout_Base(Cutout_Base, ABC):
             for key, scalebar_kwargs in scalebars.items():
                 plot_scalebar = True
                 if key == "angular":
-                    assert all(
-                        [
-                            key in scalebar_kwargs.keys()
-                            for key in ["as_length"]
-                        ]
-                    )
+                    if "as_length" not in scalebar_kwargs.keys():
+                        raise MissingKeyError(
+                            f"scalebar_kwargs={scalebar_kwargs!r} for "
+                            "'angular' scalebar missing required key "
+                            "'as_length'."
+                        )
                     size = scalebar_kwargs["as_length"] / pix_scale.value
                     label = f'{str(scalebar_kwargs["as_length"]):.1f}"'
                     [scalebar_kwargs.pop(key) for key in ["as_length"]]
                 elif key == "physical":
-                    assert all(
-                        [
-                            key in scalebar_kwargs.keys()
-                            for key in ["z", "pix_length"]
-                        ]
-                    )
+                    missing_keys = [
+                        key_
+                        for key_ in ["z", "pix_length"]
+                        if key_ not in scalebar_kwargs.keys()
+                    ]
+                    if len(missing_keys) > 0:
+                        raise MissingKeyError(
+                            f"scalebar_kwargs={scalebar_kwargs!r} for "
+                            f"'physical' scalebar missing required keys "
+                            f"{missing_keys}."
+                        )
                     d_A = astropy_cosmo.angular_diameter_distance(
                         scalebar_kwargs["z"]
                     )
@@ -647,7 +671,11 @@ class Band_Cutout_Base(Cutout_Base, ABC):
                     galfind_logger.warning(f"Invalid scalebar key: {key}")
 
                 if plot_scalebar:
-                    assert "loc" in scalebar_kwargs.keys()
+                    if "loc" not in scalebar_kwargs.keys():
+                        raise MissingKeyError(
+                            f"scalebar_kwargs={scalebar_kwargs!r} missing "
+                            "required key 'loc'."
+                        )
                     scalebar = AnchoredSizeBar(
                         ax.transData, size, label, **scalebar_kwargs
                     )
@@ -969,12 +997,12 @@ class Band_Cutout(Band_Cutout_Base):
         if isinstance(band_data_base, Band_Data):
             filt = band_data_base.filt
         else:
-            assert isinstance(
-                band_data_base, Stacked_Band_Data
-            ), galfind_logger.critical(
-                "band_data_base must be Band_Data or "
-                + f"Stacked_Band_Data, not {type(band_data_base)=}"
-            )
+            if not isinstance(band_data_base, Stacked_Band_Data):
+                raise GalfindTypeError(
+                    f"band_data_base={band_data_base!r} has type "
+                    f"{type(band_data_base).__name__}; must be Band_Data "
+                    "or Stacked_Band_Data."
+                )
             filt = band_data_base.filterset
         new_band_data = band_data_base.__class__(
             filt,
@@ -1007,9 +1035,9 @@ class Band_Cutout(Band_Cutout_Base):
         # make an RGB if all
         # ensure all cutout filters are the same
         if not all([cutout.filt == self.filt for cutout in other]):
-            raise ValueError(
+            raise LengthMismatchError(
                 "All cutouts must have the same filter as "
-                + f"{repr(self.filter)=}"
+                f"self.filt={self.filt!r}."
             )
 
 
@@ -1176,15 +1204,23 @@ class Stacked_Band_Cutout(Band_Cutout_Base):
             The stacked cutout.
         """
         # ensure all cutouts are from the same filter
-        assert all(
+        if not all(
             [cutout.filt_name == cutouts[0].filt_name for cutout in cutouts]
-        )
-        assert all(
+        ):
+            raise LengthMismatchError(
+                "All cutouts must have the same filt_name as "
+                f"cutouts[0].filt_name={cutouts[0].filt_name!r}."
+            )
+        if not all(
             [
                 cutout.cutout_size == cutouts[0].cutout_size
                 for cutout in cutouts
             ]
-        )
+        ):
+            raise LengthMismatchError(
+                "All cutouts must have the same cutout_size as "
+                f"cutouts[0].cutout_size={cutouts[0].cutout_size!r}."
+            )
         # stack cutouts if they have not been already
         cls._stack_cutouts(cutouts, save_path, overwrite=overwrite)
         band_data = cls._update_band_data(
@@ -1200,17 +1236,19 @@ class Stacked_Band_Cutout(Band_Cutout_Base):
     ) -> NoReturn:
         if not Path(save_path).is_file() or overwrite:
             # ensure all band data images have the same ZP
-            assert all(
+            if not all(
                 cutout.band_data.ZP == cutouts[0].band_data.ZP
                 for cutout in cutouts
-            ), galfind_logger.critical("All cutout ZPs must be the same!")
+            ):
+                raise LengthMismatchError("All cutout ZPs must be the same!")
             # ensure all band data images have the same pixel scale
-            assert all(
+            if not all(
                 cutout.band_data.pix_scale == cutouts[0].band_data.pix_scale
                 for cutout in cutouts
-            ), galfind_logger.critical(
-                "All image pixel scales must be the same!"
-            )
+            ):
+                raise LengthMismatchError(
+                    "All image pixel scales must be the same!"
+                )
             # stack band data SCI/ERR/WHT images (inverse variance weighted)
             surveys_versions = np.unique(
                 [
@@ -1334,18 +1372,24 @@ class RGB_Base(Cutout_Base, ABC):
         cutouts: Dict[str, List[Type[Band_Cutout_Base]]],
     ) -> Self:
         # ensure cutouts have ['B', 'G', 'R'] keys
-        assert all(
+        if not all(
             colour in list(cutouts.keys()) for colour in ["B", "G", "R"]
-        ), galfind_logger.critical(
-            f"['B', 'G', 'R'], not {list(cutouts.keys())=}"
-        )
+        ):
+            raise MissingKeyError(
+                f"cutouts={list(cutouts.keys())!r} is missing one or more "
+                "of the required keys ['B', 'G', 'R']."
+            )
         # ensure all cutouts are from different filters
         cutout_filt_names = [
             cutout.band_data.filt_name
             for colour in ["B", "G", "R"]
             for cutout in cutouts[colour]
         ]
-        assert len(np.unique(cutout_filt_names)) == len(cutout_filt_names)
+        if len(np.unique(cutout_filt_names)) != len(cutout_filt_names):
+            raise LengthMismatchError(
+                "All cutouts across RGB channels must be from different "
+                f"filters; got cutout_filt_names={cutout_filt_names!r}."
+            )
         self.cutouts = cutouts
 
     def __len__(self) -> int:
@@ -1365,9 +1409,11 @@ class RGB_Base(Cutout_Base, ABC):
                 for col in ["B", "G", "R"]
                 if i in [cutout.filt.filt_name for cutout in self[col]]
             ]
-            assert len(colour) == 1, galfind_logger.critical(
-                f"band={i} in != 1 of ['B', 'G', 'R']"
-            )
+            if len(colour) != 1:
+                raise LengthMismatchError(
+                    f"band={i!r} found in {len(colour)} of ['B', 'G', "
+                    "'R'] channels; must be in exactly 1."
+                )
             return self.cutouts[colour][i]
 
     def __copy__(self) -> Self:
@@ -1401,7 +1447,11 @@ class RGB_Base(Cutout_Base, ABC):
                 [val for val in self.cutouts.values()]
             ).flatten()
         ]
-        assert all([ID == ID_list[0] for ID in ID_list])
+        if not all([ID == ID_list[0] for ID in ID_list]):
+            raise LengthMismatchError(
+                f"All cutouts making up the RGB image must share the same "
+                f"ID; got ID_list={ID_list!r}."
+            )
         return ID_list[0]
 
     @property
@@ -1413,7 +1463,11 @@ class RGB_Base(Cutout_Base, ABC):
                 [val for val in self.cutouts.values()]
             ).flatten()
         ]
-        assert all([survey == survey_list[0] for survey in survey_list])
+        if not all([survey == survey_list[0] for survey in survey_list]):
+            raise LengthMismatchError(
+                "All cutouts making up the RGB image must share the same "
+                f"survey; got survey_list={survey_list!r}."
+            )
         return survey_list[0]
 
     @property
@@ -1426,7 +1480,11 @@ class RGB_Base(Cutout_Base, ABC):
                 [val for val in self.cutouts.values()]
             ).flatten()
         ]
-        assert all([version == version_list[0] for version in version_list])
+        if not all([version == version_list[0] for version in version_list]):
+            raise LengthMismatchError(
+                "All cutouts making up the RGB image must share the same "
+                f"version; got version_list={version_list!r}."
+            )
         return version_list[0]
 
     @property
@@ -1439,12 +1497,16 @@ class RGB_Base(Cutout_Base, ABC):
                 [val for val in self.cutouts.values()]
             ).flatten()
         ]
-        assert all(
+        if not all(
             [
                 cutout_size == cutout_size_list[0]
                 for cutout_size in cutout_size_list
             ]
-        )
+        ):
+            raise LengthMismatchError(
+                "All cutouts making up the RGB image must share the same "
+                f"cutout_size; got cutout_size_list={cutout_size_list!r}."
+            )
         return cutout_size_list[0]
 
     @property
@@ -1519,7 +1581,10 @@ class RGB_Base(Cutout_Base, ABC):
         `list` of `str`
             Names of the filters combined into `colour`.
         """
-        assert colour in ["B", "G", "R"]
+        if colour not in ["B", "G", "R"]:
+            raise InvalidOptionError(
+                f"colour={colour!r} not in ['B', 'G', 'R']."
+            )
         return [cutout.band_data.filt.filt_name for cutout in self[colour]]
 
     def _get_save_path(self: Self) -> str:
@@ -1562,7 +1627,11 @@ class RGB_Base(Cutout_Base, ABC):
             Cutout data for the specified filter; either a tuple of
             ``(header, data)`` or a dictionary of such tuples.
         """
-        assert filt_name in self.filt_names
+        if filt_name not in self.filt_names:
+            raise InvalidOptionError(
+                f"filt_name={filt_name!r} not in self.filt_names="
+                f"{self.filt_names!r}."
+            )
         return self[filt_name].load(hdu_name)
 
     def plot(
@@ -1827,9 +1896,10 @@ class RGB(RGB_Base):
             for key, val in rgb_bands.items()
             if key in ["B", "G", "R"]
         }
-        assert gal.survey == data.survey, galfind_logger.critical(
-            f"{gal.survey=}!={data.survey=}!"
-        )
+        if gal.survey != data.survey:
+            raise LengthMismatchError(
+                f"gal.survey={gal.survey!r} != data.survey={data.survey!r}."
+            )
         # make a cutout for each filter
         cutouts = {
             colour: [
@@ -1890,7 +1960,11 @@ class RGB(RGB_Base):
                 [val for val in self.cutouts.values()]
             ).flatten()
         ]
-        assert all([ID == ID_list[0] for ID in ID_list])
+        if not all([ID == ID_list[0] for ID in ID_list]):
+            raise LengthMismatchError(
+                f"All cutouts in the RGB must share the same ID; got "
+                f"ID_list={ID_list!r}."
+            )
         return ID_list[0]
 
     @property
@@ -1910,9 +1984,10 @@ class RGB(RGB_Base):
                 ).flatten()
             ]
         )
-        assert len(surveys) == 1, galfind_logger.critical(
-            f"Multiple surveys found in RGB cutout: {surveys}"
-        )
+        if len(surveys) != 1:
+            raise LengthMismatchError(
+                f"Multiple surveys found in RGB cutout: {surveys!r}."
+            )
         return surveys[0]
 
 
@@ -2063,9 +2138,13 @@ class Multiple_Cutout_Base(ABC):
         `astropy.units.Quantity`
             Size of the cutout (same for all cutouts).
         """
-        assert all(
+        if not all(
             [cutout.cutout_size == self[0].cutout_size for cutout in self]
-        )
+        ):
+            raise LengthMismatchError(
+                "All cutouts must share the same cutout_size as "
+                f"self[0].cutout_size={self[0].cutout_size!r}."
+            )
         return self[0].cutout_size
 
     @property
@@ -2077,7 +2156,11 @@ class Multiple_Cutout_Base(ABC):
         `str`
             Survey name (same for all cutouts).
         """
-        assert all([cutout.survey == self[0].survey for cutout in self])
+        if not all([cutout.survey == self[0].survey for cutout in self]):
+            raise LengthMismatchError(
+                "All cutouts must share the same survey as "
+                f"self[0].survey={self[0].survey!r}."
+            )
         return self[0].survey
 
     @property
@@ -2089,7 +2172,11 @@ class Multiple_Cutout_Base(ABC):
         `str`
             Version identifier (same for all cutouts).
         """
-        assert all([cutout.version == self[0].version for cutout in self])
+        if not all([cutout.version == self[0].version for cutout in self]):
+            raise LengthMismatchError(
+                "All cutouts must share the same version as "
+                f"self[0].version={self[0].version!r}."
+            )
         return self[0].version
 
     @property
@@ -2101,9 +2188,13 @@ class Multiple_Cutout_Base(ABC):
         `str`
             Instrument identifier (same for all cutouts).
         """
-        assert all(
+        if not all(
             [cutout.instr_name == self[0].instr_name for cutout in self]
-        )
+        ):
+            raise LengthMismatchError(
+                "All cutouts must share the same instr_name as "
+                f"self[0].instr_name={self[0].instr_name!r}."
+            )
         return self[0].instr_name
 
     # @property
@@ -2205,7 +2296,8 @@ class Multiple_Cutout_Base(ABC):
         `list` of [`matplotlib.figure.Figure`, `numpy.ndarray`]
             The figure and axes used for plotting.
         """
-        assert n_rows > 0
+        if n_rows <= 0:
+            raise RangeError(f"n_rows={n_rows} must be > 0.")
         if n_rows > len(self):
             n_y = len(self)
         else:
@@ -2274,7 +2366,10 @@ class Multiple_Cutout_Base(ABC):
 
         if scalebars == []:
             scalebars = list(itertools.repeat([], len(self)))
-        assert len(scalebars) == len(self)
+        if len(scalebars) != len(self):
+            raise LengthMismatchError(
+                f"len(scalebars)={len(scalebars)} != len(self)={len(self)}."
+            )
         # get shared attributes
         attrs = ["survey", "ID", "filt_name"]
         shared_attrs = {
@@ -2500,7 +2595,11 @@ class Multiple_Band_Cutout(Multiple_Cutout_Base):
         `str`
             ID of the galaxy or object.
         """
-        assert all([cutout.ID == self[0].ID for cutout in self])
+        if not all([cutout.ID == self[0].ID for cutout in self]):
+            raise LengthMismatchError(
+                "All cutouts must share the same ID as "
+                f"self[0].ID={self[0].ID!r}."
+            )
         return self[0].ID
 
     def _get_save_path(self: Self) -> str:
@@ -2621,9 +2720,13 @@ class Catalogue_Cutouts(Multiple_Cutout_Base):
         `str`
             Instrument identifier (same for all cutouts).
         """
-        assert all(
+        if not all(
             [cutout.instr_name == self[0].instr_name for cutout in self]
-        )
+        ):
+            raise LengthMismatchError(
+                "All cutouts must share the same instr_name as "
+                f"self[0].instr_name={self[0].instr_name!r}."
+            )
         return self[0].instr_name
 
     def _get_save_path(self: Self) -> str:
@@ -2851,9 +2954,8 @@ class Multiple_RGB(Multiple_Cutout_Base):
             cutouts).
         """
         rgb_bands = self[0].rgb_bands
-        assert all(
-            [cutout.rgb_bands == rgb_bands for cutout in self]
-        ), galfind_logger.critical("All cutout rgb_bands must be the same!")
+        if not all([cutout.rgb_bands == rgb_bands for cutout in self]):
+            raise LengthMismatchError("All cutout rgb_bands must be the same!")
         return rgb_bands
 
     def _get_save_path(self: Self) -> str:

@@ -33,6 +33,12 @@ from .. import galfind_logger
 from ..photometry.Photometry import Multiple_Photometry
 from ..photometry.Photometry_rest import Photometry_rest
 from ..utils import useful_funcs_austind as funcs
+from ..utils.exceptions import (
+    GalfindError,
+    IncompatibleKwargsError,
+    LengthMismatchError,
+    MissingKeyError,
+)
 
 
 class SED_result:
@@ -579,13 +585,36 @@ class Catalogue_SED_results:
         -------
         `Catalogue_SED_results`
             SED results for all galaxies.
+
+        Raises
+        ------
+        MissingKeyError
+            If any entry of `SED_fit_params_arr` is missing the required
+            ``"code"`` key.
+        LengthMismatchError
+            If `SED_fit_cats` and `SED_fit_params_arr` have different
+            lengths.
+        IncompatibleKwargsError
+            If neither `phot_arr` alone, nor `instrument` AND `phot_cat`
+            AND `cat_creator` together, are given.
         """
         # input assertions
-        assert all(
-            True if "code" in SED_fit_params else False
-            for SED_fit_params in SED_fit_params_arr
-        )
-        assert len(SED_fit_cats) == len(SED_fit_params_arr)
+        missing_code_indices = [
+            i
+            for i, SED_fit_params in enumerate(SED_fit_params_arr)
+            if "code" not in SED_fit_params
+        ]
+        if missing_code_indices:
+            raise MissingKeyError(
+                "SED_fit_params_arr entries at indices "
+                f"{missing_code_indices} are missing the required "
+                "'code' key."
+            )
+        if len(SED_fit_cats) != len(SED_fit_params_arr):
+            raise LengthMismatchError(
+                f"len(SED_fit_cats)={len(SED_fit_cats)} != "
+                f"len(SED_fit_params_arr)={len(SED_fit_params_arr)}."
+            )
 
         # calculate array of galaxy photometries if required
         if (
@@ -606,9 +635,10 @@ class Catalogue_SED_results:
         ):
             pass
         else:
-            galfind_logger.critical(
-                "Must specify either phot or instrument AND phot_cat "
-                "AND cat_creator in Galaxy_SED_results!"
+            raise IncompatibleKwargsError(
+                "Must specify either 'phot_arr' alone, or 'instrument' "
+                "AND 'phot_cat' AND 'cat_creator' together, in "
+                "Catalogue_SED_results.from_fits_cat()."
             )
 
         if timed:
@@ -635,19 +665,20 @@ class Catalogue_SED_results:
         galfind_logger.warning(
             "Photometric IDs required in SED_result.from_fits_cat()"
         )
-        assert all(
-            len(IDs) == len(phot_arr) for IDs in IDs_arr
-        ), galfind_logger.critical(
-            f"Not all catalogues in {SED_fit_params_arr=} have the "
-            f"same length as phot_cat. "
-            f"{[len(IDs) for IDs in IDs_arr]=} != {len(phot_arr)=}"
-        )
-        assert all(
+        if not all(len(IDs) == len(phot_arr) for IDs in IDs_arr):
+            raise LengthMismatchError(
+                "Not all catalogues in SED_fit_params_arr have the same "
+                f"length as phot_arr: "
+                f"{[len(IDs) for IDs in IDs_arr]} != {len(phot_arr)}."
+            )
+        if not all(
             all(IDs[i] == IDs_arr[0][i] for i in range(len(IDs)))
             for IDs in IDs_arr
-        ), galfind_logger.critical(
-            f"Not all catalogues in {SED_fit_params_arr=} have the same IDs!"
-        )
+        ):
+            raise GalfindError(
+                "Not all catalogues in SED_fit_params_arr have the "
+                f"same IDs: {[list(IDs) for IDs in IDs_arr]}."
+            )
         IDs = IDs_arr[0]
 
         # convert cat_properties from array of len(SED_fit_params_arr),
@@ -711,13 +742,19 @@ class Catalogue_SED_results:
             for SED_fit_params in SED_fit_params_arr
         ]
         # ensure that all errors have an associated property
-        assert all(
-            err_key in labels.keys()
+        missing_err_keys = [
+            err_key
             for labels, SED_fit_params in zip(labels_arr, SED_fit_params_arr)
             for err_key in SED_fit_params[
                 "code"
             ].galaxy_property_errs_dict.keys()
-        )
+            if err_key not in labels.keys()
+        ]
+        if missing_err_keys:
+            raise MissingKeyError(
+                f"Property error keys {missing_err_keys} have no "
+                "corresponding entry in the galaxy property labels."
+            )
         adjust_errs_arr = [
             SED_fit_params["code"].are_errs_percentiles
             for SED_fit_params in SED_fit_params_arr
@@ -772,7 +809,11 @@ class Catalogue_SED_results:
             start_1 = time.time()
 
         if cat_PDF_paths is not None:
-            assert len(SED_fit_params_arr) == len(cat_PDF_paths)
+            if len(SED_fit_params_arr) != len(cat_PDF_paths):
+                raise LengthMismatchError(
+                    f"len(SED_fit_params_arr)={len(SED_fit_params_arr)} "
+                    f"!= len(cat_PDF_paths)={len(cat_PDF_paths)}."
+                )
             cat_property_PDFs = np.full(
                 (len(IDs), len(SED_fit_params_arr)), None
             )
@@ -783,10 +824,18 @@ class Catalogue_SED_results:
                 # total = len(SED_fit_params_arr),
                 # desc = "Constructing galaxy property PDFs"):
                 # check that these paths correspond to the correct galaxies
-                assert (
+                # NOTE: condition is a generator, which is always truthy;
+                # preserved as-is (was a no-op under the old bare
+                # `assert (generator)`) rather than silently changed to
+                # `all(...)`, which would alter runtime behaviour.
+                if not (
                     len(PDF_paths[gal_property]) == len(IDs)
                     for gal_property in PDF_paths.keys()
-                )
+                ):
+                    raise LengthMismatchError(
+                        "PDF_paths entries must have the same length as "
+                        "IDs for every gal_property."
+                    )
                 # construct PDF objects, type = array of len(fits_cat),
                 # each element a dict of {gal_property: PDF object}
                 # excluding None PDFs
@@ -821,7 +870,11 @@ class Catalogue_SED_results:
             start = time.time()
 
         if cat_SED_paths is not None:
-            assert len(SED_fit_params_arr) == len(cat_SED_paths)
+            if len(SED_fit_params_arr) != len(cat_SED_paths):
+                raise LengthMismatchError(
+                    f"len(SED_fit_params_arr)={len(SED_fit_params_arr)} "
+                    f"!= len(cat_SED_paths)={len(cat_SED_paths)}."
+                )
             cat_SEDs = np.full((len(IDs), len(SED_fit_params_arr)), None)
             # loop through SED_fit_params_arr and corresponding cat_SED_paths
             for i, (SED_fit_params, SED_paths) in enumerate(
@@ -829,12 +882,20 @@ class Catalogue_SED_results:
             ):  # tqdm(, total = len(SED_fit_params_arr),
                 # desc = "Constructing galaxy SEDs"):
                 # check that these paths correspond to the correct galaxies
-                assert (
+                # NOTE: condition is a generator, which is always truthy;
+                # preserved as-is (was a no-op under the old bare
+                # `assert (generator)`) rather than silently changed to
+                # `all(...)`, which would alter runtime behaviour.
+                if not (
                     len(SED_paths) == len(IDs)
                     for gal_property in SED_fit_params[
                         "code"
                     ].galaxy_property_dict.keys()
-                )
+                ):
+                    raise LengthMismatchError(
+                        "SED_paths must have the same length as IDs for "
+                        "every fitted galaxy property."
+                    )
                 # construct SED objects, type = array of len(fits_cat),
                 # each element containing an SED object
                 cat_SEDs[:, i] = SED_fit_params["code"].extract_SEDs(
@@ -893,6 +954,13 @@ class Catalogue_SED_results:
         -------
         `Catalogue_SED_results`
             SED results for all galaxies and codes.
+
+        Raises
+        ------
+        LengthMismatchError
+            If the freshly-constructed placeholder array for missing
+            `cat_property_PDFs` or `cat_SEDs` does not have the same
+            shape as `cat_properties`.
         """
         # if not loaded, construct appropriately shaped None arrays
         if cat_property_PDFs is None:
@@ -905,7 +973,12 @@ class Catalogue_SED_results:
                     )
                 )
             )
-            assert out_shape == cat_property_PDFs_.shape
+            if out_shape != cat_property_PDFs_.shape:
+                raise LengthMismatchError(
+                    f"Constructed cat_property_PDFs_ shape "
+                    f"{cat_property_PDFs_.shape} != expected shape "
+                    f"{out_shape}."
+                )
         else:
             cat_property_PDFs_ = cat_property_PDFs
         if cat_SEDs is None:
@@ -918,7 +991,11 @@ class Catalogue_SED_results:
                     )
                 )
             )
-            assert out_shape == cat_SEDs_.shape
+            if out_shape != cat_SEDs_.shape:
+                raise LengthMismatchError(
+                    f"Constructed cat_SEDs_ shape {cat_SEDs_.shape} != "
+                    f"expected shape {out_shape}."
+                )
         else:
             cat_SEDs_ = cat_SEDs
 

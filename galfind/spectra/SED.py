@@ -29,6 +29,15 @@ if TYPE_CHECKING:
 from .. import astropy_cosmo, config, galfind_logger
 from ..photometry.Photometry import Mock_Photometry
 from ..utils import useful_funcs_austind as funcs
+from ..utils.exceptions import (
+    GalfindTypeError,
+    InvalidOptionError,
+    InvalidUnitError,
+    LengthMismatchError,
+    MissingDataError,
+    MissingKeyError,
+    RangeError,
+)
 from . import IGM_attenuation
 from .Emission_lines import line_diagnostics
 
@@ -136,7 +145,7 @@ class SED:
 
         Raises
         ------
-        Exception
+        InvalidUnitError
             If `units` is not `ABmag` and does not have a recognised
             spectral flux density physical type.
         """
@@ -183,12 +192,10 @@ class SED:
             # mags = self.mags.to(units, equivalencies =
             # u.spectral_density(self.wavs))
         else:
-            raise (
-                Exception(
-                    "Units must be either ABmag or have physical units "
-                    "of 'spectral flux density' or 'power "
-                    "density/spectral flux density wav'!"
-                )
+            raise InvalidUnitError(
+                f"units={units!r} must be either ABmag or have physical "
+                "type 'spectral flux density' or 'power density/spectral "
+                "flux density wav'."
             )
         if update:
             self.mags = mags
@@ -384,7 +391,7 @@ class SED:
 
         Raises
         ------
-        Exception
+        GalfindTypeError
             If called on an SED whose class name does not contain
             `"rest"` or `"obs"`.
         """
@@ -402,11 +409,9 @@ class SED:
             )
             cont_lims = line_diagnostics[line_name]["cont_wavs"] * (1 + self.z)
         else:
-            raise (
-                Exception(
-                    "Attempted EW calculation in a class not "
-                    "containing 'rest' or 'obs' in the class name!"
-                )
+            raise GalfindTypeError(
+                f"Attempted EW calculation on {type(self).__name__}, "
+                "whose class name does not contain 'rest' or 'obs'."
             )
         # mask everything but the line of interest
         feature_mask = (wavs_AA > line_lims[0].to(u.AA)) & (
@@ -807,11 +812,21 @@ class SED_obs(SED):
 
         Raises
         ------
-        AssertionError
-            If `filters` is not a list/array of length 2.
+        GalfindTypeError
+            If `filters` is not a `list` or `numpy.array`.
+        LengthMismatchError
+            If `filters` does not have length 2.
         """
-        assert type(filters) in [np.array, list]
-        assert len(filters) == 2
+        if type(filters) not in [np.array, list]:
+            raise GalfindTypeError(
+                f"filters has type {type(filters).__name__}; must be a "
+                "list or numpy.array."
+            )
+        if len(filters) != 2:
+            raise LengthMismatchError(
+                f"filters={filters!r} has length {len(filters)}; must "
+                "have length 2."
+            )
         if isinstance(depths, dict):
             depths = [depth for (band, depth) in depths.items()]
         if (
@@ -888,12 +903,14 @@ class SED_obs(SED):
 
         Raises
         ------
-        AssertionError
+        RangeError
             If `wav_range[0]` is not less than `wav_range[1]`.
         """
-        assert wav_range[0] < wav_range[1], galfind_logger.critical(
-            f"{wav_range[0]=}!<{wav_range[1]=}"
-        )
+        if not wav_range[0] < wav_range[1]:
+            raise RangeError(
+                f"wav_range[0]={wav_range[0]!r} must be less than "
+                f"wav_range[1]={wav_range[1]!r}."
+            )
         # create tophat filter in rest frame
         from ..imaging.Filter import Tophat_Filter
 
@@ -1121,7 +1138,7 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
 
         Raises
         ------
-        Exception
+        InvalidOptionError
             If `code_name` is not `"EAZY"` or `"Bagpipes"`.
         """
         if code_name == "EAZY":
@@ -1131,11 +1148,9 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
         elif code_name == "Bagpipes":
             return cls.load_pipes_in_template()
         else:
-            raise (
-                Exception(
-                    "Rest frame template load in currently "
-                    f"unavailable for code_name = {code_name}"
-                )
+            raise InvalidOptionError(
+                f"code_name={code_name!r} not in ['EAZY', 'Bagpipes']; "
+                "rest frame template load currently unavailable."
             )
 
     @classmethod
@@ -1316,11 +1331,15 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
 
         Raises
         ------
-        AssertionError
+        GalfindTypeError
             If `m_UV` is not `None` and not a `Quantity`/`Magnitude`.
         """
         if m_UV is not None:
-            assert type(m_UV) in [u.Quantity, u.Magnitude]
+            if type(m_UV) not in [u.Quantity, u.Magnitude]:
+                raise GalfindTypeError(
+                    f"m_UV has type {type(m_UV).__name__}; must be a "
+                    "Quantity or Magnitude."
+                )
             norm = (
                 funcs.convert_mag_units(1_500.0 * u.AA, m_UV, u.Jy).value
                 / funcs.convert_mag_units(self.wavs, self.mags, u.Jy).value[
@@ -1352,13 +1371,26 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
 
         Raises
         ------
-        AssertionError
-            If `wav` is not a `Quantity` with physical type 'length', or
-            `mag` is not a `Quantity`/`Magnitude`.
+        GalfindTypeError
+            If `wav` is not a `Quantity`, or `mag` is not a
+            `Quantity`/`Magnitude`.
+        InvalidUnitError
+            If `wav` does not have physical type 'length'.
         """
-        assert isinstance(wav, u.Quantity)
-        assert isinstance(mag, (u.Quantity, u.Magnitude))
-        assert u.get_physical_type(wav.unit) == "length"
+        if not isinstance(wav, u.Quantity):
+            raise GalfindTypeError(
+                f"wav has type {type(wav).__name__}; must be a Quantity."
+            )
+        if not isinstance(mag, (u.Quantity, u.Magnitude)):
+            raise GalfindTypeError(
+                f"mag has type {type(mag).__name__}; must be a Quantity "
+                "or Magnitude."
+            )
+        if u.get_physical_type(wav.unit) != "length":
+            raise InvalidUnitError(
+                f"wav has physical type "
+                f"{u.get_physical_type(wav.unit)!r}; must be 'length'."
+            )
         norm = (
             funcs.convert_mag_units(wav, mag, u.Jy).value
             / funcs.convert_mag_units(self.wavs, self.mags, u.Jy).value[
@@ -1441,10 +1473,15 @@ class Mock_SED_rest(SED_rest):  # , Mock_SED):
 
         Raises
         ------
-        AssertionError
+        GalfindTypeError
             If `emission_lines` is not a list or `numpy.array`.
         """
-        assert type(emission_lines) in [list, np.array]
+        if type(emission_lines) not in [list, np.array]:
+            raise GalfindTypeError(
+                f"emission_lines has type "
+                f"{type(emission_lines).__name__}; must be a list or "
+                "numpy.array."
+            )
         for emission_line in emission_lines:
             # update units
             self.convert_wav_units(
@@ -1672,7 +1709,7 @@ class Mock_SED_obs(SED_obs):
 
         Raises
         ------
-        Exception
+        GalfindTypeError
             If `IGM` is not an instance of `galfind.IGM_attenuation.IGM`.
         """
         if not hasattr(self, "IGM"):
@@ -1695,8 +1732,9 @@ class Mock_SED_obs(SED_obs):
                 # print("SED has already been attenuated! Ignoring")
                 pass
         else:
-            raise (
-                Exception(f"Could not attenuate by a non IGM object = {IGM}")
+            raise GalfindTypeError(
+                f"IGM={IGM!r} has type {type(IGM).__name__}; must be an "
+                "IGM_attenuation.IGM instance."
             )
 
     def calc_UV_slope(self, output_errs=False, method="Calzetti+94"):
@@ -1747,22 +1785,37 @@ class Mock_SED_obs(SED_obs):
 
         Raises
         ------
-        AssertionError
-            If `colour_name` does not split into exactly two bands, or
-            if the mock photometry fluxes are not in Jy.
+        LengthMismatchError
+            If `colour_name` does not split into exactly two bands.
+        MissingKeyError
+            If either band in `colour_name` is not included in
+            `self.mock_photometry`.
+        InvalidUnitError
+            If the mock photometry fluxes are not in Jy.
+        MissingDataError
+            If `create_mock_photometry` has not been called first.
         """
         if "mock_photometry" in self.__dict__:
             bands = colour_name.split("-")
-            assert len(bands) == 2
+            if len(bands) != 2:
+                raise LengthMismatchError(
+                    f"colour_name={colour_name!r} splits into "
+                    f"{len(bands)} bands; must split into exactly 2."
+                )
             # requires colour to exist in the mock photometry
             for band in bands:
                 if band not in self.mock_photometry.filterset.filt_names:
-                    galfind_logger.critical(
+                    raise MissingKeyError(
                         "self.mock_photometry includes the bands = "
                         f"{self.mock_photometry.filterset.filt_names}, "
                         f"and {band} is not included!"
                     )
-                assert self.mock_photometry[band].flux.unit == u.Jy
+                if self.mock_photometry[band].flux.unit != u.Jy:
+                    raise InvalidUnitError(
+                        f"self.mock_photometry[{band!r}].flux has units "
+                        f"{self.mock_photometry[band].flux.unit!r}; "
+                        "must be Jy."
+                    )
             # calculate colour in mags
             colour = (
                 -2.5
@@ -1779,9 +1832,9 @@ class Mock_SED_obs(SED_obs):
                 self.colours = {colour_name: colour.value}
             return colour.value
         else:
-            galfind_logger.critical(
-                "self.mock_photometry does not exist! Please first "
-                "create photometry from SED template!"
+            raise MissingDataError(
+                f"{repr(self)} does not have mock_photometry; please "
+                "first call create_mock_photometry."
             )
 
     def add_DLA(self, DLA_obj):
@@ -2052,7 +2105,7 @@ class Mock_SED_rest_template_set(Mock_SED_template_set):
 
         Raises
         ------
-        AssertionError
+        InvalidOptionError
             If `bpass_version == "2.2_cloudy"` and `grain_name` or
             `logU` is not a recognised value.
         """
@@ -2073,7 +2126,10 @@ class Mock_SED_rest_template_set(Mock_SED_template_set):
             f"{alpha_enhancement}.{metallicity}.dat",
         }
         if bpass_version == "2.2_cloudy":
-            assert grain_name in ["ng", "gr"]
+            if grain_name not in ["ng", "gr"]:
+                raise InvalidOptionError(
+                    f"grain_name={grain_name!r} not in ['ng', 'gr']."
+                )
             v2_2_model_version = "11" if grain_name == "ng" else "10"
             logU_dict = {
                 -1.0: "a",
@@ -2084,7 +2140,10 @@ class Mock_SED_rest_template_set(Mock_SED_template_set):
                 -3.5: "f",
                 -4.0: "g",
             }
-            assert float(logU) in logU_dict.keys()
+            if float(logU) not in logU_dict.keys():
+                raise InvalidOptionError(
+                    f"logU={logU!r} not in {list(logU_dict.keys())!r}."
+                )
             v2_2_model_version += logU_dict[float(logU)]
             bpass_version_name_dict["2.2_cloudy"] = (
                 f"cloudyspec_{imf}_{metallicity}_{model_type}_v{v2_2_model_version}.sed"
@@ -2324,7 +2383,7 @@ class SED_2D:
 
     Raises
     ------
-    AssertionError
+    GalfindTypeError
         If the SEDs in `SED_arr` are not all of the same class.
     """
 
@@ -2333,10 +2392,11 @@ class SED_2D:
         SED_arr: List[Type[SED]],
     ):
         sed_classes = np.unique([SED.__class__.__name__ for SED in SED_arr])
-        assert len(sed_classes) == 1, galfind_logger.critical(
-            "SED_2D can only be created from a list of SEDs of the "
-            f"same class! Found {sed_classes}."
-        )
+        if len(sed_classes) != 1:
+            raise GalfindTypeError(
+                "SED_2D can only be created from a list of SEDs of the "
+                f"same class! Found {sed_classes!r}."
+            )
         self.SED_arr = SED_arr
 
     def __repr__(self: Self) -> str:
@@ -2382,9 +2442,9 @@ class SED_2D:
         if isinstance(index, int):
             return self.SED_arr[index]
         else:
-            raise TypeError(
-                f"Indexing {self} with {type(index)} is not "
-                "supported! Use an integer index."
+            raise GalfindTypeError(
+                f"Indexing {self} with type {type(index).__name__} is "
+                "not supported! Use an integer index."
             )
 
     @property
@@ -2581,54 +2641,53 @@ class SED_2D:
 
         Raises
         ------
-        AssertionError
-            If the per-draw mock photometry lengths, depths,
-            `min_flux_pc_err`, or flux units are not all identical.
+        LengthMismatchError
+            If the per-draw mock photometry lengths or depths are not
+            all identical.
+        InvalidUnitError
+            If the per-draw mock photometry flux units are not all
+            identical.
         """
         mock_phot_arr = [
             sed.create_mock_photometry(*args, **kwargs) for sed in self.SED_arr
         ]
-        assert all(
-            [
-                len(mock_phot) == len(mock_phot_arr[0])
-                for mock_phot in mock_phot_arr
-            ]
-        ), galfind_logger.critical(
-            f"Mock photometry lengths are not the same for all SEDs in {self}!"
-        )
-        assert all(
-            [
-                all(
-                    [
-                        mock_phot.depths[i] == mock_phot_arr[0].depths[i]
-                        for i in range(len(mock_phot))
-                    ]
-                )
-                for mock_phot in mock_phot_arr
-            ]
-        ), galfind_logger.critical(
-            f"Mock photometry depths are not the same for all SEDs in {self}!"
-        )
-        assert all(
-            [
-                getattr(mock_phot, "min_flux_pc_err")
-                == getattr(mock_phot_arr[0], "min_flux_pc_err")
-                for mock_phot in mock_phot_arr
-            ]
-        ), galfind_logger.critical(
-            f"Mock photometry min_flux_pc_err are not the same for "
-            f"all SEDs in {self}!"
-        )
-        assert all(
-            [
-                getattr(mock_phot, "flux").unit
-                == getattr(mock_phot_arr[0], "flux").unit
-                for mock_phot in mock_phot_arr
-            ]
-        ), galfind_logger.critical(
-            f"Mock photometry flux units are not the same for all "
-            f"SEDs in {self}!"
-        )
+        if not all(
+            len(mock_phot) == len(mock_phot_arr[0])
+            for mock_phot in mock_phot_arr
+        ):
+            raise LengthMismatchError(
+                f"Mock photometry lengths are not the same for all "
+                f"SEDs in {self}!"
+            )
+        if not all(
+            all(
+                mock_phot.depths[i] == mock_phot_arr[0].depths[i]
+                for i in range(len(mock_phot))
+            )
+            for mock_phot in mock_phot_arr
+        ):
+            raise LengthMismatchError(
+                f"Mock photometry depths are not the same for all "
+                f"SEDs in {self}!"
+            )
+        if not all(
+            getattr(mock_phot, "min_flux_pc_err")
+            == getattr(mock_phot_arr[0], "min_flux_pc_err")
+            for mock_phot in mock_phot_arr
+        ):
+            raise LengthMismatchError(
+                f"Mock photometry min_flux_pc_err are not the same for "
+                f"all SEDs in {self}!"
+            )
+        if not all(
+            getattr(mock_phot, "flux").unit
+            == getattr(mock_phot_arr[0], "flux").unit
+            for mock_phot in mock_phot_arr
+        ):
+            raise InvalidUnitError(
+                f"Mock photometry flux units are not the same for all "
+                f"SEDs in {self}!"
+            )
         # weighted stack of the mock photometry fluxes and errors
         mock_phot_fluxes = np.array(
             [mock_phot.flux.value for mock_phot in mock_phot_arr]

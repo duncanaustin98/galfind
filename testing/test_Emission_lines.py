@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 
 from galfind.spectra.Emission_lines import Emission_line, line_diagnostics
+from galfind.utils.exceptions import InvalidOptionError
 
 
 @pytest.fixture(scope="module")
@@ -86,7 +87,7 @@ def test_line_profile_unsupported_voigt_type_raises():
         Doppler_b=100.0 * u.km / u.s,
         voigt_type="unsupported",
     )
-    with pytest.raises(Exception):
+    with pytest.raises(InvalidOptionError, match="unsupported"):
         line.line_profile
 
 

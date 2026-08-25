@@ -19,6 +19,7 @@ from scipy.interpolate import RegularGridInterpolator
 from tqdm import tqdm
 
 from .. import config, galfind_logger, wav_lyman_lim
+from ..utils.exceptions import InvalidOptionError
 from .Emission_lines import wav_lyman_alpha
 
 
@@ -334,7 +335,7 @@ def calc_IGM_transmission(
 
     Raises
     ------
-    Exception
+    InvalidOptionError
         If `prescription` is not ``"Inoue+14"``.
     """
     if isinstance(wav_rest_arr, float):
@@ -350,11 +351,9 @@ def calc_IGM_transmission(
             + calc_Inoue14_LS_LAF_optical_depth(lyman_series, wav_obs_arr, z)
         )
     else:
-        raise (
-            Exception(
-                "IGM attenuation not available for prescription = "
-                f"{prescription}. Please choose one of ['Inoue+14']"
-            )
+        raise InvalidOptionError(
+            f"prescription={prescription!r} not in ['Inoue+14']; IGM "
+            "attenuation not available for this prescription."
         )
     transmission = np.exp(-optical_depth)
     return transmission
@@ -641,7 +640,7 @@ class IGM:
 
         Raises
         ------
-        Exception
+        InvalidOptionError
             If `frame` is not ``"rest"`` or ``"obs"``.
         """
         transmission_arr = self.interp_transmission(z, wav_rest_arr)
@@ -652,11 +651,8 @@ class IGM:
                 wav_rest_arr.value * (1 + z), transmission_arr, **plot_kwargs
             )
         else:
-            raise (
-                Exception(
-                    f"frame = {frame} is invalid! Please choose "
-                    "either 'rest' or 'obs'"
-                )
+            raise InvalidOptionError(
+                f"frame={frame!r} not in ['rest', 'obs']."
             )
         if annotate:
             ax.set_title(f"{self.prescription} IGM attenuation")

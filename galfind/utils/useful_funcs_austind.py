@@ -42,6 +42,16 @@ except ImportError:
     from typing_extensions import Type  # python > 3.7 AND python < 3.11
 
 from .. import astropy_cosmo, config, galfind_logger
+from .exceptions import (
+    EmptyCatalogueError,
+    GalfindTypeError,
+    IncompatibleKwargsError,
+    InvalidOptionError,
+    InvalidUnitError,
+    LengthMismatchError,
+    MissingKeyError,
+    RangeError,
+)
 
 # Scalar extraction helpers
 
@@ -118,7 +128,7 @@ def convert_mag_units(wavs, mags, units):
 
     Raises
     ------
-    Exception
+    InvalidUnitError
         If ``units`` is not `astropy.units.ABmag` and does not have a
         recognised
         spectral flux density physical type.
@@ -162,12 +172,10 @@ def convert_mag_units(wavs, mags, units):
         else:  # different phyiscal type that isn't ABmag
             mags = mags.to(units, equivalencies=u.spectral_density(wavs))
     else:
-        raise (
-            Exception(
-                "Units must be either ABmag or have physical units of "
-                "'spectral flux density' or "
-                "'power density/spectral flux density wav'!"
-            )
+        raise InvalidUnitError(
+            f"units={units!r} must be either ABmag or have physical "
+            "type 'spectral flux density' or 'power density/spectral "
+            "flux density wav'."
         )
     return mags
 
@@ -196,29 +204,30 @@ def convert_mag_err_units(wavs, mags, mag_errs, units):
 
     Raises
     ------
-    AssertionError
-        If ``mags`` and ``mag_errs`` do not share the same units, or
-        ``mag_errs``
-        is not a two-element sequence of array-likes each with length > 1.
-    Exception
+    InvalidUnitError
+        If ``mags`` and ``mag_errs`` do not share the same units.
+    LengthMismatchError
+        If ``mag_errs`` is not a two-element sequence of array-likes each
+        with length > 1.
+    InvalidUnitError
         If ``units`` is not `astropy.units.ABmag` and does not have a
-        recognised
-        spectral flux density physical type.
+        recognised spectral flux density physical type.
     """
-    assert (
-        mags.unit == mag_errs[0].unit == mag_errs[1].unit
-    ), galfind_logger.critical(
-        f"Could not convert mag error units as mags.unit = "
-        f"{mags.unit} != mag_errs.unit = "
-        f"({mag_errs[0].unit}, {mag_errs[1].unit})"
-    )
-    assert (
+    if not (mags.unit == mag_errs[0].unit == mag_errs[1].unit):
+        raise InvalidUnitError(
+            f"Could not convert mag error units as mags.unit="
+            f"{mags.unit} != mag_errs.unit="
+            f"({mag_errs[0].unit}, {mag_errs[1].unit})."
+        )
+    if not (
         len(mag_errs) == 2 and len(mag_errs[0]) > 1 and len(mag_errs[1]) > 1
-    ), galfind_logger.critical(
-        f"Could not convert mag error units as mag_errs = {mag_errs} "
-        f"with {len(mag_errs)=} != 2"
-        f" and {len(mag_errs[0])=}, {len(mag_errs[1])=}"
-    )
+    ):
+        raise LengthMismatchError(
+            f"Could not convert mag error units as mag_errs={mag_errs} "
+            f"with len(mag_errs)={len(mag_errs)} != 2 and "
+            f"len(mag_errs[0])={len(mag_errs[0])}, "
+            f"len(mag_errs[1])={len(mag_errs[1])}."
+        )
 
     if units == mags.unit:
         return mag_errs
@@ -247,12 +256,10 @@ def convert_mag_err_units(wavs, mags, mag_errs, units):
             else:  # f_ν -> derivative of u.Jy
                 swap_order = False
         else:
-            raise (
-                Exception(
-                    "Units must be either ABmag or have physical units "
-                    "of 'spectral flux density' or "
-                    "'power density/spectral flux density wav'!"
-                )
+            raise InvalidUnitError(
+                f"units={units!r} must be either ABmag or have physical "
+                "type 'spectral flux density' or 'power density/spectral "
+                "flux density wav'."
             )
         if swap_order:  # swap order of l1 / u1
             return [
@@ -301,19 +308,20 @@ def log_scale_flux_errors(fluxes, flux_errs):  # removes unit
 
     Raises
     ------
-    AssertionError
-        If ``flux_errs`` does not have length 2, or its units do not match
-        ``fluxes``.
+    LengthMismatchError
+        If ``flux_errs`` does not have length 2.
+    InvalidUnitError
+        If the units of ``flux_errs`` do not match ``fluxes``.
     """
-    assert len(flux_errs) == 2, galfind_logger.warning(
-        f"{flux_errs=} with {len(flux_errs)=} != 2"
-    )
-    assert (
-        fluxes.unit == flux_errs[0].unit == flux_errs[1].unit
-    ), galfind_logger.warning(
-        f"{fluxes.unit =} != flux_errs.unit = "
-        f"({flux_errs[0].unit, flux_errs[1].unit})"
-    )
+    if len(flux_errs) != 2:
+        raise LengthMismatchError(
+            f"flux_errs={flux_errs} with len(flux_errs)={len(flux_errs)} != 2."
+        )
+    if not (fluxes.unit == flux_errs[0].unit == flux_errs[1].unit):
+        raise InvalidUnitError(
+            f"fluxes.unit={fluxes.unit} != flux_errs.unit="
+            f"({flux_errs[0].unit}, {flux_errs[1].unit})."
+        )
     log_flux_l1 = log_scale_fluxes(fluxes) - log_scale_fluxes(
         fluxes - flux_errs[0]
     )
@@ -561,10 +569,11 @@ def five_to_n_sigma_mag(
 
     Raises
     ------
-    AssertionError
+    RangeError
         If ``n`` is not greater than 0.
     """
-    assert n > 0, galfind_logger.critical(f"{n=} must be > 0")
+    if not n > 0:
+        raise RangeError(f"n={n} must be > 0.")
     if isinstance(five_sigma_depth, u.Magnitude):
         five_sigma_depth = five_sigma_depth.value
     n_sigma_mag = -2.5 * np.log10(n / 5) + five_sigma_depth
@@ -780,7 +789,7 @@ def luminosity_to_flux(lum, wavs, z, cosmo=astropy_cosmo, out_units=u.Jy):
 
     Raises
     ------
-    Exception
+    InvalidUnitError
         If ``lum``'s physical type is L_lambda or L_nu but ``out_units`` is not
         a recognised flux physical type.
     """
@@ -802,7 +811,12 @@ def luminosity_to_flux(lum, wavs, z, cosmo=astropy_cosmo, out_units=u.Jy):
         ):  # f_λ
             pass
         else:
-            raise (Exception(""))
+            raise InvalidUnitError(
+                f"out_units={out_units!r} has physical type "
+                f"{u.get_physical_type(out_units)!r}, which is not a "
+                "recognised flux physical type for lum with physical "
+                "type 'yank' (L_lambda)."
+            )
     elif (
         u.get_physical_type(lum.unit) == "energy/torque/work"
     ):  # i.e L_ν, Lsun / Hz or equivalent
@@ -817,7 +831,12 @@ def luminosity_to_flux(lum, wavs, z, cosmo=astropy_cosmo, out_units=u.Jy):
         ):  # f_λ
             lum = lum_nu_to_lum_lam(lum, wavs)
         else:
-            raise (Exception(""))
+            raise InvalidUnitError(
+                f"out_units={out_units!r} has physical type "
+                f"{u.get_physical_type(out_units)!r}, which is not a "
+                "recognised flux physical type for lum with physical "
+                "type 'energy/torque/work' (L_nu)."
+            )
     return (lum * (1.0 + z) / (4 * np.pi * lum_distance**2)).to(out_units)
 
 
@@ -871,8 +890,10 @@ def flux_to_luminosity(
         ):  # i.e L_ν, Lsun / Hz or equivalent
             pass
         else:
-            galfind_logger.critical(
-                f"{out_units=} not in ['yank', 'energy/torque/work']"
+            raise InvalidUnitError(
+                f"out_units={out_units!r} has physical type "
+                f"{u.get_physical_type(out_units)!r}, not in "
+                "['yank', 'energy/torque/work']."
             )
     elif (
         u.get_physical_type(flux.unit)
@@ -888,13 +909,17 @@ def flux_to_luminosity(
             # convert f_λ -> f_ν
             flux = convert_mag_units(wavs, flux, u.Jy)
         else:
-            galfind_logger.critical(
-                f"{out_units=} not in ['yank', 'energy/torque/work']"
+            raise InvalidUnitError(
+                f"out_units={out_units!r} has physical type "
+                f"{u.get_physical_type(out_units)!r}, not in "
+                "['yank', 'energy/torque/work']."
             )
     else:
-        galfind_logger.critical(
-            f"{flux.unit=} not in ['spectral flux density', "
-            f"'power density/spectral flux density wav']"
+        raise InvalidUnitError(
+            f"flux.unit={flux.unit!r} has physical type "
+            f"{u.get_physical_type(flux.unit)!r}, not in "
+            "['spectral flux density', "
+            "'power density/spectral flux density wav']."
         )
     # calculate luminosity distance
     lum_distance = cosmo.luminosity_distance(z)
@@ -994,10 +1019,13 @@ def label_wavelengths(unit, is_log_scaled, frame):
 
     Raises
     ------
-    AssertionError
+    InvalidOptionError
         If ``frame`` is not one of ``""``, ``"rest"``, ``"obs"``.
     """
-    assert frame in ["", "rest", "obs"]
+    if frame not in ["", "rest", "obs"]:
+        raise InvalidOptionError(
+            f"frame={frame!r} must be one of '', 'rest', 'obs'."
+        )
     wavelength_label = r"$\lambda_{%s}~/~$" % frame
     wavelength_label += unit_labels_dict[unit]
     if is_log_scaled:
@@ -1025,13 +1053,22 @@ def label_fluxes(unit, is_log_scaled):
 
     Raises
     ------
-    AssertionError
-        If ``unit`` is not a recognised key of ``unit_labels_dict``, or if
-        ``unit`` is `astropy.units.ABmag` and ``is_log_scaled`` is `True`.
+    InvalidOptionError
+        If ``unit`` is not a recognised key of ``unit_labels_dict``.
+    IncompatibleKwargsError
+        If ``unit`` is `astropy.units.ABmag` and ``is_log_scaled`` is `True`.
     """
-    assert unit in unit_labels_dict.keys()
+    if unit not in unit_labels_dict.keys():
+        raise InvalidOptionError(
+            f"unit={unit!r} not a recognised key of unit_labels_dict="
+            f"{list(unit_labels_dict.keys())!r}."
+        )
     if unit == u.ABmag:
-        assert not is_log_scaled
+        if is_log_scaled:
+            raise IncompatibleKwargsError(
+                "is_log_scaled=True is incompatible with unit=u.ABmag; "
+                "must be False."
+            )
         return unit_labels_dict[unit]
     elif u.get_physical_type(unit) in [
         "ABmag/spectral flux density",
@@ -1043,7 +1080,7 @@ def label_fluxes(unit, is_log_scaled):
     ):
         flux_label = r"$f_{\lambda}$"
     else:
-        galfind_logger.critical(f"{unit=} not valid!")
+        raise InvalidOptionError(f"unit={unit!r} not valid!")
     flux_label += r"$~/~$" + unit_labels_dict[unit]
     if is_log_scaled:
         return label_log(flux_label)
@@ -1354,12 +1391,23 @@ def calc_cv_proper(
             rectangular_geometry_y_to_x for i in range(len(data_arr))
         ]
     elif isinstance(rectangular_geometry_y_to_x, (list, np.ndarray)):
-        assert len(rectangular_geometry_y_to_x) == len(data_arr)
+        if len(rectangular_geometry_y_to_x) != len(data_arr):
+            raise LengthMismatchError(
+                "len(rectangular_geometry_y_to_x)="
+                f"{len(rectangular_geometry_y_to_x)} != "
+                f"len(data_arr)={len(data_arr)}."
+            )
     elif isinstance(rectangular_geometry_y_to_x, dict):
-        assert all(
+        if not all(
             data.full_name in rectangular_geometry_y_to_x.keys()
             for data in data_arr
-        )
+        ):
+            full_names = [data.full_name for data in data_arr]
+            raise MissingKeyError(
+                "rectangular_geometry_y_to_x="
+                f"{rectangular_geometry_y_to_x!r} missing keys for "
+                f"some data.full_name in {full_names!r}."
+            )
         rectangular_geometry_y_to_x = [
             float(rectangular_geometry_y_to_x[data.full_name])
             for data in data_arr
@@ -1679,13 +1727,12 @@ def fits_cat_to_np(
 
     Raises
     ------
-    AssertionError
+    EmptyCatalogueError
         If ``fits_cat`` is empty.
     """
     new_cat = fits_cat[column_labels].as_array()
-    assert len(new_cat) > 0, galfind_logger.critical(
-        "Cannot convert empty fits_cat!"
-    )
+    if not len(new_cat) > 0:
+        raise EmptyCatalogueError("Cannot convert empty fits_cat!")
     if isinstance(new_cat, np.ma.core.MaskedArray):
         new_cat = new_cat.data
     if reshape_by_aper_diams:
@@ -1892,7 +1939,7 @@ def validate_quantity(
 
     Raises
     ------
-    AssertionError
+    InvalidUnitError
         If ``quant`` is a `Quantity` but does not have the required
         ``physical_type``.
     """
@@ -1903,11 +1950,12 @@ def validate_quantity(
             )
             quant = None
         else:
-            assert (
-                u.get_physical_type(quant) == physical_type
-            ), galfind_logger.critical(
-                f"{quant} must have units of type {physical_type}!"
-            )
+            if u.get_physical_type(quant) != physical_type:
+                raise InvalidUnitError(
+                    f"quant={quant!r} has physical type "
+                    f"{u.get_physical_type(quant)!r}; must have physical "
+                    f"type {physical_type!r}."
+                )
     return quant
 
 
@@ -2914,7 +2962,7 @@ def find_target_dir(
 
     Raises
     ------
-    ValueError
+    InvalidOptionError
         If ``keyword`` is not one of the recognised values.
     """
     if keyword == "Depths":
@@ -2934,7 +2982,10 @@ def find_target_dir(
             galfind_work_dir, survey, version, instrument_names
         )
     else:
-        raise ValueError(f"Keyword {keyword} not recognised")
+        raise InvalidOptionError(
+            f"keyword={keyword!r} not recognised; must be one of "
+            "'Depths', 'EAZY', 'Masks', 'SExtractor', 'Stacked_Images'."
+        )
 
 
 def make_symlinks(
@@ -3190,16 +3241,18 @@ def cat_from_gal(
 
     Raises
     ------
-    AssertionError
+    GalfindTypeError
         If ``data`` is not an instance of `Data`.
     """
     from ..catalogues import Catalogue
     from ..galaxy.Galaxy_Creator import Galaxy_Creator
     from ..imaging import Data
 
-    assert isinstance(data, Data), galfind_logger.critical(
-        f"funcs.cat_from_gal requires {type(data)}==Data!"
-    )
+    if not isinstance(data, Data):
+        raise GalfindTypeError(
+            f"data has type {type(data).__name__}; "
+            "funcs.cat_from_gal requires an instance of Data."
+        )
     # TODO: galaxy should already have an associated Galaxy_Creator
     # make catalogue of length 1 from galaxy object
     if hasattr(gal, "gal_creator"):

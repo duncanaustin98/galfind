@@ -20,12 +20,27 @@ from galfind.properties import (
     LUV_Calculator,
     Lya_Break_Strength_Calculator,
     MUV_Calculator,
+    Ndot_Ion_Calculator,
+    Optical_Continuum_Calculator,
     SFR_UV_Calculator,
     UV_Beta_Calculator,
     UV_Dust_Attenuation_Calculator,
     mUV_Calculator,
 )
-from galfind.properties.Property_calculator import MUV_SED_Property_Calculator
+from galfind.properties.Property_calculator import (
+    MUV_SED_Property_Calculator,
+    Property_Divider,
+)
+from galfind.properties.Rest_frame_properties import (
+    Line_Dust_Attenuation_From_UV_Calculator,
+)
+from galfind.utils.exceptions import (
+    GalfindTypeError,
+    InvalidOptionError,
+    InvalidUnitError,
+    LengthMismatchError,
+    RangeError,
+)
 
 # @pytest.fixture(
 #     scope = "module",
@@ -198,12 +213,29 @@ class TestKwargAssertionsRegression:
     def test_sfr_uv_calculator_invalid_conv_raises(
         self, eazy_fsps_larson_sed_fitter
     ):
-        with pytest.raises(AssertionError):
+        with pytest.raises(InvalidOptionError, match="SFR_conv"):
             SFR_UV_Calculator(
                 0.32 * u.arcsec,
                 eazy_fsps_larson_sed_fitter,
                 SFR_conv="not_a_real_conversion",
             )
+
+
+#################################################
+# Property_Divider requires exactly two sub-calculators to divide; this
+# was previously a bare `assert len(calculators) == 2` (no message, and
+# an indistinguishable AssertionError on failure).
+#################################################
+
+
+class TestPropertyDividerLengthRegression:
+    def test_wrong_number_of_calculators_raises(self):
+        with pytest.raises(LengthMismatchError, match="2"):
+            Property_Divider([1, 2, 3])
+
+    def test_too_few_calculators_raises(self):
+        with pytest.raises(LengthMismatchError, match="2"):
+            Property_Divider([1])
 
 
 #################################################
@@ -240,9 +272,11 @@ class TestHighZSyntheticGalaxyProperties:
         aper_diam = 0.32 * u.arcsec
         for calc in self._get_calculators(eazy_fsps_larson_sed_fitter):
             out_gal = calc(high_z_gal, n_chains=200, overwrite=True)
-            phot_rest = out_gal.aper_phot[aper_diam].SED_results[
-                eazy_fsps_larson_sed_fitter.label
-            ].phot_rest
+            phot_rest = (
+                out_gal.aper_phot[aper_diam]
+                .SED_results[eazy_fsps_larson_sed_fitter.label]
+                .phot_rest
+            )
             value = phot_rest.properties[calc.name]
             value = value.value if hasattr(value, "value") else value
             assert np.isfinite(value), (
@@ -256,9 +290,11 @@ class TestHighZSyntheticGalaxyProperties:
         aper_diam = 0.32 * u.arcsec
         for calc in self._get_calculators(eazy_fsps_larson_sed_fitter):
             out_gal = calc(garbage_gal, n_chains=200, overwrite=True)
-            phot_rest = out_gal.aper_phot[aper_diam].SED_results[
-                eazy_fsps_larson_sed_fitter.label
-            ].phot_rest
+            phot_rest = (
+                out_gal.aper_phot[aper_diam]
+                .SED_results[eazy_fsps_larson_sed_fitter.label]
+                .phot_rest
+            )
             value = phot_rest.properties[calc.name]
             value = value.value if hasattr(value, "value") else value
             assert np.isnan(value), (
@@ -280,10 +316,135 @@ class TestHighZSyntheticGalaxyProperties:
         results = {}
         for gal in synthetic_test_cat:
             out_gal = calc(gal, n_chains=200, overwrite=True)
-            phot_rest = out_gal.aper_phot[aper_diam].SED_results[
-                eazy_fsps_larson_sed_fitter.label
-            ].phot_rest
+            phot_rest = (
+                out_gal.aper_phot[aper_diam]
+                .SED_results[eazy_fsps_larson_sed_fitter.label]
+                .phot_rest
+            )
             value = phot_rest.properties[calc.name]
             results[gal.ID] = value.value if hasattr(value, "value") else value
         assert np.isfinite(results[1])
         assert np.isnan(results[2])
+
+
+#################################################
+# Regression tests for the assert/critical -> custom exception hierarchy
+# conversion in Rest_frame_properties.py: these previously all raised a
+# message-less AssertionError (via `assert cond, galfind_logger.critical(
+# msg)`, which is always a bug -- Logger.critical() returns None) on
+# construction; now they raise a specific, message-carrying exception.
+# None of these need real photometric data since `_kwarg_assertions()`
+# runs synchronously in `__init__`, before any SED-fit data is touched.
+#################################################
+
+
+class TestRestFramePropertiesKwargExceptionRegression:
+    def test_uv_beta_calculator_bad_unit_raises(
+        self, eazy_fsps_larson_sed_fitter
+    ):
+        with pytest.raises(InvalidUnitError, match="rest_UV_wav_lims"):
+            UV_Beta_Calculator(
+                0.32 * u.arcsec,
+                eazy_fsps_larson_sed_fitter,
+                rest_UV_wav_lims=[1_250.0, 3_000.0] * u.s,
+            )
+
+    def test_uv_beta_calculator_bad_length_raises(
+        self, eazy_fsps_larson_sed_fitter
+    ):
+        with pytest.raises(LengthMismatchError, match="rest_UV_wav_lims"):
+            UV_Beta_Calculator(
+                0.32 * u.arcsec,
+                eazy_fsps_larson_sed_fitter,
+                rest_UV_wav_lims=[1_250.0, 2_000.0, 3_000.0] * u.AA,
+            )
+
+    def test_uv_beta_calculator_bad_order_raises(
+        self, eazy_fsps_larson_sed_fitter
+    ):
+        with pytest.raises(RangeError, match="rest_UV_wav_lims"):
+            UV_Beta_Calculator(
+                0.32 * u.arcsec,
+                eazy_fsps_larson_sed_fitter,
+                rest_UV_wav_lims=[3_000.0, 1_250.0] * u.AA,
+            )
+
+    def test_muv_calculator_invalid_ext_src_corrs_raises(
+        self, eazy_fsps_larson_sed_fitter
+    ):
+        with pytest.raises(InvalidOptionError, match="ext_src_corrs"):
+            mUV_Calculator(
+                0.32 * u.arcsec,
+                eazy_fsps_larson_sed_fitter,
+                ext_src_corrs="NOT_A_REAL_FILTER",
+            )
+
+    def test_muv_calculator_invalid_ext_src_uplim_type_raises(
+        self, eazy_fsps_larson_sed_fitter
+    ):
+        with pytest.raises(GalfindTypeError, match="ext_src_uplim"):
+            mUV_Calculator(
+                0.32 * u.arcsec,
+                eazy_fsps_larson_sed_fitter,
+                ext_src_uplim="not_a_number",
+            )
+
+    def test_muv_calculator_negative_ext_src_uplim_raises(
+        self, eazy_fsps_larson_sed_fitter
+    ):
+        with pytest.raises(RangeError, match="ext_src_uplim"):
+            mUV_Calculator(
+                0.32 * u.arcsec,
+                eazy_fsps_larson_sed_fitter,
+                ext_src_uplim=-5.0,
+            )
+
+    def test_fesc_from_beta_calculator_invalid_conv_raises(
+        self, eazy_fsps_larson_sed_fitter
+    ):
+        with pytest.raises(InvalidOptionError, match="fesc_conv"):
+            Fesc_From_Beta_Calculator(
+                0.32 * u.arcsec,
+                eazy_fsps_larson_sed_fitter,
+                fesc_conv="not_a_real_conversion",
+            )
+
+    def test_optical_continuum_calculator_invalid_line_name_raises(
+        self, eazy_fsps_larson_sed_fitter
+    ):
+        with pytest.raises(InvalidOptionError, match="strong_line_names"):
+            Optical_Continuum_Calculator(
+                0.32 * u.arcsec,
+                eazy_fsps_larson_sed_fitter,
+                strong_line_names="NotARealLine",
+            )
+
+    def test_line_dust_attenuation_invalid_line_name_raises(
+        self, eazy_fsps_larson_sed_fitter
+    ):
+        with pytest.raises(InvalidOptionError, match="line_name"):
+            Line_Dust_Attenuation_From_UV_Calculator(
+                0.32 * u.arcsec,
+                eazy_fsps_larson_sed_fitter,
+                line_name="NotARealLine",
+            )
+
+    def test_ndot_ion_calculator_invalid_fesc_calculator_type_raises(
+        self, eazy_fsps_larson_sed_fitter
+    ):
+        with pytest.raises(GalfindTypeError, match="fesc_calculator"):
+            Ndot_Ion_Calculator(
+                0.32 * u.arcsec,
+                eazy_fsps_larson_sed_fitter,
+                fesc_conv=[0.5],
+            )
+
+    def test_ndot_ion_calculator_out_of_range_fesc_raises(
+        self, eazy_fsps_larson_sed_fitter
+    ):
+        with pytest.raises(RangeError, match="fesc_calculator"):
+            Ndot_Ion_Calculator(
+                0.32 * u.arcsec,
+                eazy_fsps_larson_sed_fitter,
+                fesc_conv=1.5,
+            )

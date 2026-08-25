@@ -46,6 +46,13 @@ except ImportError:
 
 from .. import galfind_logger
 from ..utils import useful_funcs_austind as funcs
+from ..utils.exceptions import (
+    ExternalToolError,
+    GalfindError,
+    GalfindTypeError,
+    MissingKeyError,
+    RangeError,
+)
 from .SED_result import SED_result
 
 
@@ -182,16 +189,22 @@ class SED_code(ABC):
         ``SED_fit_params["excl_bands_label"]`` prefixed with ``"_"``;
         otherwise returns the excluded band names joined with ``"_"``,
         prefixed with ``"_"``.
+
+        Raises
+        ------
+        MissingKeyError
+            If ``SED_fit_params["excl_bands"]`` is a list of lists but
+            ``"excl_bands_label"`` is not in `SED_fit_params`.
         """
         if self.SED_fit_params["excl_bands"] == []:
             return ""
         if isinstance(self.SED_fit_params["excl_bands"][0], list):
-            assert (
-                "excl_bands_label" in self.SED_fit_params.keys()
-            ), galfind_logger.critical(
-                "excl_bands_label not in SED_fit_params keys = "
-                f"{list(self.SED_fit_params.keys())}"
-            )
+            if "excl_bands_label" not in self.SED_fit_params.keys():
+                raise MissingKeyError(
+                    "'excl_bands_label' not in SED_fit_params keys = "
+                    f"{list(self.SED_fit_params.keys())}; required when "
+                    "SED_fit_params['excl_bands'] is a list of lists."
+                )
             return f"_{self.SED_fit_params['excl_bands_label']}"
         else:
             return f"_{'_'.join(self.SED_fit_params['excl_bands'])}"
@@ -413,21 +426,24 @@ class SED_code(ABC):
 
     def _assert_SED_fit_params(self) -> NoReturn:
         for key in self.required_SED_fit_params:
-            assert key in self.SED_fit_params.keys(), galfind_logger.critical(
-                f"'{key}' not in SED_fit_params keys = "
-                f"{list(self.SED_fit_params.keys())}"
-            )
+            if key not in self.SED_fit_params.keys():
+                raise MissingKeyError(
+                    f"'{key}' not in SED_fit_params keys = "
+                    f"{list(self.SED_fit_params.keys())}; required by "
+                    f"{self.__class__.__name__}."
+                )
         if "excl_bands" not in self.SED_fit_params.keys():
             self.SED_fit_params["excl_bands"] = []
         if isinstance(self.SED_fit_params["excl_bands"], str):
             self.SED_fit_params["excl_bands"] = [
                 self.SED_fit_params["excl_bands"]
             ]
-        assert isinstance(
-            self.SED_fit_params["excl_bands"], list
-        ), galfind_logger.critical(
-            f"{self.SED_fit_params['excl_bands']=} != list"
-        )
+        if not isinstance(self.SED_fit_params["excl_bands"], list):
+            raise GalfindTypeError(
+                "SED_fit_params['excl_bands'] has type "
+                f"{type(self.SED_fit_params['excl_bands'])}; must be a "
+                "list."
+            )
 
     def __str__(self) -> str:
         output_str = funcs.line_sep
@@ -462,11 +478,11 @@ class SED_code(ABC):
         for key, value in self.__dict__.items():
             try:
                 setattr(result, key, deepcopy(value, memo))
-            except Exception:
-                galfind_logger.critical(
-                    f"deepcopy({repr(self)}) {key}: {value} FAIL!"
-                )
-                breakpoint()
+            except Exception as e:
+                raise GalfindError(
+                    f"deepcopy({repr(self)}) failed on attribute "
+                    f"'{key}'={value!r}."
+                ) from e
         return result
 
     def __call__(
@@ -580,12 +596,15 @@ class SED_code(ABC):
             # assume properties all come from the same table if only a
             # single catalogue is given
             SED_fit_IDs = SED_fit_cat[self.ID_label]
-            assert all(
+            if not all(
                 aper_phot_ID == SED_fit_ID
                 for aper_phot_ID, SED_fit_ID in zip(aper_phot_IDs, SED_fit_IDs)
-            ), galfind_logger.critical(
-                "IDs in SED_fit_cat do not match those in the catalogue"
-            )
+            ):
+                raise GalfindError(
+                    f"IDs in SED_fit_cat ({list(SED_fit_IDs)}) do not "
+                    f"match the catalogue's aperture photometry IDs "
+                    f"({aper_phot_IDs})."
+                )
 
             cat_properties = [
                 {
@@ -600,10 +619,17 @@ class SED_code(ABC):
 
             # TODO: When instantiating the class, ensure that all errors
             # have an associated property
-            assert all(
-                err_key in self.gal_property_labels.keys()
+            missing_err_keys = [
+                err_key
                 for err_key in self.gal_property_err_labels.keys()
-            )
+                if err_key not in self.gal_property_labels.keys()
+            ]
+            if missing_err_keys:
+                raise MissingKeyError(
+                    f"gal_property_err_labels keys {missing_err_keys} "
+                    "not found in gal_property_labels keys = "
+                    f"{list(self.gal_property_labels.keys())}."
+                )
 
             # adjust errors if required (i.e. if 16th and 84th
             # percentiles rather than errors)
@@ -867,10 +893,14 @@ class SED_code(ABC):
                             )
                         )
                     )[0]
-                    assert len(index) == 1, galfind_logger.critical(
-                        f"Multiple indices found for {filt_name} in "
-                        f"{gal.aper_phot[aper_diam].filterset.filt_names}"
-                    )
+                    if len(index) != 1:
+                        raise RangeError(
+                            f"Found {len(index)} matching indices for "
+                            f"filt_name={filt_name!r} in "
+                            "gal.aper_phot[aper_diam].filterset.filt_names="
+                            f"{gal.aper_phot[aper_diam].filterset.filt_names}"
+                            "; expected exactly 1."
+                        )
                     index = index[0]
 
                     new_phot_in = np.array(phot[i].data)[index]
@@ -909,6 +939,13 @@ class SED_code(ABC):
             Catalogue to update.
         fits_out_path : `str`
             Path to the FITS file containing SED fitting results.
+
+        Raises
+        ------
+        ExternalToolError
+            If the column names in the existing catalogue HDU table and
+            in `fits_out_path` are completely different (no overlap
+            besides `ID_label`), so the two tables cannot be combined.
         """
         # open relevant catalogue hdu extension
         orig_tab = cat.open_cat(hdu=self)
@@ -950,12 +987,12 @@ class SED_code(ABC):
                     "column names is not yet implemented."
                 )
             else:
-                err_msg = (
-                    f"Column names in {self.hdu_name=} != those in "
-                    f"{fits_out_path}. " + "Will not update catalogue table."
+                raise ExternalToolError(
+                    f"Column names in hdu_name={self.hdu_name!r} table "
+                    f"do not match those produced by the external code "
+                    f"in {fits_out_path!r}; cannot update the catalogue "
+                    "table."
                 )
-                galfind_logger.critical(err_msg)
-                raise Exception(err_msg)
 
     # def update_lowz_zmax(SED_results):
     #     if "dz" in SED_fit_params.keys():

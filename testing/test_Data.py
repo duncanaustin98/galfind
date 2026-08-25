@@ -17,6 +17,11 @@ from galfind.imaging import Data, Filter, Multiple_Filter
 from galfind.imaging.Data import Band_Data, Stacked_Band_Data
 from galfind.photometry import SExtractor
 from galfind.utils import Masking
+from galfind.utils.exceptions import (
+    IncompatibleKwargsError,
+    MissingDataError,
+    MissingFileError,
+)
 
 
 @pytest.fixture(scope="module")
@@ -217,7 +222,7 @@ class TestBandDataLoad:
     def test_invalid_im_path(self, f444w_band_data):
         f444w_band_data_ = deepcopy(f444w_band_data)
         f444w_band_data_.im_path = "invalid/path.fits"
-        with pytest.raises(Exception):
+        with pytest.raises(MissingFileError, match="invalid/path.fits"):
             f444w_band_data_.load_im()
 
     def test_invalid_rms_err_path(self, f444w_band_data):
@@ -340,8 +345,7 @@ class TestStackedBandData:
         self, local_forced_phot_stacked_band_data_from_arr
     ):
         assert (
-            local_forced_phot_stacked_band_data_from_arr.instr_name
-            == "NIRCam"
+            local_forced_phot_stacked_band_data_from_arr.instr_name == "NIRCam"
         )
 
     def test_stacked_band_data_filt_name(
@@ -375,14 +379,14 @@ class TestBandDataAdd:
         ]
 
     def test_band_data_add_duplicate_filter_raises(self, f444w_band_data):
-        with pytest.raises(Exception):
+        with pytest.raises(IncompatibleKwargsError, match="same filters"):
             f444w_band_data + deepcopy(f444w_band_data)
 
     def test_band_data_add_different_survey_raises(self, f444w_band_data):
         mismatched_band = deepcopy(f444w_band_data)
         mismatched_band.filt = Filter.from_SVO("JWST", "NIRCam", "F200W")
         mismatched_band.survey = "a_different_survey"
-        with pytest.raises(Exception):
+        with pytest.raises(IncompatibleKwargsError, match="different surveys"):
             f444w_band_data + mismatched_band
 
 
@@ -469,7 +473,7 @@ class TestBandDataSegmentation:
     def test_invalid_segmap_path(self, f444w_band_data_segmented):
         f444w_band_data_segmented_ = deepcopy(f444w_band_data_segmented)
         f444w_band_data_segmented_.seg_path = "invalid/path.fits"
-        with pytest.raises(Exception):
+        with pytest.raises(MissingFileError, match="invalid/path.fits"):
             f444w_band_data_segmented_.load_seg(incl_hdr=True)
 
 
@@ -494,7 +498,7 @@ class TestBandDataPSFHomogenize:
         # f444w_band_data has no PSF loaded (self.psf defaults to None),
         # so psf_homogenize should refuse to run rather than raise
         # NotImplementedError (it is fully implemented)
-        with pytest.raises(AssertionError):
+        with pytest.raises(MissingDataError, match="psf not loaded"):
             f444w_band_data.psf_homogenize("PSF")
 
 
@@ -632,9 +636,10 @@ class TestDataProperties:
         result_aper_diams = two_band_data.aper_diams
         assert len(result_aper_diams) == len(aper_diams)
         for result, expected in zip(result_aper_diams, aper_diams):
-            assert abs(
-                result.to(u.arcsec).value - expected.to(u.arcsec).value
-            ) < 1e-8
+            assert (
+                abs(result.to(u.arcsec).value - expected.to(u.arcsec).value)
+                < 1e-8
+            )
 
 
 class TestDataAdd:
@@ -651,14 +656,14 @@ class TestDataAdd:
 
     def test_data_add_duplicate_filter_raises(self, two_band_data_arr):
         left = Data([two_band_data_arr[1]])
-        with pytest.raises(Exception):
+        with pytest.raises(IncompatibleKwargsError, match="same filters"):
             left + two_band_data_arr[1]
 
     def test_data_add_different_survey_raises(self, two_band_data_arr):
         left = Data([two_band_data_arr[1]])
         mismatched_band = deepcopy(two_band_data_arr[0])
         mismatched_band.survey = "a_different_survey"
-        with pytest.raises(Exception):
+        with pytest.raises(IncompatibleKwargsError, match="different surveys"):
             left + mismatched_band
 
 

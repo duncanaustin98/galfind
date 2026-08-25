@@ -57,6 +57,19 @@ from ..SFH import SFH
 from ..spectra.SED import SED_2D, SED_obs
 from ..utils import useful_funcs_austind as funcs
 from ..utils.decorators import run_in_dir
+from ..utils.exceptions import (
+    ExternalToolError,
+    GalfindError,
+    GalfindTypeError,
+    IncompatibleKwargsError,
+    InvalidOptionError,
+    InvalidUnitError,
+    LengthMismatchError,
+    MissingDataError,
+    MissingFileError,
+    MissingKeyError,
+    RangeError,
+)
 from ..visualization import Redshift_PDF, SED_fit_PDF
 from .SED_codes import SED_code
 
@@ -112,6 +125,12 @@ def get_pipes_unit(label: str) -> u.Unit:
     -------
     `astropy.units.Unit`
         The unit associated with the parameter, or dimensionless if not found.
+
+    Raises
+    ------
+    GalfindError
+        If `label` partially matches more than one key in the internal
+        unit dictionary, so the correct unit is ambiguous.
     """
     if label in pipes_unit_dict.keys():
         return pipes_unit_dict[label]
@@ -120,9 +139,10 @@ def get_pipes_unit(label: str) -> u.Unit:
         if len(relevant_keys) == 1:
             return pipes_unit_dict[relevant_keys[0]]
         else:
-            galfind_logger.critical(
-                f"Multiple {relevant_keys=} found for {label=}! "
-                "Bagpipes unit_dict requires updating"
+            raise GalfindError(
+                f"Multiple relevant_keys={relevant_keys!r} found for "
+                f"label={label!r}; pipes_unit_dict requires updating to "
+                "disambiguate."
             )
     else:
         galfind_logger.debug(
@@ -176,6 +196,12 @@ class Bagpipes(SED_code):
         -------
         `Bagpipes`
             A Bagpipes SED-fitter instance with parsed parameters.
+
+        Raises
+        ------
+        InvalidOptionError
+            If the dust or metallicity prior parsed from `label` is not
+            one of the recognised suffixes (``"log_10"``/``"uniform"``).
         """
         # TODO: For continuity SFH, add z used to calculate bins
         # into the SED fit params from_label extractor
@@ -184,19 +210,26 @@ class Bagpipes(SED_code):
         SED_fit_params["sfh"] = label.split("_sfh_")[1].split("_dust_")[0]
         dust_label = label.split("_dust_")[1].split("_Z_")[0]
         if "log_10" in dust_label:
-            assert dust_label[-6:] == "log_10"
+            if dust_label[-6:] != "log_10":
+                raise InvalidOptionError(
+                    f"dust_label={dust_label!r} parsed from label={label!r} "
+                    "contains 'log_10' but does not end with 'log_10'."
+                )
             SED_fit_params["dust_prior"] = "log_10"
             SED_fit_params["dust"] = dust_label[:-7]
         elif "uniform" in dust_label:
-            assert dust_label[-7:] == "uniform"
+            if dust_label[-7:] != "uniform":
+                raise InvalidOptionError(
+                    f"dust_label={dust_label!r} parsed from label={label!r} "
+                    "contains 'uniform' but does not end with 'uniform'."
+                )
             SED_fit_params["dust_prior"] = "uniform"
             SED_fit_params["dust"] = dust_label[:-8]
         else:
-            galfind_logger.critical(
-                f"Invalid dust prior from {dust_label=}! "
-                "Must be in ['log_10', 'uniform']"
+            raise InvalidOptionError(
+                f"Invalid dust prior parsed from dust_label={dust_label!r}; "
+                "must contain 'log_10' or 'uniform'."
             )
-            breakpoint()
         split_metallicity_label = label.split("_Z_")[1].split("_")
         if (
             split_metallicity_label[0] == "log"
@@ -206,12 +239,11 @@ class Bagpipes(SED_code):
         elif split_metallicity_label[0] == "uniform":
             SED_fit_params["metallicity_prior"] = "uniform"
         else:
-            galfind_logger.critical(
-                "Invalid metallicity prior from "
-                f"{split_metallicity_label=}! "
-                "Must be in ['log_10', 'uniform']"
+            raise InvalidOptionError(
+                "Invalid metallicity prior parsed from "
+                f"split_metallicity_label={split_metallicity_label!r}; "
+                "must be in ['log_10', 'uniform']."
             )
-            breakpoint()
         # easier if BC03 read properly
         if "BPASS" in label:
             SED_fit_params["sps_model"] = "BPASS"
@@ -246,6 +278,18 @@ class Bagpipes(SED_code):
             Label string of the form
             ``"Bagpipes_sfh_<sfh>_<dust>_<dust_prior>_Z_
             <metallicity_prior>_<sps_model>_<z_config>"``
+
+        Raises
+        ------
+        GalfindTypeError
+            If ``SED_fit_params['z_sigma']``, ``['fixed_bin_ages']`` or
+            ``['num_bins']`` is present but not of the required type.
+        MissingKeyError
+            If ``SED_fit_params['sfh']`` is a ``"continuity"`` SFH and
+            ``'z_calculator'`` is missing from `SED_fit_params`.
+        InvalidUnitError
+            If ``SED_fit_params['fixed_bin_ages']`` has a unit not
+            equivalent to `astropy.units.Myr`.
         """
         # should be generalized more here including e.g. SED_fit_params
         # assertions
@@ -260,11 +304,12 @@ class Bagpipes(SED_code):
                 redshift_label = "zfix"
             else:
                 if "z_sigma" in self.SED_fit_params.keys():
-                    assert isinstance(
-                        self.SED_fit_params["z_sigma"], float
-                    ), galfind_logger.critical(
-                        f"{type(self.SED_fit_params['z_sigma'])=}!=int!"
-                    )
+                    if not isinstance(self.SED_fit_params["z_sigma"], float):
+                        raise GalfindTypeError(
+                            "SED_fit_params['z_sigma'] has type "
+                            f"{type(self.SED_fit_params['z_sigma'])}; "
+                            "must be a float."
+                        )
                     redshift_label = (
                         f"zgauss_{self.SED_fit_params['z_sigma']:.1f}sig"
                     )
@@ -287,19 +332,19 @@ class Bagpipes(SED_code):
             if self.SED_fit_params["sps_model"].upper() in ["BC03", "BPASS"]:
                 sps_label = self.SED_fit_params["sps_model"].upper()
             else:
-                galfind_logger.critical(
-                    f"Bagpipes {self.SED_fit_params=} must include "
-                    + "'sps_model' with .upper() in ['BC03', 'BPASS']"
+                raise InvalidOptionError(
+                    f"Bagpipes SED_fit_params={self.SED_fit_params!r} must "
+                    "include 'sps_model' with .upper() in "
+                    "['BC03', 'BPASS']."
                 )
-                breakpoint()
             # sfh label
             if "continuity" in self.SED_fit_params["sfh"]:
-                assert (
-                    "z_calculator" in self.SED_fit_params.keys()
-                ), galfind_logger.critical(
-                    f"Bagpipes {self.SED_fit_params=} must include "
-                    + "'z_calculator' for 'continuity' SFH"
-                )
+                if "z_calculator" not in self.SED_fit_params.keys():
+                    raise MissingKeyError(
+                        "SED_fit_params with keys "
+                        f"{list(self.SED_fit_params.keys())} must include "
+                        "'z_calculator' for 'continuity' SFH."
+                    )
 
                 from ..properties import Redshift_Extractor
 
@@ -319,17 +364,24 @@ class Bagpipes(SED_code):
                 sfh_label = f"{self.SED_fit_params['sfh']}_{z_label}"
                 if "fixed_bin_ages" in self.SED_fit_params.keys():
                     # ensure fixed_bin_ages is a Quantity
-                    assert isinstance(
+                    if not isinstance(
                         self.SED_fit_params["fixed_bin_ages"], u.Quantity
-                    ), galfind_logger.critical(
-                        "fixed_bin_ages must be a Quantity!"
-                    )
+                    ):
+                        raise GalfindTypeError(
+                            "SED_fit_params['fixed_bin_ages'] has type "
+                            f"{type(self.SED_fit_params['fixed_bin_ages'])}; "
+                            "must be an astropy.units.Quantity."
+                        )
                     # ensure fixed_bin_ages has dimensions of time
-                    assert self.SED_fit_params[
+                    if not self.SED_fit_params[
                         "fixed_bin_ages"
-                    ].unit.is_equivalent(u.Myr), galfind_logger.critical(
-                        "fixed_bin_ages must be in Myr!"
-                    )
+                    ].unit.is_equivalent(u.Myr):
+                        raise InvalidUnitError(
+                            "SED_fit_params['fixed_bin_ages'] has unit "
+                            f"{self.SED_fit_params['fixed_bin_ages'].unit}, "
+                            "which is not equivalent to u.Myr; "
+                            "fixed_bin_ages must be a time quantity."
+                        )
                     if not (
                         len(self.SED_fit_params["fixed_bin_ages"]) == 1
                         and self.SED_fit_params["fixed_bin_ages"]
@@ -349,9 +401,12 @@ class Bagpipes(SED_code):
                         sfh_label += "Myr"
                 if "num_bins" in self.SED_fit_params.keys():
                     # ensure num_bins is an integer
-                    assert isinstance(
-                        self.SED_fit_params["num_bins"], int
-                    ), galfind_logger.critical("num_bins must be an integer!")
+                    if not isinstance(self.SED_fit_params["num_bins"], int):
+                        raise GalfindTypeError(
+                            "SED_fit_params['num_bins'] has type "
+                            f"{type(self.SED_fit_params['num_bins'])}; "
+                            "must be an int."
+                        )
                     sfh_label += f"_{self.SED_fit_params['num_bins']}bins"
                 sfh_label = sfh_label.replace("continuity", "cont")
             else:
@@ -445,8 +500,18 @@ class Bagpipes(SED_code):
             if name not in self.SED_fit_params.keys():
                 self.SED_fit_params[name] = default
         if "fit_instructions" in self.SED_fit_params.keys():
-            assert isinstance(self.SED_fit_params["fit_instructions"], dict)
-            assert hasattr(self, "custom_label")
+            if not isinstance(self.SED_fit_params["fit_instructions"], dict):
+                raise GalfindTypeError(
+                    "SED_fit_params['fit_instructions'] has type "
+                    f"{type(self.SED_fit_params['fit_instructions'])}; "
+                    "must be a dict."
+                )
+            if not hasattr(self, "custom_label"):
+                raise IncompatibleKwargsError(
+                    "SED_fit_params['fit_instructions'] was given without "
+                    "a 'custom_label'; Bagpipes requires a 'custom_label' "
+                    "kwarg whenever 'fit_instructions' is supplied directly."
+                )
         else:
             defaults_dict = {
                 "sfh": "lognorm",
@@ -517,9 +582,12 @@ class Bagpipes(SED_code):
         from ..galaxy.Galaxy import Galaxy
 
         if isinstance(target, (Galaxy, Catalogue)):
-            assert aper_diam is not None, galfind_logger.critical(
-                "Bagpipes fitting requires aper_diam to be specified!"
-            )
+            if aper_diam is None:
+                raise IncompatibleKwargsError(
+                    f"Bagpipes fitting a target of type {type(target)} "
+                    "requires 'aper_diam' to be specified, but "
+                    "aper_diam=None was given."
+                )
             return super().__call__(
                 target,
                 aper_diam,
@@ -536,7 +604,11 @@ class Bagpipes(SED_code):
         else:
             from ..catalogues.Catalogue import Spectral_Catalogue
 
-            assert isinstance(target, Spectral_Catalogue)
+            if not isinstance(target, Spectral_Catalogue):
+                raise GalfindTypeError(
+                    f"target has type {type(target)}; must be a Galaxy, "
+                    "Catalogue, or Spectral_Catalogue."
+                )
             return self.fit_spec_cat(
                 target,
                 save_PDFs=save_PDFs,
@@ -582,6 +654,15 @@ class Bagpipes(SED_code):
         -------
         `str`
             Path to the saved HDF5 file containing prior samples.
+
+        Raises
+        ------
+        RangeError
+            If `redshift` lies outside the bounds already stored in
+            ``self.fit_instructions['redshift']``.
+        ExternalToolError
+            If bagpipes still reports an unphysical SFH after adjusting
+            the fit parameters via `_make_fit_instructions_physical_sfh`.
         """
         save_path = (
             f"{config['Bagpipes']['PIPES_OUT_DIR']}/priors/"
@@ -606,10 +687,16 @@ class Bagpipes(SED_code):
                     fit_instructions = self.fit_instructions
                 else:
                     fit_instructions = self.fit_instructions
-                    assert (
+                    if not (
                         redshift < fit_instructions["redshift"][1]
                         and redshift > fit_instructions["redshift"][0]
-                    )
+                    ):
+                        raise RangeError(
+                            f"redshift={redshift} is not within the "
+                            "fit_instructions['redshift'] bounds "
+                            f"({fit_instructions['redshift'][0]}, "
+                            f"{fit_instructions['redshift'][1]})."
+                        )
                     fit_instructions["redshift"] = redshift
             else:
                 fit_instructions = self.fit_instructions
@@ -632,11 +719,13 @@ class Bagpipes(SED_code):
                     filt_list=filt_list,
                     n_draws=n_draws,
                 )
-                assert not priors.sfh.unphysical, galfind_logger.critical(
-                    f"Bagpipes {self.fit_instructions=} produces unphysical "
-                    f"SFH at z={redshift:.1f} even after updating fit "
-                    "parameters!"
-                )
+                if priors.sfh.unphysical:
+                    raise ExternalToolError(
+                        f"bagpipes fit_instructions={self.fit_instructions} "
+                        f"produces an unphysical SFH at z={redshift:.1f} "
+                        "even after updating fit parameters via "
+                        "_make_fit_instructions_physical_sfh()."
+                    )
 
             hf = h5py.File(save_path, "w")
             for key, vals in priors.samples.items():
@@ -765,19 +854,23 @@ class Bagpipes(SED_code):
         else:
             from galfind import Spectral_Catalogue
 
-            assert isinstance(
-                cat, Spectral_Catalogue
-            ), galfind_logger.critical(
-                f"{type(cat)=} not in [Catalogue, Spectral_Catalogue]!"
-            )
-            assert all(
+            if not isinstance(cat, Spectral_Catalogue):
+                raise GalfindTypeError(
+                    f"cat has type {type(cat)}; must be a Catalogue or "
+                    "Spectral_Catalogue."
+                )
+            if not all(
                 spectrum.instrument.grating.name
                 == cat[0].instrument.grating.name
                 for spectrum in cat
-            ), galfind_logger.critical(
-                "All spectra in Spectral_Catalogue must have the same "
-                "grating/filter!"
-            )
+            ):
+                gratings = [
+                    spectrum.instrument.grating.name for spectrum in cat
+                ]
+                raise GalfindError(
+                    "All spectra in Spectral_Catalogue cat must have the "
+                    f"same grating/filter; found gratings {gratings!r}."
+                )
             temp_subdir = f"spec_{cat[0].instrument.grating.name}/temp"
             # if hasattr(cat, "name"):
             #    temp_subdir = f"{cat.name}_{temp_subdir}"
@@ -803,11 +896,11 @@ class Bagpipes(SED_code):
         else:
             from galfind import Spectral_Catalogue
 
-            assert isinstance(
-                cat, Spectral_Catalogue
-            ), galfind_logger.critical(
-                f"{type(cat)=} not in [Catalogue, Spectral_Catalogue]!"
-            )
+            if not isinstance(cat, Spectral_Catalogue):
+                raise GalfindTypeError(
+                    f"cat has type {type(cat)}; must be a Catalogue or "
+                    "Spectral_Catalogue."
+                )
             return f"spec_{cat[0].instrument.grating.name}/{save_name}"
 
     def _move_files(
@@ -818,7 +911,11 @@ class Bagpipes(SED_code):
         temp_label: Optional[str] = None,
         save_name: Optional[str] = None,
     ) -> NoReturn:
-        assert direction in ["from_temp", "to_temp"]
+        if direction not in ["from_temp", "to_temp"]:
+            raise InvalidOptionError(
+                f"direction={direction!r} is not one of "
+                "['from_temp', 'to_temp']."
+            )
         temp_out_subdir = self._temp_out_subdir(
             cat,
             aper_diam,
@@ -916,7 +1013,11 @@ class Bagpipes(SED_code):
         temp_label: Optional[str] = None,
         save_name: Optional[str] = None,
     ) -> None:
-        assert direction in ["from_temp", "to_temp"]
+        if direction not in ["from_temp", "to_temp"]:
+            raise InvalidOptionError(
+                f"direction={direction!r} is not one of "
+                "['from_temp', 'to_temp']."
+            )
         fits_dir = f"{config['Bagpipes']['PIPES_OUT_DIR']}/pipes/cats"
         funcs.make_dirs(f"{fits_dir}/")
         temp_out_subdir = self._temp_out_subdir(
@@ -939,11 +1040,10 @@ class Bagpipes(SED_code):
             from_fits_path = f"{fits_dir}/{new_subdir}.fits"
             to_fits_path = f"{fits_dir}/{temp_out_subdir}.fits"
         else:
-            err_msg = (
-                f"Invalid {direction=}! Must be in ['from_temp', 'to_temp']"
+            raise InvalidOptionError(
+                f"direction={direction!r} is not one of "
+                "['from_temp', 'to_temp']."
             )
-            galfind_logger.critical(err_msg)
-            raise Exception(err_msg)
         # Move fits catalogue
         if Path(from_fits_path).is_file() and not Path(to_fits_path).is_file():
             os.rename(from_fits_path, to_fits_path)
@@ -993,6 +1093,20 @@ class Bagpipes(SED_code):
             parameters
             - `R_boost_factor` : `float` - resolution boost factor
             (default 1.0)
+
+        Raises
+        ------
+        GalfindTypeError
+            If `cat` is not a `Catalogue`/`Spectral_Catalogue`, or if
+            ``SED_fit_params['fix_z']`` has an unsupported type or its
+            elements are not numeric.
+        GalfindError
+            If the spectra in a `Spectral_Catalogue` `cat` do not all
+            share the same grating.
+        LengthMismatchError
+            If ``SED_fit_params['excl_bands']`` (as a ragged array) or
+            ``SED_fit_params['fix_z']`` does not have length equal to
+            the number of galaxies being fit.
         """
         from galfind.catalogues.Catalogue import Catalogue
 
@@ -1002,13 +1116,20 @@ class Bagpipes(SED_code):
             is_spec = True
             from galfind import Spectral_Catalogue
 
-            assert isinstance(cat, Spectral_Catalogue)
-            assert all(
+            if not isinstance(cat, Spectral_Catalogue):
+                raise GalfindTypeError(
+                    f"cat has type {type(cat)}; must be a Catalogue or "
+                    "Spectral_Catalogue."
+                )
+            if not all(
                 spec.instrument.grating.name == cat[0].instrument.grating.name
                 for spec in cat
-            ), galfind_logger.critical(
-                "All spectra in Spectral_Catalogue must have the same grating!"
-            )
+            ):
+                raise GalfindError(
+                    "All spectra in Spectral_Catalogue cat must have the "
+                    "same grating; found gratings "
+                    f"{[spec.instrument.grating.name for spec in cat]!r}."
+                )
             spec_calibration_order = kwargs.get("spec_calibration_order", 2)
             spec_fit_instructions = kwargs.get("spec_fit_instructions", {})
             R_boost_factor = kwargs.get("R_boost_factor", 1.0)
@@ -1147,12 +1268,13 @@ class Bagpipes(SED_code):
                 excl_bands_arr = np.full(
                     len(run_cat.gals), self.SED_fit_params["excl_bands"]
                 )
-            assert len(excl_bands_arr) == len(
-                run_cat.gals
-            ), galfind_logger.critical(
-                f"Bagpipes {excl_bands_arr=} must be a (ragged) "
-                + f"list of lists with length {len(run_cat.gals)}!"
-            )
+            if len(excl_bands_arr) != len(run_cat.gals):
+                raise LengthMismatchError(
+                    f"excl_bands_arr={excl_bands_arr!r} has length "
+                    f"{len(excl_bands_arr)}; must be a (ragged) list of "
+                    f"lists with length equal to len(run_cat.gals)="
+                    f"{len(run_cat.gals)}."
+                )
             gals_arr = []
             for gal, excl_bands in tqdm(
                 zip(run_cat.gals, excl_bands_arr),
@@ -1209,30 +1331,33 @@ class Bagpipes(SED_code):
                 elif isinstance(
                     self.SED_fit_params["fix_z"], (list, np.ndarray)
                 ):
-                    assert len(self.SED_fit_params["fix_z"]) == len(
-                        gals_arr
-                    ), galfind_logger.critical(
-                        f"Bagpipes {self.SED_fit_params['fix_z']=} must "
-                        "have length equal to number of galaxies "
-                        f"{len(gals_arr)}!"
-                    )
-                    assert all(
+                    if len(self.SED_fit_params["fix_z"]) != len(gals_arr):
+                        raise LengthMismatchError(
+                            "SED_fit_params['fix_z']="
+                            f"{self.SED_fit_params['fix_z']!r} has length "
+                            f"{len(self.SED_fit_params['fix_z'])}; must "
+                            "have length equal to the number of galaxies "
+                            f"({len(gals_arr)})."
+                        )
+                    if not all(
                         isinstance(z, (np.integer, np.floating))
                         for z in self.SED_fit_params["fix_z"]
-                    ), galfind_logger.critical(
-                        f"Bagpipes {self.SED_fit_params['fix_z']=} must "
-                        "be a list/array of numbers!"
-                    )
+                    ):
+                        raise GalfindTypeError(
+                            "SED_fit_params['fix_z']="
+                            f"{self.SED_fit_params['fix_z']!r} must be a "
+                            "list/array of numbers."
+                        )
                     redshifts = np.array(self.SED_fit_params["fix_z"]).astype(
                         float
                     )
                 else:
-                    raise TypeError(
-                        galfind_logger.critical(
-                            f"{self.SED_fit_params['fix_z']=} must be a "
-                            "string, a list/np.ndarray, or a subclass "
-                            "of SED_code!"
-                        )
+                    raise GalfindTypeError(
+                        f"SED_fit_params['fix_z']="
+                        f"{self.SED_fit_params['fix_z']!r} has type "
+                        f"{type(self.SED_fit_params['fix_z'])}; must be a "
+                        "string, a list/np.ndarray, or a subclass of "
+                        "SED_code."
                     )
             else:
                 redshifts = np.array([spec.z for spec in cat])
@@ -1555,10 +1680,12 @@ class Bagpipes(SED_code):
             excl_bands_arr = np.full(
                 len(cat.gals), self.SED_fit_params["excl_bands"]
             )
-        assert len(excl_bands_arr) == len(cat.gals), galfind_logger.critical(
-            f"Bagpipes {excl_bands_arr=} must be a (ragged) list of "
-            f"lists with length {len(cat.gals)}!"
-        )
+        if len(excl_bands_arr) != len(cat.gals):
+            raise LengthMismatchError(
+                f"excl_bands_arr={excl_bands_arr!r} has length "
+                f"{len(excl_bands_arr)}; must be a (ragged) list of "
+                f"lists with length equal to len(cat.gals)={len(cat.gals)}."
+            )
 
         for i, (gal, excl_bands) in enumerate(zip(cat, excl_bands_arr)):
             gal_filt_paths = []
@@ -1625,32 +1752,44 @@ class Bagpipes(SED_code):
         -------
         `list` of `SED_2D`
             List of 2D SED objects containing model posteriors.
+
+        Raises
+        ------
+        LengthMismatchError
+            If `IDs`, `SED_paths`, ``SED_fit_params['fix_z']``, the
+            extracted rest-frame wavelengths, observed wavelengths, or
+            fluxes have mismatched lengths.
+        MissingKeyError
+            If `kwargs` does not contain both ``'cat'`` and
+            ``'aper_diam'``, or (when redshift is not fixed) ``'zPDFs'``.
         """
         # ensure this works if only extracting 1 galaxy
         if isinstance(IDs, (str, int, float)):
             IDs = np.array([int(IDs)])
         if isinstance(SED_paths, str):
             SED_paths = [SED_paths]
-        assert len(IDs) == len(SED_paths), galfind_logger.critical(
-            f"len(IDs) = {len(IDs)} != len(data_paths) = {len(SED_paths)}!"
-        )
-        assert all(
-            name in kwargs.keys() for name in ["cat", "aper_diam"]
-        ), galfind_logger.critical(
-            f"Bagpipes.extract_SEDs() with {kwargs.keys()=} "
-            "requires 'cat' and 'aper_diam'!"
-        )
+        if len(IDs) != len(SED_paths):
+            raise LengthMismatchError(
+                f"len(IDs)={len(IDs)} != len(SED_paths)={len(SED_paths)}."
+            )
+        if not all(name in kwargs.keys() for name in ["cat", "aper_diam"]):
+            raise MissingKeyError(
+                f"Bagpipes.extract_SEDs() called with kwargs "
+                f"{list(kwargs.keys())}; requires both 'cat' and "
+                "'aper_diam'."
+            )
         cat = kwargs["cat"]
         aper_diam = kwargs["aper_diam"]
 
         # extract redshifts
         if isinstance(self.SED_fit_params["fix_z"], (list, np.ndarray)):
-            assert len(self.SED_fit_params["fix_z"]) == len(
-                IDs
-            ), galfind_logger.critical(
-                f"Bagpipes {self.SED_fit_params['fix_z']=} must "
-                f"have length equal to number of IDs {len(IDs)}!"
-            )
+            if len(self.SED_fit_params["fix_z"]) != len(IDs):
+                raise LengthMismatchError(
+                    f"SED_fit_params['fix_z']="
+                    f"{self.SED_fit_params['fix_z']!r} has length "
+                    f"{len(self.SED_fit_params['fix_z'])}; must have "
+                    f"length equal to the number of IDs ({len(IDs)})."
+                )
             length = 500  # TODO: Calculate this at runtime
             z_arr = [np.full(length, z) for z in self.SED_fit_params["fix_z"]]
         elif self.SED_fit_params["fix_z"]:
@@ -1660,17 +1799,20 @@ class Bagpipes(SED_code):
                 for gal in cat
             ]
         else:
-            assert "zPDFs" in kwargs.keys(), galfind_logger.critical(
-                f"Bagpipes.extract_SEDs() with {kwargs.keys()=} "
-                "requires 'zPDFs' if not fixing redshift!"
-            )
+            if "zPDFs" not in kwargs.keys():
+                raise MissingKeyError(
+                    f"Bagpipes.extract_SEDs() called with kwargs "
+                    f"{list(kwargs.keys())}; requires 'zPDFs' if not "
+                    "fixing redshift."
+                )
             zPDFs = kwargs["zPDFs"]
             z_arr = [pdf.input_arr for pdf in zPDFs]
         # extract observed frame wavelengths
         rest_wavs = self._extract_SED_wavelengths(cat, aper_diam)
-        assert len(rest_wavs) == len(z_arr), galfind_logger.critical(
-            f"{len(rest_wavs)=}!={len(z_arr)=}"
-        )
+        if len(rest_wavs) != len(z_arr):
+            raise LengthMismatchError(
+                f"len(rest_wavs)={len(rest_wavs)} != len(z_arr)={len(z_arr)}."
+            )
         obs_wavs = [
             np.tile(rest_wavs_[np.newaxis, :], (len(z_arr_), 1))
             * (1.0 + z_arr_[:, np.newaxis])
@@ -1688,9 +1830,11 @@ class Bagpipes(SED_code):
             spectrum_type = kwargs["spectrum_type"]
         else:
             spectrum_type = "spectrum_full"
-        assert len(obs_wavs) == len(SED_paths), galfind_logger.critical(
-            f"{len(obs_wavs)=}!={len(SED_paths)=}"
-        )
+        if len(obs_wavs) != len(SED_paths):
+            raise LengthMismatchError(
+                f"len(obs_wavs)={len(obs_wavs)} != len(SED_paths)="
+                f"{len(SED_paths)}."
+            )
         fnu = [
             (
                 self._extract_SED_fluxes(SED_path, spectrum_type=spectrum_type)
@@ -1707,11 +1851,11 @@ class Bagpipes(SED_code):
                 disable=galfind_logger.getEffectiveLevel() > logging.INFO,
             )
         ]
-        assert (
-            len(z_arr) == len(obs_wavs) == len(fnu)
-        ), galfind_logger.critical(
-            f"{len(z_arr)=}!={len(obs_wavs)=}!={len(fnu)=}"
-        )
+        if not (len(z_arr) == len(obs_wavs) == len(fnu)):
+            raise LengthMismatchError(
+                f"len(z_arr)={len(z_arr)}, len(obs_wavs)={len(obs_wavs)}, "
+                f"len(fnu)={len(fnu)} must all be equal."
+            )
         SED_obs_arr = [
             SED_2D(
                 [
@@ -1743,10 +1887,12 @@ class Bagpipes(SED_code):
             excl_bands_arr = np.full(
                 len(cat.gals), self.SED_fit_params["excl_bands"]
             )
-        assert len(excl_bands_arr) == len(cat.gals), galfind_logger.critical(
-            f"Bagpipes {excl_bands_arr=} must be a (ragged) list of "
-            f"lists with length {len(cat.gals)}!"
-        )
+        if len(excl_bands_arr) != len(cat.gals):
+            raise LengthMismatchError(
+                f"excl_bands_arr={excl_bands_arr!r} has length "
+                f"{len(excl_bands_arr)}; must be a (ragged) list of "
+                f"lists with length equal to len(cat.gals)={len(cat.gals)}."
+            )
         gals_arr = []
         for gal, excl_bands in tqdm(
             zip(cat.gals, excl_bands_arr),
@@ -1938,10 +2084,18 @@ class Bagpipes(SED_code):
         `list` of `dict`
             Each element is a dictionary mapping property names to PDF objects,
             with values of `None` if PDFs are unavailable or ignored.
+
+        Raises
+        ------
+        LengthMismatchError
+            If `IDs` and `PDF_paths` do not have the same length.
+        MissingFileError
+            If a path in `PDF_paths` does not point to an existing file.
         """
-        assert len(IDs) == len(PDF_paths), galfind_logger.critical(
-            f"{len(IDs)=} != {len(PDF_paths)=}"
-        )
+        if len(IDs) != len(PDF_paths):
+            raise LengthMismatchError(
+                f"len(IDs)={len(IDs)} != len(PDF_paths)={len(PDF_paths)}."
+            )
         ignore_labels = [
             "dust_curve",
             "photometry",
@@ -1991,7 +2145,10 @@ class Bagpipes(SED_code):
                                 gal_property_PDFs[name] = pdf
                     h5.close()
             else:
-                raise FileNotFoundError(f"{h5_path} not found!")
+                raise MissingFileError(
+                    f"h5_path={h5_path!r} for ID={ID!r} does not exist; "
+                    "expected a Bagpipes HDF5 output file at this path."
+                )
             cat_property_PDFs.extend([gal_property_PDFs])
         return cat_property_PDFs
 
@@ -2076,14 +2233,24 @@ class Bagpipes(SED_code):
             )
             * u.AA
         )
-        assert all(
+        if not all(
             u.get_physical_type(f_nu)
             in [
                 "ABmag/spectral flux density",
                 "spectral flux density",
             ]
             for f_nu in [aper_phot.flux, aper_phot.flux_errs]
-        )
+        ):
+            phys_types = [
+                u.get_physical_type(f_nu)
+                for f_nu in [aper_phot.flux, aper_phot.flux_errs]
+            ]
+            raise InvalidUnitError(
+                "aper_phot.flux and aper_phot.flux_errs must have "
+                "physical type 'ABmag/spectral flux density' or "
+                "'spectral flux density'; got physical types "
+                f"{phys_types!r}."
+            )
         # TODO: remove bands if they are masked
         flux = funcs.convert_mag_units(band_wavs, aper_phot.flux, u.uJy)
         flux_errs = aper_phot.flux_errs.to(u.uJy)
@@ -2097,7 +2264,11 @@ class Bagpipes(SED_code):
         # funcs.convert_mag_err_units(
         #     band_wavs, aper_phot.flux, aper_phot.flux_errs, u.uJy
         # )
-        assert len(flux_errs) == len(aper_phot)
+        if len(flux_errs) != len(aper_phot):
+            raise LengthMismatchError(
+                f"len(flux_errs)={len(flux_errs)} != len(aper_phot)="
+                f"{len(aper_phot)}."
+            )
         # if flux < 1e19 and flux != -99 and flux != 0:
         #     pass
         pipes_input = np.vstack((np.array(flux), np.array(flux_errs))).T
@@ -2116,17 +2287,21 @@ class Bagpipes(SED_code):
         wav_units: u.Unit = u.AA,
         spec_units: u.Unit = u.erg / (u.s * u.cm**2 * u.AA),
     ) -> np.NDArray[float, float]:
-        assert spec_units != u.ABmag, galfind_logger.critical(
-            f"Bagpipes cannot fit spectra in {spec_units=}, must be in "
-            "flux units! Errors must be symmetrical!"
-        )
+        if spec_units == u.ABmag:
+            raise InvalidUnitError(
+                f"spec_units={spec_units!r} is u.ABmag; Bagpipes cannot "
+                "fit spectra in magnitude units, must be in flux units "
+                "with symmetrical errors."
+            )
         # extract relevant spectrum
         spec_arr = [
             spec for spec in cat if f"{spec._PID}_{spec._src_ID}" == ID
         ]
-        assert len(spec_arr) == 1, galfind_logger.critical(
-            f"Found {len(spec_arr)} spectra for {ID=} in {repr(cat)}!"
-        )
+        if len(spec_arr) != 1:
+            raise MissingDataError(
+                f"Found {len(spec_arr)} spectra for ID={ID!r} in "
+                f"{repr(cat)}; expected exactly 1."
+            )
         spec = spec_arr[0]
         wavs = funcs.convert_wav_units(spec.wavs, wav_units)
         fluxes = funcs.convert_mag_units(
@@ -2336,9 +2511,13 @@ class Bagpipes(SED_code):
             elif self.SED_fit_params["sfh"] == "dblplaw":
                 fit_instructions["dblplaw"] = dblplaw
             else:
-                err_message = f"{self.SED_fit_params['sfh']} SFH not found."
-                galfind_logger.critical(err_message)
-                raise Exception(err_message)
+                raise InvalidOptionError(
+                    f"SED_fit_params['sfh']={self.SED_fit_params['sfh']!r} "
+                    "is not a recognised SFH; must be one of ['exp', "
+                    "'const', 'burst', 'delayed', 'delayed+burst', "
+                    "'exp+burst', 'const+burst', 'rising', 'lognorm', "
+                    "'iyer', 'continuity', 'continuity_bursty', 'dblplaw']."
+                )
 
             # nebular emission (lines/continuum)
             nebular = {}
@@ -2434,14 +2613,13 @@ class Bagpipes(SED_code):
         from galfind.catalogues.Catalogue import Catalogue
 
         if isinstance(cat, Catalogue):
-            assert (
-                "z_calculator" in self.SED_fit_params.keys()
-            ), galfind_logger.critical(
-                "Bagpipes SED fitting requires a redshift "
-                "calculator in SED_fit_params                     "
-                "to calculate the SFR bins for the continuity "
-                "SFH!"
-            )
+            if "z_calculator" not in self.SED_fit_params.keys():
+                raise MissingKeyError(
+                    "SED_fit_params with keys "
+                    f"{list(self.SED_fit_params.keys())} must include "
+                    "'z_calculator' to calculate the SFR bins for the "
+                    "continuity SFH."
+                )
             z_calculator = self.SED_fit_params["z_calculator"]
             if isinstance(z_calculator, float):
                 z_arr = np.full(len(cat), z_calculator)
@@ -2449,7 +2627,12 @@ class Bagpipes(SED_code):
                 z_arr = z_calculator.extract_vals(cat)
         elif cat is None:
             z_calculator = self.SED_fit_params["z_calculator"]
-            assert isinstance(z_calculator, float)
+            if not isinstance(z_calculator, float):
+                raise GalfindTypeError(
+                    f"SED_fit_params['z_calculator'] has type "
+                    f"{type(z_calculator)} when cat is None; must be a "
+                    "float."
+                )
             z_arr = [z_calculator]
         else:
             # take the PRISM redshifts if available, else the 0th element
@@ -2468,21 +2651,25 @@ class Bagpipes(SED_code):
                     f"bins for {repr(cat[i])}!"
                 )
                 if "z_sfh_bins_fail" in self.SED_fit_params.keys():
-                    assert isinstance(
+                    if not isinstance(
                         self.SED_fit_params["z_sfh_bins_fail"], float
-                    ), galfind_logger.critical(
-                        f"{repr(self)} "
-                        "SED_fit_params['z_sfh_bins_fail'] must be a "
-                        "float if provided!"
-                    )
+                    ):
+                        raise GalfindTypeError(
+                            f"{repr(self)} SED_fit_params"
+                            "['z_sfh_bins_fail'] has type "
+                            f"{type(self.SED_fit_params['z_sfh_bins_fail'])}"
+                            "; must be a float if provided."
+                        )
                     err_message += (
                         " Using fallback "
                         f"z={self.SED_fit_params['z_sfh_bins_fail']}."
                     )
                     galfind_logger.warning(err_message)
                 else:
-                    galfind_logger.critical(err_message)
-                    raise ValueError(err_message)
+                    raise RangeError(
+                        err_message + " z < 0 and no fallback "
+                        "SED_fit_params['z_sfh_bins_fail'] was provided."
+                    )
                 z = self.SED_fit_params["z_sfh_bins_fail"]
             fit_instructions_i = deepcopy(self.fit_instructions)
             if "fixed_bin_ages" in self.SED_fit_params.keys():
@@ -2564,14 +2751,16 @@ class Bagpipes(SED_code):
             elif isinstance(fit_instructions["redshift"], (float, int)):
                 z = fit_instructions["redshift"]
             else:
-                galfind_logger.critical(
+                raise GalfindTypeError(
                     "Cannot extract redshift from fit_instructions: "
-                    f"{fit_instructions['redshift']=}"
+                    "fit_instructions['redshift'] has type "
+                    f"{type(fit_instructions['redshift'])}; must be a "
+                    "tuple, float, or int."
                 )
         else:
-            galfind_logger.critical(
-                "Cannot extract redshift from fit_instructions: "
-                f"{fit_instructions=}"
+            raise MissingKeyError(
+                "Cannot extract redshift from fit_instructions with keys "
+                f"{list(fit_instructions.keys())}: 'redshift' is missing."
             )
         # calculate the age of the universe
         age_of_universe = np.interp(
@@ -2584,12 +2773,11 @@ class Bagpipes(SED_code):
             # extract age_max
             fit_instructions["constant"]["age_max"] = (0.01, age_of_universe)
         else:
-            err_message = (
+            raise InvalidOptionError(
                 "Cannot make fit_instructions physical for "
-                f"{self.SED_fit_params['sfh']=}"
+                f"SED_fit_params['sfh']={self.SED_fit_params['sfh']!r}; "
+                "only 'dblplaw' and 'const' are supported."
             )
-            galfind_logger.critical(err_message)
-            raise NotImplementedError(err_message)
         return fit_instructions
 
 
@@ -2630,18 +2818,29 @@ def calculate_bins(
     -------
     `numpy.ndarray`
         Age bin edges (or flattened if ``return_flat=True``).
+
+    Raises
+    ------
+    RangeError
+        If `fixed_bin_ages` is not in ascending order.
+    InvalidOptionError
+        If `log_time` is `True` or `return_flat` is `False` (neither is
+        currently implemented).
     """
     time_observed = cosmo.lookback_time(redshift)
     time_sfr_start = cosmo.lookback_time(redshift_sfr_start)
     time_dif = abs(time_observed - time_sfr_start)
 
     # ensure fixed_bin_ages are ascending
-    assert np.all(np.diff(fixed_bin_ages.value) > 0), galfind_logger.critical(
-        "fixed_bin_ages must be in ascending order!"
-    )
-    assert not log_time, galfind_logger.critical(
-        "log_time=True not implemented for calculate_bins!"
-    )
+    if not np.all(np.diff(fixed_bin_ages.value) > 0):
+        raise RangeError(
+            f"fixed_bin_ages={fixed_bin_ages!r} must be in ascending order."
+        )
+    if log_time:
+        raise InvalidOptionError(
+            f"log_time={log_time!r} is not implemented for "
+            "calculate_bins; must be False."
+        )
 
     # if second_bin is not None:
     # assert second_bin > first_bin, "Second bin must be greater than
@@ -2691,6 +2890,7 @@ def calculate_bins(
         #     #     [[0, first_bin.to(output_unit).value], diff]
         #     # )
     else:
-        raise NotImplementedError(
-            "return_flat=False not implemented for calculate_bins!"
+        raise InvalidOptionError(
+            "return_flat=False is not implemented for calculate_bins; "
+            "must be True."
         )

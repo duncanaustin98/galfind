@@ -50,6 +50,16 @@ from tqdm import tqdm
 from .. import astropy_cosmo as cosmo
 from .. import config, galfind_logger
 from ..utils import useful_funcs_austind as funcs
+from ..utils.exceptions import (
+    GalfindError,
+    GalfindTypeError,
+    InvalidOptionError,
+    InvalidUnitError,
+    LengthMismatchError,
+    MissingDataError,
+    MissingKeyError,
+    RangeError,
+)
 
 
 class Spectral_Grating:  # disperser
@@ -272,12 +282,11 @@ class NIRSpec(Spectral_Instrument):
     def __init__(self, grating_name: str, filter_name: str) -> NoReturn:
         grating_filter_name = f"{grating_name}/{filter_name}"
         self.grating_filter_name = grating_filter_name
-        assert (
-            grating_filter_name in self.available_grating_filters
-        ), galfind_logger.critical(
-            f"{grating_filter_name=} not in "
-            f"{self.available_grating_filters=}"
-        )
+        if grating_filter_name not in self.available_grating_filters:
+            raise InvalidOptionError(
+                f"grating_filter_name={grating_filter_name!r} not in "
+                f"available_grating_filters={self.available_grating_filters!r}."
+            )
         super().__init__(
             Spectral_Grating(grating_name),
             Spectral_Filter(filter_name),
@@ -415,7 +424,10 @@ class Spectrum:
             elif "SRCNAM1" in self.meta.keys():
                 self._PID = str(self.meta["SRCNAM1"].split("_")[0])
             else:
-                raise (Exception())
+                raise MissingKeyError(
+                    f"{repr(self)}.meta is missing both 'PROGRAM' and "
+                    "'SRCNAM1'; cannot determine PID."
+                )
             return self._PID
 
     # @property
@@ -444,7 +456,10 @@ class Spectrum:
             elif "SRCNAM1" in self.meta.keys():
                 self._src_ID = int(self.meta["SRCNAM1"].split("_")[1])
             else:
-                raise (Exception())
+                raise MissingKeyError(
+                    f"{repr(self)}.meta is missing both 'SOURCEID' and "
+                    "'SRCNAM1'; cannot determine src_ID."
+                )
             return self._src_ID
 
     @property
@@ -466,7 +481,10 @@ class Spectrum:
             if "MSAMETID" in self.meta.keys():
                 self._meta_ID = int(self.meta["MSAMETID"])
             else:
-                raise (Exception())
+                raise MissingKeyError(
+                    f"{repr(self)}.meta is missing 'MSAMETID'; cannot "
+                    "determine MSA_ID."
+                )
             return self._meta_ID
 
     @property
@@ -479,7 +497,10 @@ class Spectrum:
             if "PATT_NUM" in self.meta.keys():
                 self._dither_pt = int(self.meta["PATT_NUM"])
             else:
-                raise (Exception())
+                raise MissingKeyError(
+                    f"{repr(self)}.meta is missing 'PATT_NUM'; cannot "
+                    "determine dither_pt."
+                )
             return self._dither_pt
 
         # meta = {"PID": int(header["PROGRAM"]), "src_ID": int(header(
@@ -720,7 +741,12 @@ class Spectrum:
         """
         # mostly copied from msaexp MSAMetafile base code
         self.load_MSA_metafile()
-        assert self.MSA_metafile is not None
+        if self.MSA_metafile is None:
+            raise MissingDataError(
+                f"{repr(self)}.MSA_metafile failed to load from "
+                f"MSA_metafile_name={self.MSA_metafile_name!r}; cannot "
+                "plot slitlet."
+            )
         slits = self.MSA_metafile.regions_from_metafile(
             dither_point_index=self.dither_pt,
             as_string=False,
@@ -818,9 +844,10 @@ class Spectrum:
         `float`
             Median SNR of the data points within the continuum window.
         """
-        assert hasattr(self, "z"), galfind_logger.critical(
-            f"{repr(self)} does not have a redshift (z) attribute!"
-        )
+        if not hasattr(self, "z"):
+            raise MissingDataError(
+                f"{repr(self)} does not have a redshift (z) attribute!"
+            )
         rest_wavs = self.wavs / (1.0 + self.z)
         wav_mask = (rest_wavs > rest_cont_wav - delta_wav / 2.0) & (
             rest_wavs < rest_cont_wav + delta_wav / 2.0
@@ -896,12 +923,14 @@ class Spectrum:
             Additional keyword arguments passed to the plotting calls
             (e.g. line colour, alpha).
         """
-        assert src in ["msaexp", "manual"], galfind_logger.critical(
-            f"{src=} not in ['msaexp', 'manual']"
-        )
-        assert frame in ["obs", "rest"], galfind_logger.critical(
-            f"{frame=} not in ['obs', 'rest']"
-        )
+        if src not in ["msaexp", "manual"]:
+            raise InvalidOptionError(
+                f"src={src!r} not in ['msaexp', 'manual']."
+            )
+        if frame not in ["obs", "rest"]:
+            raise InvalidOptionError(
+                f"frame={frame!r} not in ['obs', 'rest']."
+            )
         if src == "msaexp":
             raise NotImplementedError()
             import msaexp.spectrum
@@ -1024,9 +1053,10 @@ class Spectrum:
 
         # TODO: Link SED and Spectrum objects
         # make SED object from self
-        assert self.z is not None, galfind_logger.critical(
-            f"{repr(self)} does not have a redshift (z) attribute!"
-        )
+        if self.z is None:
+            raise MissingDataError(
+                f"{repr(self)} does not have a redshift (z) attribute!"
+            )
         sed_obs = SED_obs(
             self.z,
             self.wavs.value,
@@ -1066,12 +1096,15 @@ class Spectrum:
 
         Raises
         ------
-        NotImplementedError
+        MissingDataError
+            If the spectrum does not have a redshift (`z`) attribute.
+        InvalidOptionError
             If `wav_range` is not ``"Calzetti+94"``.
         """
-        assert hasattr(self, "z"), galfind_logger.critical(
-            f"{repr(self)} does not have a redshift (z) attribute!"
-        )
+        if not hasattr(self, "z"):
+            raise MissingDataError(
+                f"{repr(self)} does not have a redshift (z) attribute!"
+            )
         # convert wavs to rest frame
         rest_wavs = self.wavs / (1.0 + self.z)
         if wav_range == "Calzetti+94":
@@ -1079,12 +1112,10 @@ class Spectrum:
                 rest_wavs, self.fluxes
             )
         else:
-            err_message = (
-                "Only 'Calzetti+94' wav_range currently implemented "
-                f"for fit_UV_slope, not {wav_range=}"
+            raise InvalidOptionError(
+                f"wav_range={wav_range!r} not in ['Calzetti+94']; only "
+                "'Calzetti+94' is currently implemented for fit_UV_slope."
             )
-            galfind_logger.critical(err_message)
-            raise NotImplementedError(err_message)
         if len([mask for mask in fluxes.mask if not mask]) <= 1:
             galfind_logger.debug(
                 "Not enough valid data points to fit UV slope for "
@@ -1147,9 +1178,10 @@ class Spectrum:
             uncertainties. Returns ``(nan, [nan, nan])`` if there is no
             valid data or the unit conversion fails.
         """
-        assert hasattr(self, "z"), galfind_logger.critical(
-            f"{repr(self)} does not have a redshift (z) attribute!"
-        )
+        if not hasattr(self, "z"):
+            raise MissingDataError(
+                f"{repr(self)} does not have a redshift (z) attribute!"
+            )
         rest_wavs = funcs.convert_wav_units(self.wavs, u.AA) / (1.0 + self.z)
         wav_range_AA = wav_range.to(u.AA)
         valid = (
@@ -1244,30 +1276,31 @@ class Spectrum:
             percentile uncertainties. Returns ``(nan, [nan, nan])`` if
             either continuum window has a negative median flux.
         """
-        assert hasattr(self, "z"), galfind_logger.critical(
-            f"{repr(self)} does not have a redshift (z) attribute!"
-        )
-        assert len(wav_ranges) == 2, galfind_logger.critical(
-            f"{wav_ranges=} must be a list of two wavelength ranges!"
-        )
-        assert all(
-            [len(wav_range) == 2 for wav_range in wav_ranges]
-        ), galfind_logger.critical(
-            f"Each element of {wav_ranges=} must be a wavelength "
-            "range (i.e. a list of two wavelengths)!"
-        )
-        assert all(
-            [wav_range[0] < wav_range[1] for wav_range in wav_ranges]
-        ), galfind_logger.critical(
-            f"In each wavelength range in {wav_ranges=}, the first "
-            "wavelength must be less than the second wavelength!"
-        )
-        assert np.mean(wav_ranges[0]) < np.mean(
-            wav_ranges[1]
-        ), galfind_logger.critical(
-            f"The first wavelength range in {wav_ranges=} must be "
-            "blueshifted relative to the second!"
-        )
+        if not hasattr(self, "z"):
+            raise MissingDataError(
+                f"{repr(self)} does not have a redshift (z) attribute!"
+            )
+        if len(wav_ranges) != 2:
+            raise LengthMismatchError(
+                f"wav_ranges={wav_ranges!r} has length {len(wav_ranges)}; "
+                "must be a list of two wavelength ranges."
+            )
+        if not all(len(wav_range) == 2 for wav_range in wav_ranges):
+            raise LengthMismatchError(
+                f"Each element of wav_ranges={wav_ranges!r} must be a "
+                "wavelength range (i.e. a list of two wavelengths)."
+            )
+        if not all(wav_range[0] < wav_range[1] for wav_range in wav_ranges):
+            raise RangeError(
+                f"In each wavelength range in wav_ranges={wav_ranges!r}, "
+                "the first wavelength must be less than the second "
+                "wavelength."
+            )
+        if not np.mean(wav_ranges[0]) < np.mean(wav_ranges[1]):
+            raise RangeError(
+                f"The first wavelength range in wav_ranges={wav_ranges!r} "
+                "must be blueshifted relative to the second."
+            )
         rest_wavs = funcs.convert_wav_units(self.wavs, u.AA) / (1.0 + self.z)
         D4000_fluxes = {}
         D4000_flux_errs = {}
@@ -1364,7 +1397,7 @@ class Spectrum:
 
         Raises
         ------
-        ValueError
+        InvalidOptionError
             If `frame` is not ``"rest"`` or ``"obs"``.
         """
         rest_wavs = funcs.convert_wav_units(self.wavs, u.AA) / (1.0 + self.z)
@@ -1446,7 +1479,9 @@ class Spectrum:
         elif frame == "obs":
             EW_arr = Halpha_flux_arr * (1.0 + self.z) / cont_arr
         else:
-            raise ValueError("frame must be 'rest' or 'obs'")
+            raise InvalidOptionError(
+                f"frame={frame!r} not in ['rest', 'obs']."
+            )
         EW_percentiles = np.percentile(EW_arr, [16, 50, 84])
         if frame == "rest":
             self.Ha_EWrest = {
@@ -1463,7 +1498,9 @@ class Spectrum:
             }
             # return EW_percentiles[0], EW_percentiles[1], EW_percentiles[2]
         else:
-            raise (Exception("frame must be 'rest' or 'obs'"))
+            raise InvalidOptionError(
+                f"frame={frame!r} not in ['rest', 'obs']."
+            )
 
         cont_percentiles = np.percentile(cont_arr, [16, 50, 84])
         self.Ha_cont = {
@@ -1487,7 +1524,10 @@ class Spectrum:
         ]
         integrated_SNR = np.sum(SNRs) / np.sqrt(len(SNRs))
         print(f"Integrated SNR: {integrated_SNR}")
-        assert not np.isnan(integrated_SNR)
+        if np.isnan(integrated_SNR):
+            raise RangeError(
+                f"{repr(self)} integrated_SNR for the H-alpha fit is NaN."
+            )
         self.Ha_SNR = integrated_SNR
 
         fig, ax = plt.subplots()
@@ -1707,7 +1747,11 @@ class Spectral_Catalogue:
             raise AttributeError
 
     def __add__(self, cat):
-        assert cat.__class__.__name__ == "Spectral_Catalogue"
+        if cat.__class__.__name__ != "Spectral_Catalogue":
+            raise GalfindTypeError(
+                f"cat has type {type(cat).__name__}; must be a "
+                "Spectral_Catalogue object."
+            )
         spectra_arr = np.array(
             [spectrum for gal in self for spectrum in gal]
             + [spectrum for gal in cat for spectrum in gal]
@@ -1722,11 +1766,11 @@ class Spectral_Catalogue:
         for key, value in self.__dict__.items():
             try:
                 setattr(result, key, deepcopy(value, memo))
-            except Exception:
-                galfind_logger.critical(
-                    f"deepcopy({self.__class__.__name__}) {key}: {value} FAIL!"
-                )
-                breakpoint()
+            except Exception as e:
+                raise GalfindError(
+                    f"deepcopy({self.__class__.__name__}) failed for "
+                    f"attribute {key!r}={value!r}: {e}"
+                ) from e
         return result
 
     @classmethod
@@ -1798,11 +1842,17 @@ class Spectral_Catalogue:
             selected DJA catalogue row.
         """
         if grating_filter is not None:
-            assert grating_filter in NIRSpec.available_grating_filters
+            if grating_filter not in NIRSpec.available_grating_filters:
+                raise InvalidOptionError(
+                    f"grating_filter={grating_filter!r} not in "
+                    "NIRSpec.available_grating_filters="
+                    f"{NIRSpec.available_grating_filters!r}."
+                )
         available_versions = ["v1", "v2", "v3", "v4_2", "v4_4"]
-        assert version in available_versions, galfind_logger.critical(
-            f"version {version} not in {available_versions}"
-        )
+        if version not in available_versions:
+            raise InvalidOptionError(
+                f"version={version!r} not in {available_versions!r}."
+            )
         # open and crop catalogue
         # DJA_cat = utils.read_catalog(
         #     config['Spectra']['DJA_CAT_PATH'], format = "ascii.ecsv"
@@ -1812,9 +1862,18 @@ class Spectral_Catalogue:
         )
         if filename_arr is None:
             if ra_range is not None:
-                assert len(ra_range) == 2
+                if len(ra_range) != 2:
+                    raise LengthMismatchError(
+                        f"ra_range={ra_range!r} has length "
+                        f"{len(ra_range)}; must have length 2."
+                    )
                 if type(ra_range) in [list, np.array]:
-                    assert ra_range[0].unit == ra_range[1].unit
+                    if ra_range[0].unit != ra_range[1].unit:
+                        raise InvalidUnitError(
+                            f"ra_range={ra_range!r} elements have "
+                            f"mismatched units {ra_range[0].unit!r} and "
+                            f"{ra_range[1].unit!r}."
+                        )
                     ra_range = [
                         ra_range[0].value,
                         ra_range[1].value,
@@ -1835,9 +1894,18 @@ class Spectral_Catalogue:
                 )
 
             if dec_range is not None:
-                assert len(dec_range) == 2
+                if len(dec_range) != 2:
+                    raise LengthMismatchError(
+                        f"dec_range={dec_range!r} has length "
+                        f"{len(dec_range)}; must have length 2."
+                    )
                 if type(dec_range) in [list, np.array]:
-                    assert dec_range[0].unit == dec_range[1].unit
+                    if dec_range[0].unit != dec_range[1].unit:
+                        raise InvalidUnitError(
+                            f"dec_range={dec_range!r} elements have "
+                            f"mismatched units {dec_range[0].unit!r} and "
+                            f"{dec_range[1].unit!r}."
+                        )
                     dec_range = [
                         dec_range[0].value,
                         dec_range[1].value,

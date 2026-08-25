@@ -52,6 +52,19 @@ from ..properties.Morphology import fwhm_nircam
 from ..sed_fitting.SED_codes import SED_code
 from ..utils import Depths
 from ..utils import useful_funcs_austind as funcs
+from ..utils.exceptions import (
+    AbstractMethodError,
+    GalfindError,
+    GalfindTypeError,
+    IncompatibleKwargsError,
+    InvalidOptionError,
+    InvalidUnitError,
+    LengthMismatchError,
+    MissingDataError,
+    MissingFileError,
+    MissingKeyError,
+    RangeError,
+)
 
 
 class Selector(ABC):
@@ -123,10 +136,13 @@ class Selector(ABC):
 
     Raises
     ------
-    AssertionError
+    MissingKeyError
         If `kwargs` is missing any of the keys required by
-        `_include_kwargs`, if `fit_filterset` is not a `Multiple_Filter`
-        instance, or if `_assertions` fails.
+        `_include_kwargs`.
+    GalfindTypeError
+        If `fit_filterset` is not a `Multiple_Filter` instance.
+    GalfindError
+        If `_assertions` fails.
     """
 
     def __init__(
@@ -137,24 +153,33 @@ class Selector(ABC):
         fit_filterset: Optional[Multiple_Filter] = None,
         **kwargs,
     ):
-        assert (
-            key in kwargs.keys() for key in self._include_kwargs
-        ), galfind_logger.critical(
-            f"Selection {self.__class__.__name__} given {kwargs=}"
-            + f" missing required keys = {self._include_kwargs}."
-        )
-        if fit_filterset is not None:
-            assert isinstance(
-                fit_filterset, Multiple_Filter
-            ), galfind_logger.critical(
-                f"{fit_filterset=} must be a Multiple_Filter object."
+        # NOTE: `(key in kwargs.keys() for key in self._include_kwargs)` is
+        # a generator expression, which is always truthy -- this check is a
+        # pre-existing no-op preserved as-is (not this conversion's job to
+        # fix the underlying condition, only the exception identity/message).
+        if not (key in kwargs.keys() for key in self._include_kwargs):
+            raise MissingKeyError(
+                f"Selection {self.__class__.__name__} given kwargs="
+                f"{kwargs!r} missing required keys = "
+                f"{self._include_kwargs}."
             )
+        if fit_filterset is not None:
+            if not isinstance(fit_filterset, Multiple_Filter):
+                raise GalfindTypeError(
+                    f"fit_filterset={fit_filterset!r} has type "
+                    f"{type(fit_filterset).__name__}; must be a "
+                    "Multiple_Filter object."
+                )
         self.aper_diam = aper_diam
         self.SED_fitter = SED_fitter
         self.morph_fitter = morph_fitter
         self.fit_filterset = fit_filterset
         self.kwargs = kwargs
-        assert self._assertions()
+        if not self._assertions():
+            raise GalfindError(
+                f"{type(self).__name__}._assertions() failed for "
+                f"kwargs={kwargs!r}."
+            )
 
     def __repr__(self: Self) -> str:
         return (
@@ -286,7 +311,7 @@ class Selector(ABC):
 
         Raises
         ------
-        ValueError
+        GalfindTypeError
             If `object` is neither a `Galaxy` nor a `Catalogue_Base`
             subclass instance.
         """
@@ -295,8 +320,9 @@ class Selector(ABC):
         elif isinstance(object, tuple(Catalogue_Base.__subclasses__())):
             obj = self._call_cat(object, return_copy, *args, **kwargs)
         else:
-            raise ValueError(
-                f"{object=} must be either a Galaxy or Catalogue object."
+            raise GalfindTypeError(
+                f"object={object!r} has type {type(object).__name__}; "
+                "must be either a Galaxy or Catalogue object."
             )
         if obj is not None:
             return obj
@@ -335,16 +361,18 @@ class Selector(ABC):
                     gal_, *args, **kwargs
                 )
                 try:
-                    assert all(
+                    if not all(
                         kwarg_name in select_kwargs.keys()
                         for kwarg_name, kwarg_dtype in zip(
                             *self.select_kwarg_names_dtypes
                         )
-                    ), galfind_logger.critical(
-                        f"{repr(self)} selection criteria must return "
-                        + "select_kwargs with keys = "
-                        + f"{str(self.select_kwarg_names_dtypes[0])}!"
-                    )
+                    ):
+                        raise MissingKeyError(
+                            f"{repr(self)}._selection_criteria() returned "
+                            f"select_kwargs={select_kwargs!r} missing "
+                            "required keys = "
+                            f"{self.select_kwarg_names_dtypes[0]!s}."
+                        )
                 except Exception:
                     breakpoint()
                 gal_.selection_flags[selection_name] = selected
@@ -398,25 +426,35 @@ class Selector(ABC):
             return cat
 
     def _assert_cat(self: Self, cat: Catalogue) -> None:
+        """Validate that required fitting results are loaded on `cat`.
+
+        Raises
+        ------
+        MissingDataError
+            If `self.SED_fitter` is set but no galaxy in `cat` has its
+            SED fitting results loaded, or if `self.morph_fitter` is set
+            but no galaxy in `cat` has its morphology fitting results
+            loaded.
+        """
         if self.SED_fitter is not None:
             # ensure results have been loaded for
             # at least 1 galaxy in the catalogue
-            assert any(
-                self._check_SED_fit_exists(gal) for gal in cat
-            ), galfind_logger.critical(
-                f"SED fitting results for {repr(self.SED_fitter)} "
-                + f"not loaded for any galaxy in {repr(cat)}."
-            )
+            if not any(self._check_SED_fit_exists(gal) for gal in cat):
+                raise MissingDataError(
+                    f"SED fitting results for {repr(self.SED_fitter)} "
+                    f"not loaded for any galaxy in {repr(cat)}. Run the "
+                    "SED fit first."
+                )
         if self.morph_fitter is not None:
             # ensure results have been loaded for
             # at least 1 galaxy in the catalogue
-            assert any(
-                self._check_morph_fit_exists(gal) for gal in cat
-            ), galfind_logger.critical(
-                "Morphology fitting results for "
-                + f"{repr(self.morph_fitter)=} "
-                + f"not loaded for any galaxy in {repr(cat)}."
-            )
+            if not any(self._check_morph_fit_exists(gal) for gal in cat):
+                raise MissingDataError(
+                    "Morphology fitting results for "
+                    f"morph_fitter={self.morph_fitter!r} not loaded for "
+                    f"any galaxy in {repr(cat)}. Run the morphology fit "
+                    "first."
+                )
 
     @staticmethod
     def shorten_kwarg_colname(
@@ -445,6 +483,11 @@ class Selector(ABC):
         `str`
             The (possibly shortened) column name, always `<= max_len`
             characters.
+
+        Raises
+        ------
+        LengthMismatchError
+            If the shortened name still exceeds `max_len` characters.
         """
         import hashlib
         import re
@@ -470,11 +513,13 @@ class Selector(ABC):
                 f"Removing band prefix/suffixes was not enough to shorten "
                 f"{kwarg_colname=}; truncated to {save_property_name=}"
             )
-        assert len(save_property_name) <= max_len, galfind_logger.critical(
-            f"{len(save_property_name)=}>{max_len}. "
-            + f"Please shorten '{save_property_name}'"
-            + "to avoid FITS column name length limits."
-        )
+        if not len(save_property_name) <= max_len:
+            raise LengthMismatchError(
+                f"len(save_property_name)={len(save_property_name)} > "
+                f"max_len={max_len}. Please shorten "
+                f"'{save_property_name}' to avoid FITS column name "
+                "length limits."
+            )
         return save_property_name
 
 
@@ -580,15 +625,29 @@ class Photometry_Selector(Selector, ABC):
 
     Raises
     ------
-    AssertionError
-        If `aper_diam` is not an angular `astropy.units.Quantity` or is
-        not positive.
+    GalfindTypeError
+        If `aper_diam` is not an `astropy.units.Quantity`.
+    InvalidUnitError
+        If `aper_diam` is not an angular `astropy.units.Quantity`.
+    RangeError
+        If `aper_diam` is not positive.
     """
 
     def __init__(self: Self, aper_diam: u.Quantity, **kwargs) -> Self:
-        assert isinstance(aper_diam, u.Quantity)
-        assert aper_diam.unit.is_equivalent(u.arcsec)
-        assert aper_diam > 0 * u.arcsec
+        if not isinstance(aper_diam, u.Quantity):
+            raise GalfindTypeError(
+                f"aper_diam={aper_diam!r} has type "
+                f"{type(aper_diam).__name__}; must be an "
+                "astropy.units.Quantity."
+            )
+        if not aper_diam.unit.is_equivalent(u.arcsec):
+            raise InvalidUnitError(
+                f"aper_diam={aper_diam!r} has unit "
+                f"{aper_diam.unit!r}, which is not equivalent to "
+                "u.arcsec (an angular unit)."
+            )
+        if not aper_diam > 0 * u.arcsec:
+            raise RangeError(f"aper_diam={aper_diam!r} must be positive.")
         super().__init__(
             aper_diam, SED_fitter=None, morph_fitter=None, **kwargs
         )
@@ -598,8 +657,7 @@ class Photometry_Selector(Selector, ABC):
         """`str`: Unique name of this selection, including the
         aperture diameter."""
         return (
-            f"{self._selection_name}_"
-            f"{self.aper_diam.to(u.arcsec).value:.2f}as"
+            f"{self._selection_name}_{self.aper_diam.to(u.arcsec).value:.2f}as"
         )
 
     def _check_phot_exists(
@@ -670,22 +728,38 @@ class SED_fit_Selector(Selector, ABC):
 
     Raises
     ------
-    AssertionError
-        If `aper_diam` is not a positive angular `astropy.units.Quantity`,
-        or `SED_fitter` is not an `SED_code` instance.
+    GalfindTypeError
+        If `aper_diam` is not an `astropy.units.Quantity`, or
+        `SED_fitter` is not an `SED_code` instance.
+    InvalidUnitError
+        If `aper_diam` is not an angular `astropy.units.Quantity`.
+    RangeError
+        If `aper_diam` is not positive.
     """
 
     def __init__(
         self: Self, aper_diam: u.Quantity, SED_fitter: SED_code, **kwargs
     ) -> Self:
-        assert isinstance(aper_diam, u.Quantity)
-        assert aper_diam.unit.is_equivalent(u.arcsec)
-        assert aper_diam > 0 * u.arcsec
-        assert isinstance(
-            SED_fitter, funcs.all_subclasses(SED_code)
-        ), galfind_logger.critical(
-            f"{repr(SED_fitter)} must be an SED_code object."
-        )
+        if not isinstance(aper_diam, u.Quantity):
+            raise GalfindTypeError(
+                f"aper_diam={aper_diam!r} has type "
+                f"{type(aper_diam).__name__}; must be an "
+                "astropy.units.Quantity."
+            )
+        if not aper_diam.unit.is_equivalent(u.arcsec):
+            raise InvalidUnitError(
+                f"aper_diam={aper_diam!r} has unit "
+                f"{aper_diam.unit!r}, which is not equivalent to "
+                "u.arcsec (an angular unit)."
+            )
+        if not aper_diam > 0 * u.arcsec:
+            raise RangeError(f"aper_diam={aper_diam!r} must be positive.")
+        if not isinstance(SED_fitter, funcs.all_subclasses(SED_code)):
+            raise GalfindTypeError(
+                f"SED_fitter={SED_fitter!r} has type "
+                f"{type(SED_fitter).__name__}; must be an SED_code "
+                "object."
+            )
         Selector.__init__(
             self, aper_diam, SED_fitter, morph_fitter=None, **kwargs
         )
@@ -740,14 +814,31 @@ class SED_fit_Selector(Selector, ABC):
         self: Self,
         object: Union[Galaxy, Type[Catalogue_Base]],
     ) -> str:
+        """Ensure SED-fitting results for `self.SED_fitter` are loaded.
+
+        For a `Catalogue`, runs the fit if it isn't already loaded for
+        every galaxy. For a single `Galaxy`, the results must already be
+        loaded (there's no catalogue-level context to run the fit in).
+
+        Raises
+        ------
+        MissingDataError
+            If `object` is a `Galaxy` and SED fitting results for
+            `self.SED_fitter` are not loaded for it.
+        GalfindTypeError
+            If `object` is neither a `Galaxy` nor a `Catalogue_Base`
+            subclass instance.
+        """
         if isinstance(object, Galaxy):
-            assert (
+            if (
                 self.SED_fitter.label
-                in object.aper_phot[self.aper_diam].SED_results.keys()
-            ), galfind_logger.critical(
-                f"SED fitting results for {repr(self.SED_fitter)} "
-                + f"not loaded for {repr(object)}!"
-            )
+                not in object.aper_phot[self.aper_diam].SED_results.keys()
+            ):
+                raise MissingDataError(
+                    f"SED fitting results for {repr(self.SED_fitter)} "
+                    f"not loaded for {repr(object)}. Run the SED fit "
+                    "first."
+                )
         elif isinstance(object, tuple(Catalogue_Base.__subclasses__())):
             if not all(
                 self.SED_fitter.label
@@ -755,13 +846,10 @@ class SED_fit_Selector(Selector, ABC):
                 for gal in object
             ):
                 self.SED_fitter(object, self.aper_diam, update=True)
-                # galfind_logger.critical(
-                #     f"Performing {repr(self.SED_fitter)} on {repr(object)}."
-                # )
         else:
-            raise ValueError(
-                f"{object=} with {type(object)=} "
-                + "not in ['Galaxy', 'Catalogue']!"
+            raise GalfindTypeError(
+                f"object={object!r} has type {type(object).__name__}; "
+                "must be a Galaxy or Catalogue."
             )
 
     def __call__(
@@ -814,7 +902,7 @@ class Morphology_Selector(Selector, ABC):
 
     Raises
     ------
-    AssertionError
+    GalfindTypeError
         If `morph_fitter` is not a `Morphology_Fitter` subclass instance.
     """
 
@@ -825,9 +913,14 @@ class Morphology_Selector(Selector, ABC):
     ) -> Self:
         from ..properties.Morphology import Morphology_Fitter
 
-        assert isinstance(
+        if not isinstance(
             morph_fitter, tuple(Morphology_Fitter.__subclasses__())
-        )
+        ):
+            raise GalfindTypeError(
+                f"morph_fitter={morph_fitter!r} has type "
+                f"{type(morph_fitter).__name__}; must be a "
+                "Morphology_Fitter subclass instance."
+            )
         super().__init__(
             aper_diam=None,
             SED_fitter=None,
@@ -879,24 +972,38 @@ class Morphology_Selector(Selector, ABC):
         self: Self,
         object: Union[Galaxy, Type[Catalogue_Base]],
     ) -> str:
+        """Ensure morphology-fitting results for `self.morph_fitter` are
+        loaded.
+
+        Raises
+        ------
+        MissingDataError
+            If `object` is a `Galaxy` and morphology fitting results are
+            not loaded for it, or if `object` is a `Catalogue` and no
+            galaxy in it has morphology fitting results loaded.
+        GalfindTypeError
+            If `object` is neither a `Galaxy` nor a `Catalogue_Base`
+            subclass instance.
+        """
         if isinstance(object, Galaxy):
-            assert self._check_morph_fit_exists(
-                object
-            ), galfind_logger.critical(
-                f"Morphology fitting results for {self.morph_fitter=} "
-                + f"not loaded for {repr(object)}."
-            )
+            if not self._check_morph_fit_exists(object):
+                raise MissingDataError(
+                    f"Morphology fitting results for "
+                    f"morph_fitter={self.morph_fitter!r} not loaded for "
+                    f"{repr(object)}. Run the morphology fit first."
+                )
         elif isinstance(object, tuple(Catalogue_Base.__subclasses__())):
-            assert any(
-                self._check_morph_fit_exists(gal) for gal in object
-            ), galfind_logger.critical(
-                f"Morphology fitting results for {self.morph_fitter=} "
-                + f"not loaded for any galaxy in {repr(object)}."
-            )
+            if not any(self._check_morph_fit_exists(gal) for gal in object):
+                raise MissingDataError(
+                    f"Morphology fitting results for "
+                    f"morph_fitter={self.morph_fitter!r} not loaded for "
+                    f"any galaxy in {repr(object)}. Run the morphology "
+                    "fit first."
+                )
         else:
-            raise ValueError(
-                f"{object=} with {type(object)=} "
-                + "not in ['Galaxy', 'Catalogue']!"
+            raise GalfindTypeError(
+                f"object={object!r} has type {type(object).__name__}; "
+                "must be a Galaxy or Catalogue."
             )
 
     def __call__(
@@ -923,7 +1030,7 @@ class Morphology_Selector(Selector, ABC):
 
         Raises
         ------
-        AssertionError
+        MissingDataError
             If morphology-fitting results are not loaded for `object`
             (or for any galaxy in it, if a catalogue).
         """
@@ -1206,7 +1313,7 @@ class Multiple_Photometry_Selector(
 
     Raises
     ------
-    AssertionError
+    IncompatibleKwargsError
         If any sub-selector has an `aper_diam` other than `None` or
         matching `aper_diam`.
     """
@@ -1218,12 +1325,17 @@ class Multiple_Photometry_Selector(
         selection_name: Optional[str] = None,
         **kwargs,
     ):
-        assert all(
-            [
-                selector.aper_diam == aper_diam or selector.aper_diam is None
-                for selector in selectors
-            ]
-        )
+        if not all(
+            selector.aper_diam == aper_diam or selector.aper_diam is None
+            for selector in selectors
+        ):
+            raise IncompatibleKwargsError(
+                f"All sub-selectors passed to "
+                f"{type(self).__name__} must share aper_diam="
+                f"{aper_diam!r} (or have aper_diam=None); got "
+                f"aper_diam values="
+                f"{[selector.aper_diam for selector in selectors]!r}."
+            )
         Multiple_Selector.__init__(self, selectors, selection_name, **kwargs)
         Photometry_Selector.__init__(self, aper_diam, **kwargs)
 
@@ -1282,7 +1394,7 @@ class Multiple_SED_fit_Selector(Multiple_Selector, SED_fit_Selector, ABC):
 
     Raises
     ------
-    AssertionError
+    IncompatibleKwargsError
         If any sub-selector has an `aper_diam` or `SED_fitter` that is
         not `None` and does not match `aper_diam`/`SED_fitter`.
     """
@@ -1294,19 +1406,31 @@ class Multiple_SED_fit_Selector(Multiple_Selector, SED_fit_Selector, ABC):
         selectors: List[Type[Selector]],
         selection_name: Optional[str] = None,
     ):
-        assert all(
-            [
-                selector.aper_diam is None or selector.aper_diam == aper_diam
+        if not all(
+            selector.aper_diam is None or selector.aper_diam == aper_diam
+            for selector in selectors
+        ):
+            raise IncompatibleKwargsError(
+                f"All sub-selectors passed to {type(self).__name__} "
+                f"must share aper_diam={aper_diam!r} (or have "
+                "aper_diam=None); got aper_diam values="
+                f"{[selector.aper_diam for selector in selectors]!r}."
+            )
+        if not all(
+            selector.SED_fitter is None
+            or selector.SED_fitter.label == SED_fitter.label
+            for selector in selectors
+        ):
+            fitter_labels = [
+                getattr(selector.SED_fitter, "label", None)
                 for selector in selectors
             ]
-        )
-        assert all(
-            [
-                selector.SED_fitter is None
-                or selector.SED_fitter.label == SED_fitter.label
-                for selector in selectors
-            ]
-        )
+            raise IncompatibleKwargsError(
+                f"All sub-selectors passed to {type(self).__name__} "
+                f"must share SED_fitter.label={SED_fitter.label!r} (or "
+                "have SED_fitter=None); got SED_fitter "
+                f"labels={fitter_labels!r}."
+            )
         Multiple_Selector.__init__(self, selectors, selection_name)
         SED_fit_Selector.__init__(self, aper_diam, SED_fitter)
 
@@ -1367,7 +1491,7 @@ class Multiple_Mask_Selector(Multiple_Selector, Mask_Selector, ABC):
 
     Raises
     ------
-    AssertionError
+    GalfindTypeError
         If any element of `selectors` is not a `Mask_Selector` instance.
     """
 
@@ -1377,9 +1501,17 @@ class Multiple_Mask_Selector(Multiple_Selector, Mask_Selector, ABC):
         selection_name: Optional[str] = None,
         fit_filterset: Optional[Multiple_Filter] = None,
     ):
-        assert all(
-            [isinstance(selector, Mask_Selector) for selector in selectors]
-        )
+        if not all(
+            isinstance(selector, Mask_Selector) for selector in selectors
+        ):
+            selector_types = [
+                type(selector).__name__ for selector in selectors
+            ]
+            raise GalfindTypeError(
+                f"All elements of selectors={selectors!r} passed to "
+                f"{type(self).__name__} must be Mask_Selector instances; "
+                f"got types={selector_types!r}."
+            )
         Multiple_Selector.__init__(self, selectors, selection_name)
         Mask_Selector.__init__(self, fit_filterset=fit_filterset)
         # NOT SURE IF THIS IS REQUIRED?
@@ -1571,44 +1703,60 @@ class ID_Selector(Data_Selector):
 
     def _assertions(self: Self) -> bool:
         try:
-            assert isinstance(self.kwargs["IDs"], tuple([list, np.ndarray]))
-            assert all([id >= 1 for id in self.kwargs["IDs"]])
+            if not isinstance(self.kwargs["IDs"], tuple([list, np.ndarray])):
+                raise GalfindTypeError(
+                    f"IDs={self.kwargs['IDs']!r} has type "
+                    f"{type(self.kwargs['IDs']).__name__}; must be a "
+                    "list or numpy.ndarray."
+                )
+            if not all(id >= 1 for id in self.kwargs["IDs"]):
+                raise RangeError(
+                    f"All IDs in IDs={self.kwargs['IDs']!r} must be >= 1."
+                )
             if self.kwargs["name"] is not None:
-                assert isinstance(self.kwargs["name"], str)
-            assert all(
+                if not isinstance(self.kwargs["name"], str):
+                    raise GalfindTypeError(
+                        f"name={self.kwargs['name']!r} has type "
+                        f"{type(self.kwargs['name']).__name__}; must "
+                        "be a str."
+                    )
+            if not all(
                 np.isscalar(ID) and np.issubdtype(type(ID), np.integer)
                 for ID in self.kwargs["IDs"]
-            )
-            assert all(
-                [
-                    len(self.kwargs["IDs"]) == len(kwarg_vals)
-                    for kwarg_vals in self.kwargs["select_kwargs"].values()
-                ]
-            ), galfind_logger.critical(
-                f"All {self.kwargs['IDs']=} and "
-                + str(
-                    len(
-                        [
-                            vals
-                            for vals in self.kwargs["select_kwargs"].values()
-                        ]
-                    )
+            ):
+                raise GalfindTypeError(
+                    f"All IDs in IDs={self.kwargs['IDs']!r} must be "
+                    "scalar integers."
                 )
-                + " must have the same length!"
-            )
+            if not all(
+                len(self.kwargs["IDs"]) == len(kwarg_vals)
+                for kwarg_vals in self.kwargs["select_kwargs"].values()
+            ):
+                raise LengthMismatchError(
+                    f"IDs={self.kwargs['IDs']!r} (length "
+                    f"{len(self.kwargs['IDs'])}) and each value in "
+                    f"select_kwargs={self.kwargs['select_kwargs']!r} "
+                    "must have the same length."
+                )
             passed = True
         except Exception:
             passed = False
         return passed
 
     def _assert_cat(self: Self, cat: Catalogue) -> None:
+        """Ensure every requested ID is present in `cat`.
+
+        Raises
+        ------
+        MissingDataError
+            If any ID in `self.kwargs["IDs"]` is not found in `cat`.
+        """
         cat_IDs = np.array([gal.ID for gal in cat])
-        assert all(
-            ID in cat_IDs for ID in self.kwargs["IDs"]
-        ), galfind_logger.critical(
-            f"Not all {self.kwargs['IDs']=} found in {repr(cat)} "
-            f"with {cat_IDs=}!"
-        )
+        if not all(ID in cat_IDs for ID in self.kwargs["IDs"]):
+            raise MissingDataError(
+                f"Not all IDs={self.kwargs['IDs']!r} found in "
+                f"{repr(cat)} with cat_IDs={cat_IDs!r}."
+            )
         super()._assert_cat(cat)
 
     def _selection_criteria(
@@ -1721,13 +1869,15 @@ class Region_Selector(Data_Selector, ABC):
 
         Raises
         ------
-        AssertionError
+        IncompatibleKwargsError
             If an explicitly set `fail_name` is equal to `name`.
         """
         if hasattr(self, "_fail_name"):
-            assert self._fail_name != self.name, galfind_logger.critical(
-                f"{self._fail_name=} cannot be the same as {self.name=}"
-            )
+            if self._fail_name == self.name:
+                raise IncompatibleKwargsError(
+                    f"fail_name={self._fail_name!r} cannot be the "
+                    f"same as name={self.name!r}."
+                )
             return self._fail_name
         return f"not_{self._selection_name}"
 
@@ -1864,18 +2014,36 @@ class Ds9_Region_Selector(Region_Selector):
 
         Raises
         ------
-        Exception
+        AbstractMethodError
             Always; mask construction from a DS9 region is not yet
             implemented.
         """
-        raise Exception()
+        raise AbstractMethodError()
 
     def _assertions(self: Self) -> bool:
         try:
-            assert isinstance(self.kwargs["region_path"], str)
-            assert isinstance(self.kwargs["region_name"], str)
-            assert self.kwargs["region_path"].endswith(".reg")
-            assert Path(self.kwargs["region_path"]).is_file()
+            if not isinstance(self.kwargs["region_path"], str):
+                raise GalfindTypeError(
+                    f"region_path={self.kwargs['region_path']!r} has "
+                    f"type {type(self.kwargs['region_path']).__name__}; "
+                    "must be a str."
+                )
+            if not isinstance(self.kwargs["region_name"], str):
+                raise GalfindTypeError(
+                    f"region_name={self.kwargs['region_name']!r} has "
+                    f"type {type(self.kwargs['region_name']).__name__}; "
+                    "must be a str."
+                )
+            if not self.kwargs["region_path"].endswith(".reg"):
+                raise InvalidOptionError(
+                    f"region_path={self.kwargs['region_path']!r} must "
+                    "end with '.reg'."
+                )
+            if not Path(self.kwargs["region_path"]).is_file():
+                raise MissingFileError(
+                    f"region_path={self.kwargs['region_path']!r} does "
+                    "not exist."
+                )
             passed = True
         except Exception:
             passed = False
@@ -1904,7 +2072,15 @@ class Ds9_Region_Selector(Region_Selector):
     def _selection_criteria(
         self: Self, gal: Galaxy, *args, **kwargs
     ) -> Tuple[bool, Dict[str, Any]]:
-        raise Exception()
+        """Not implemented.
+
+        Raises
+        ------
+        AbstractMethodError
+            Always; region-based selection from a DS9 region is not yet
+            implemented.
+        """
+        raise AbstractMethodError()
 
 
 class Depth_Region_Selector(Region_Selector):
@@ -1940,7 +2116,12 @@ class Depth_Region_Selector(Region_Selector):
         region_name: Optional[str] = None,
         fail_name: Optional[str] = None,
     ):
-        assert isinstance(aper_diam, u.Quantity)
+        if not isinstance(aper_diam, u.Quantity):
+            raise GalfindTypeError(
+                f"aper_diam={aper_diam!r} has type "
+                f"{type(aper_diam).__name__}; must be an "
+                "astropy.units.Quantity."
+            )
         self._aper_diam = aper_diam
         if isinstance(filt_name, list):
             filt_name = "+".join(filt_name)
@@ -2015,11 +2196,11 @@ class Depth_Region_Selector(Region_Selector):
         selection_vals = np.array(
             [2.0 if gal.selection_flags[self.name] else 1.0 for gal in cat]
         )
-        assert (
-            len(selection_vals) == len(x) == len(y)
-        ), galfind_logger.critical(
-            f"{len(selection_vals)=} != {len(x)=} or != {len(y)=}"
-        )
+        if not len(selection_vals) == len(x) == len(y):
+            raise LengthMismatchError(
+                f"len(selection_vals)={len(selection_vals)} != "
+                f"len(x)={len(x)} or != len(y)={len(y)}."
+            )
         mask[y, x] = selection_vals
         # Make a copy of the input array
         result = deepcopy(mask)
@@ -2049,10 +2230,27 @@ class Depth_Region_Selector(Region_Selector):
 
     def _assertions(self: Self) -> bool:
         try:
-            assert isinstance(self.kwargs["filt_name"], str)
-            assert isinstance(self.kwargs["region_label"], str)
+            if not isinstance(self.kwargs["filt_name"], str):
+                raise GalfindTypeError(
+                    f"filt_name={self.kwargs['filt_name']!r} has type "
+                    f"{type(self.kwargs['filt_name']).__name__}; must "
+                    "be a str."
+                )
+            if not isinstance(self.kwargs["region_label"], str):
+                raise GalfindTypeError(
+                    f"region_label={self.kwargs['region_label']!r} has "
+                    "type "
+                    f"{type(self.kwargs['region_label']).__name__}; "
+                    "must be a str."
+                )
             if self.kwargs["region_name"] is not None:
-                assert isinstance(self.kwargs["region_name"], str)
+                if not isinstance(self.kwargs["region_name"], str):
+                    raise GalfindTypeError(
+                        f"region_name={self.kwargs['region_name']!r} "
+                        "has type "
+                        f"{type(self.kwargs['region_name']).__name__}; "
+                        "must be a str."
+                    )
             passed = True
         except Exception:
             passed = False
@@ -2079,9 +2277,12 @@ class Depth_Region_Selector(Region_Selector):
         **kwargs,
     ) -> Optional[Union[Galaxy, Catalogue]]:
         # can only call on catalogue objects
-        assert isinstance(
-            object, tuple(Catalogue_Base.__subclasses__())
-        ), galfind_logger.critical(f"{object=} must be a Catalogue object.")
+        if not isinstance(object, tuple(Catalogue_Base.__subclasses__())):
+            raise GalfindTypeError(
+                f"object={object!r} has type {type(object).__name__}; "
+                f"{type(self).__name__} can only be called on a "
+                "Catalogue object."
+            )
         return super().__call__(object, return_copy)
 
     def _call_cat(
@@ -2109,19 +2310,19 @@ class Depth_Region_Selector(Region_Selector):
                 self._aper_diam,
                 mode="n_nearest",
             )
-            assert Path(h5_path).is_file(), galfind_logger.critical(
-                f"{h5_path=} does not exist."
-            )
+            if not Path(h5_path).is_file():
+                raise MissingFileError(f"h5_path={h5_path!r} does not exist.")
             # open depth.h5 file
             depth_h5 = h5py.File(h5_path, "r")
             # get depth regions
             depth_labels = depth_h5["depth_labels"][:]
             depth_h5.close()
             # TODO: not have this assertion
-            assert len(cat) == len(depth_labels), galfind_logger.critical(
-                f"Length of {cat} ({len(cat)}) does not match "
-                + f"length of depth labels ({len(depth_labels)})"
-            )
+            if not len(cat) == len(depth_labels):
+                raise LengthMismatchError(
+                    f"Length of {cat} ({len(cat)}) does not match "
+                    f"length of depth labels ({len(depth_labels)})."
+                )
             reg_dict = {
                 gal.ID: depth_label
                 for gal, depth_label in zip(cat, depth_labels)
@@ -2203,9 +2404,21 @@ class Redshift_Limit_Selector(Redshift_Selector):
 
     def _assertions(self: Self) -> bool:
         try:
-            assert isinstance(self.kwargs["z_lim"], (int, float))
-            assert self.kwargs["z_lim"] >= 0.0
-            assert self.kwargs["gtr_or_less"] in ["gtr", "less"]
+            if not isinstance(self.kwargs["z_lim"], (int, float)):
+                raise GalfindTypeError(
+                    f"z_lim={self.kwargs['z_lim']!r} has type "
+                    f"{type(self.kwargs['z_lim']).__name__}; must be "
+                    "an int or float."
+                )
+            if not self.kwargs["z_lim"] >= 0.0:
+                raise RangeError(
+                    f"z_lim={self.kwargs['z_lim']!r} must be >= 0.0."
+                )
+            if self.kwargs["gtr_or_less"] not in ["gtr", "less"]:
+                raise InvalidOptionError(
+                    f"gtr_or_less={self.kwargs['gtr_or_less']!r} is not "
+                    "a valid option; must be one of ['gtr', 'less']."
+                )
             passed = True
         except Exception:
             passed = False
@@ -2286,20 +2499,44 @@ class Rest_Frame_Property_Limit_Selector(Redshift_Selector):
         try:
             from ..properties.Property_calculator import Property_Calculator
 
-            assert isinstance(
+            if not isinstance(
                 self.property_calculator,
                 tuple(Property_Calculator.__subclasses__()),
-            )
-            assert isinstance(
+            ):
+                raise GalfindTypeError(
+                    f"property_calculator={self.property_calculator!r} "
+                    "has type "
+                    f"{type(self.property_calculator).__name__}; must "
+                    "be a Property_Calculator subclass instance."
+                )
+            if not isinstance(
                 self.kwargs["property_lim"], (u.Quantity, u.Magnitude, u.Dex)
-            )  # or \
-            # all(isinstance(val, (u.Quantity, u.Magnitude, u.Dex)) \
-            # for val in self.kwargs["property_lim"])
-            assert self.kwargs["gtr_or_less"] in ["gtr", "less"]
-            assert self.aper_diam == self.property_calculator.aper_diam
-            assert (
+            ):
+                raise GalfindTypeError(
+                    "property_lim="
+                    f"{self.kwargs['property_lim']!r} has type "
+                    f"{type(self.kwargs['property_lim']).__name__}; "
+                    "must be a Quantity, Magnitude, or Dex."
+                )
+            if self.kwargs["gtr_or_less"] not in ["gtr", "less"]:
+                raise InvalidOptionError(
+                    f"gtr_or_less={self.kwargs['gtr_or_less']!r} is not "
+                    "a valid option; must be one of ['gtr', 'less']."
+                )
+            if not self.aper_diam == self.property_calculator.aper_diam:
+                raise IncompatibleKwargsError(
+                    f"aper_diam={self.aper_diam!r} does not match "
+                    "property_calculator.aper_diam="
+                    f"{self.property_calculator.aper_diam!r}."
+                )
+            if not (
                 self.SED_fitter.label == self.property_calculator.SED_fit_label
-            )
+            ):
+                raise IncompatibleKwargsError(
+                    f"SED_fitter.label={self.SED_fitter.label!r} does "
+                    "not match property_calculator.SED_fit_label="
+                    f"{self.property_calculator.SED_fit_label!r}."
+                )
             passed = True
         except Exception:
             passed = False
@@ -2378,6 +2615,15 @@ class Redshift_Bin_Selector(Multiple_SED_fit_Selector):
     z_bin : `list` of `int` or `float`
         Two-element `[z_low, z_high]` redshift bin edges, with
         `z_low < z_high`.
+
+    Raises
+    ------
+    GalfindTypeError
+        If `z_bin` contains a value that is not an `int`/`float`.
+    LengthMismatchError
+        If `z_bin` does not have exactly 2 elements.
+    RangeError
+        If `z_bin` does not satisfy `z_bin[0] < z_bin[1]`.
     """
 
     def __init__(
@@ -2386,9 +2632,19 @@ class Redshift_Bin_Selector(Multiple_SED_fit_Selector):
         SED_fitter: SED_code,
         z_bin: List[Union[int, float]],
     ):
-        assert all(isinstance(z_lim, (int, float)) for z_lim in z_bin)
-        assert len(z_bin) == 2
-        assert z_bin[0] < z_bin[1]
+        if not all(isinstance(z_lim, (int, float)) for z_lim in z_bin):
+            raise GalfindTypeError(
+                f"z_bin={z_bin!r} must contain only int/float values; "
+                f"got types={[type(z_lim).__name__ for z_lim in z_bin]!r}."
+            )
+        if not len(z_bin) == 2:
+            raise LengthMismatchError(
+                f"z_bin={z_bin!r} must have length 2; got length {len(z_bin)}."
+            )
+        if not z_bin[0] < z_bin[1]:
+            raise RangeError(
+                f"z_bin={z_bin!r} must satisfy z_bin[0] < z_bin[1]."
+            )
         selection_name = f"{z_bin[0]:.2f}<z<{z_bin[1]:.2f}"
         selectors = [
             Redshift_Limit_Selector(aper_diam, SED_fitter, z_bin[0], "gtr"),
@@ -2416,6 +2672,18 @@ class Rest_Frame_Property_Bin_Selector(Multiple_SED_fit_Selector):
         `astropy.units.Magnitude`, or `astropy.units.Dex`
         Two-element `[low, high]` property bin edges, with
         `low < high`.
+
+    Raises
+    ------
+    GalfindTypeError
+        If `property_bin` is not a `Quantity`/`Magnitude`/`Dex`, or if
+        `property_calculator` is not a `Rest_Frame_Property_Calculator`
+        subclass instance.
+    LengthMismatchError
+        If `property_bin` does not have exactly 2 elements.
+    RangeError
+        If `property_bin` does not satisfy
+        `property_bin[0] < property_bin[1]`.
     """
 
     def __init__(
@@ -2425,15 +2693,33 @@ class Rest_Frame_Property_Bin_Selector(Multiple_SED_fit_Selector):
         property_calculator: Rest_Frame_Property_Calculator,
         property_bin: List[Union[u.Quantity, u.Magnitude, u.Dex]],
     ):
-        assert isinstance(property_bin, (u.Quantity, u.Magnitude, u.Dex))
-        assert len(property_bin) == 2
-        assert property_bin[0] < property_bin[1]
+        if not isinstance(property_bin, (u.Quantity, u.Magnitude, u.Dex)):
+            raise GalfindTypeError(
+                f"property_bin={property_bin!r} has type "
+                f"{type(property_bin).__name__}; must be a Quantity, "
+                "Magnitude, or Dex."
+            )
+        if not len(property_bin) == 2:
+            raise LengthMismatchError(
+                f"property_bin={property_bin!r} must have length 2; "
+                f"got length {len(property_bin)}."
+            )
+        if not property_bin[0] < property_bin[1]:
+            raise RangeError(
+                f"property_bin={property_bin!r} must satisfy "
+                "property_bin[0] < property_bin[1]."
+            )
         from ..properties import Rest_Frame_Property_Calculator
 
-        assert isinstance(
+        if not isinstance(
             property_calculator,
             tuple(Rest_Frame_Property_Calculator.__subclasses__()),
-        )
+        ):
+            raise GalfindTypeError(
+                f"property_calculator={property_calculator!r} has type "
+                f"{type(property_calculator).__name__}; must be a "
+                "Rest_Frame_Property_Calculator subclass instance."
+            )
         selection_name = (
             f"{property_bin[0].value:.2f}<"
             + f"{property_calculator.name}<{property_bin[1].value:.2f}"
@@ -2518,9 +2804,25 @@ class Colour_Selector(Photometry_Selector):
 
     def _assertions(self: Self) -> bool:
         try:
-            assert self.kwargs["bluer_or_redder"] in ["bluer", "redder"]
-            assert isinstance(self.kwargs["colour_bands"], (list, np.ndarray))
-            assert len(self.kwargs["colour_bands"]) == 2
+            if self.kwargs["bluer_or_redder"] not in ["bluer", "redder"]:
+                raise InvalidOptionError(
+                    "bluer_or_redder="
+                    f"{self.kwargs['bluer_or_redder']!r} is not a "
+                    "valid option; must be one of "
+                    "['bluer', 'redder']."
+                )
+            if not isinstance(self.kwargs["colour_bands"], (list, np.ndarray)):
+                raise GalfindTypeError(
+                    f"colour_bands={self.kwargs['colour_bands']!r} has "
+                    f"type {type(self.kwargs['colour_bands']).__name__}; "
+                    "must be a list or numpy.ndarray."
+                )
+            if not len(self.kwargs["colour_bands"]) == 2:
+                raise LengthMismatchError(
+                    f"colour_bands={self.kwargs['colour_bands']!r} must "
+                    f"have length 2; got length "
+                    f"{len(self.kwargs['colour_bands'])}."
+                )
             passed = True
         except Exception:
             passed = False
@@ -2750,9 +3052,11 @@ class Compactness_Selector(Data_Selector):
                 ).to(u.arcsec),
                 overwrite=False,
             )
-        assert cutout_label in gal.cutouts.keys(), galfind_logger.critical(
-            f"{cutout_label=} not found in {gal.cutouts.keys()}"
-        )
+        if cutout_label not in gal.cutouts.keys():
+            raise MissingDataError(
+                f"cutout_label={cutout_label!r} not found in "
+                f"gal.cutouts.keys()={list(gal.cutouts.keys())!r}."
+            )
         cutout = gal.cutouts[cutout_label]
         flux_ratio, flux_ratio_kwargs = self._compute_flux_ratio(
             cutout,
@@ -2761,9 +3065,10 @@ class Compactness_Selector(Data_Selector):
         )
         kwargs_out = {"flux_ratio": flux_ratio, **flux_ratio_kwargs}
         if self.kwargs["psf_normed"]:
-            assert cutout.band_data.psf is not None, galfind_logger.critical(
-                f"PSF not found for {cutout.band_data}!"
-            )
+            if cutout.band_data.psf is None:
+                raise MissingDataError(
+                    f"PSF not found for cutout.band_data={cutout.band_data!r}."
+                )
             psf_flux_ratio = self._compute_flux_ratio(
                 cutout.band_data.psf.cutout,
                 centre=False,
@@ -2869,13 +3174,20 @@ class Compactness_Selector(Data_Selector):
         return flux_ratio, kwargs
 
     def _assert_cat(self: Self, cat: Catalogue) -> None:
+        """Ensure `filt_name` is present in `cat`'s filterset.
+
+        Raises
+        ------
+        MissingDataError
+            If `self.kwargs["filt_name"]` is a `str` not present in
+            `cat.filterset.filt_names`.
+        """
         if isinstance(self.kwargs["filt_name"], str):
-            assert (
-                self.kwargs["filt_name"] in cat.filterset.filt_names
-            ), galfind_logger.critical(
-                f"{self.kwargs['filt_name']} not in "
-                f"{cat.filterset.filt_names}."
-            )
+            if self.kwargs["filt_name"] not in cat.filterset.filt_names:
+                raise MissingDataError(
+                    f"filt_name={self.kwargs['filt_name']!r} not in "
+                    f"cat.filterset.filt_names={cat.filterset.filt_names!r}."
+                )
         super()._assert_cat(cat)
 
     def _call_cat(
@@ -3014,12 +3326,19 @@ class Unmasked_Band_Selector(Mask_Selector):
             ], {}
 
     def _assert_cat(self: Self, cat: Catalogue) -> None:
-        assert (
-            self.kwargs["filt_name"] in cat.filterset.filt_names
-        ), galfind_logger.critical(
-            f"{self.kwargs['filt_name']} not in "
-            f"{cat.filterset.filt_names}."
-        )
+        """Ensure `filt_name` is present in `cat`'s filterset.
+
+        Raises
+        ------
+        MissingDataError
+            If `self.kwargs["filt_name"]` is not present in
+            `cat.filterset.filt_names`.
+        """
+        if self.kwargs["filt_name"] not in cat.filterset.filt_names:
+            raise MissingDataError(
+                f"filt_name={self.kwargs['filt_name']!r} not in "
+                f"cat.filterset.filt_names={cat.filterset.filt_names!r}."
+            )
         super()._assert_cat(cat)
 
     def _call_cat(
@@ -3059,7 +3378,7 @@ class Unmasked_Band_Selector(Mask_Selector):
 
         Raises
         ------
-        AssertionError
+        LengthMismatchError
             If the data shapes of the bands in `data` do not all
             match (only checked when `filt_name` is not in
             `data.filterset`).
@@ -3067,11 +3386,12 @@ class Unmasked_Band_Selector(Mask_Selector):
         # load mask from each selector
         if self.kwargs["filt_name"] not in data.filterset.filt_names:
             data_shapes = [band_data.data_shape for band_data in data]
-            assert all(
+            if not all(
                 data_shape == data_shapes[0] for data_shape in data_shapes
-            ), galfind_logger.critical(
-                f"Data shapes do not match: {data_shapes}"
-            )
+            ):
+                raise LengthMismatchError(
+                    f"Data shapes do not match: {data_shapes!r}"
+                )
             mask = np.full(data_shapes[0], False)
             galfind_logger.warning(
                 f"{self.kwargs['filt_name']} not in "
@@ -3181,15 +3501,16 @@ class Min_Unmasked_Band_Selector(Mask_Selector):
 
         Raises
         ------
-        AssertionError
+        LengthMismatchError
             If the data shapes of the bands in `data` do not all
             match.
         """
         # add masks
         data_shapes = [band_data.data_shape for band_data in data]
-        assert all(
-            data_shape == data_shapes[0] for data_shape in data_shapes
-        ), galfind_logger.critical(f"Data shapes do not match: {data_shapes}")
+        if not all(data_shape == data_shapes[0] for data_shape in data_shapes):
+            raise LengthMismatchError(
+                f"Data shapes do not match: {data_shapes!r}"
+            )
         n_bands_unmasked = np.zeros(data_shapes[0])
         for band_data in data:
             n_bands_unmasked += band_data.load_mask()
@@ -3222,11 +3543,12 @@ class Min_Instrument_Unmasked_Band_Selector(Mask_Selector):
         instrument: Union[str, Type[Instrument]],
     ):
         if isinstance(instrument, str):
-            assert (
-                instrument in expected_instr_bands.keys()
-            ), galfind_logger.critical(
-                f"{instrument=} not a valid instrument name."
-            )
+            if instrument not in expected_instr_bands.keys():
+                raise InvalidOptionError(
+                    f"instrument={instrument!r} is not a valid "
+                    "instrument name; must be one of "
+                    f"{sorted(expected_instr_bands.keys())}."
+                )
             instrument = [
                 instr()
                 for instr in Instrument.__subclasses__()
@@ -3291,9 +3613,11 @@ class Min_Instrument_Unmasked_Band_Selector(Mask_Selector):
         instr_name_arr = np.array(
             [filt.instrument_name for filt in phot_obs.filterset]
         )
-        assert len(mask_arr) == len(instr_name_arr), galfind_logger.critical(
-            f"{len(mask_arr)=} != {len(instr_name_arr)=}"
-        )
+        if not len(mask_arr) == len(instr_name_arr):
+            raise LengthMismatchError(
+                f"len(mask_arr)={len(mask_arr)} != "
+                f"len(instr_name_arr)={len(instr_name_arr)}."
+            )
         n_unmasked_bands = len(
             [
                 mask
@@ -3335,15 +3659,16 @@ class Min_Instrument_Unmasked_Band_Selector(Mask_Selector):
 
         Raises
         ------
-        AssertionError
+        LengthMismatchError
             If the data shapes of the bands in `data` do not all
             match.
         """
         # add masks
         data_shapes = [band_data.data_shape for band_data in data]
-        assert all(
-            data_shape == data_shapes[0] for data_shape in data_shapes
-        ), galfind_logger.critical(f"Data shapes do not match: {data_shapes}")
+        if not all(data_shape == data_shapes[0] for data_shape in data_shapes):
+            raise LengthMismatchError(
+                f"Data shapes do not match: {data_shapes!r}"
+            )
         n_bands_unmasked = np.zeros(data_shapes[0])
         for band_data in data:
             if (
@@ -4160,9 +4485,23 @@ class Unmasked_Bluewards_Lya_Selector(Redshift_Selector, Mask_Selector):
 
     def _assertions(self: Self) -> bool:
         try:
-            assert isinstance(self.kwargs["n_bands"], int)
-            assert self.kwargs["n_bands"] > 0
-            assert isinstance(self.kwargs["widebands_only"], bool)
+            if not isinstance(self.kwargs["n_bands"], int):
+                raise GalfindTypeError(
+                    f"n_bands={self.kwargs['n_bands']!r} has type "
+                    f"{type(self.kwargs['n_bands']).__name__}; must be "
+                    "an int."
+                )
+            if not self.kwargs["n_bands"] > 0:
+                raise RangeError(
+                    f"n_bands={self.kwargs['n_bands']!r} must be > 0."
+                )
+            if not isinstance(self.kwargs["widebands_only"], bool):
+                raise GalfindTypeError(
+                    "widebands_only="
+                    f"{self.kwargs['widebands_only']!r} has type "
+                    f"{type(self.kwargs['widebands_only']).__name__}; "
+                    "must be a bool."
+                )
             # if self.kwargs["ignore_bands"] is not None:
             #     for band in self.kwargs["ignore_bands"]:
             #         # ensure this band exists
@@ -4283,7 +4622,10 @@ class Unmasked_Bluewards_Lya_Selector(Redshift_Selector, Mask_Selector):
         except Exception as e:
             print(f"Error finding index of first Lya non-detect band: {e}")
             breakpoint()
-            raise Exception()
+            raise MissingDataError(
+                f"first_Lya_non_detect_band={first_Lya_non_detect_band!r} "
+                f"not found in fit_filt_names={fit_filt_names!r}."
+            ) from e
         non_detect_filt_names = fit_filt_names[
             : first_Lya_non_detect_index + 1
         ]
@@ -4327,26 +4669,32 @@ class Unmasked_Bluewards_Lya_Selector(Redshift_Selector, Mask_Selector):
 
         Raises
         ------
-        AssertionError
-            If `"z"` is missing from `kwargs`, is not a `float`, does
-            not fall within exactly one redshift bin from
-            `extract_zbins`, or if the individual band masks do not
-            all have the same shape.
+        MissingKeyError
+            If `"z"` is missing from `kwargs`.
+        GalfindTypeError
+            If `kwargs["z"]` is not a `float`.
+        RangeError
+            If `kwargs["z"]` does not fall within exactly one redshift
+            bin from `extract_zbins`.
+        LengthMismatchError
+            If the individual band masks do not all have the same
+            shape.
         """
         # try:
-        assert "z" in kwargs.keys(), galfind_logger.critical(
-            "Redshift must be provided to load the mask."
-        )
+        if "z" not in kwargs.keys():
+            raise MissingKeyError(
+                "Redshift ('z') must be provided in kwargs to load the mask."
+            )
         z = kwargs["z"]
-        assert isinstance(z, float), galfind_logger.critical(
-            f"'z' must be a float, not {type(z)}."
-        )
+        if not isinstance(z, float):
+            raise GalfindTypeError(
+                f"z={z!r} has type {type(z).__name__}; must be a float."
+            )
         zbins = self.extract_zbins(data)
         # choose zbin which contains the redshift
         zbin = [zbin for zbin in zbins if zbin[0] <= z < zbin[1]]
-        assert len(zbin) == 1, galfind_logger.critical(
-            f"Redshift {z} not in any zbin: {zbins}."
-        )
+        if not len(zbin) == 1:
+            raise RangeError(f"Redshift z={z!r} not in any zbin: {zbins!r}.")
         zbin = zbin[0]
         # determine bands bluewards of Lya
         non_detect_filt_names = self.get_non_detect_filt_names(
@@ -4360,11 +4708,11 @@ class Unmasked_Bluewards_Lya_Selector(Redshift_Selector, Mask_Selector):
                 for filt_name in non_detect_filt_names
             ]
         )
-        assert all(
-            mask.shape == masks[0].shape for mask in masks
-        ), galfind_logger.critical(
-            f"Mask shapes do not match: {[mask.shape for mask in masks]}"
-        )
+        if not all(mask.shape == masks[0].shape for mask in masks):
+            raise LengthMismatchError(
+                "Mask shapes do not match: "
+                f"{[mask.shape for mask in masks]!r}."
+            )
         if isinstance(self.kwargs["n_bands"], str):
             if self.kwargs["n_bands"].lower() == "any":
                 combined_mask = np.logical_or.reduce(masks)
@@ -4502,19 +4850,31 @@ class Unmasked_Redwards_Lya_Selector(Redshift_Selector, Mask_Selector):
 
     def _assertions(self: Self) -> bool:
         try:
-            assert isinstance(self.kwargs["n_bands"], (int, str))
+            if not isinstance(self.kwargs["n_bands"], (int, str)):
+                raise GalfindTypeError(
+                    f"n_bands={self.kwargs['n_bands']!r} has type "
+                    f"{type(self.kwargs['n_bands']).__name__}; must be "
+                    "an int or str."
+                )
             if isinstance(self.kwargs["n_bands"], int):
-                assert self.kwargs["n_bands"] > 0, galfind_logger.critical(
-                    f"{self.kwargs['n_bands']} must be a positive integer."
-                )
+                if not self.kwargs["n_bands"] > 0:
+                    raise RangeError(
+                        f"n_bands={self.kwargs['n_bands']!r} must be a "
+                        "positive integer."
+                    )
             else:  # isinstance(self.kwargs["n_bands"], str):
-                assert self.kwargs["n_bands"].lower() in [
-                    "all",
-                    "any",
-                ], galfind_logger.critical(
-                    f"{self.kwargs['n_bands']} must be 'all' or 'any'."
+                if self.kwargs["n_bands"].lower() not in ["all", "any"]:
+                    raise InvalidOptionError(
+                        f"n_bands={self.kwargs['n_bands']!r} must be "
+                        "'all' or 'any'."
+                    )
+            if not isinstance(self.kwargs["widebands_only"], bool):
+                raise GalfindTypeError(
+                    "widebands_only="
+                    f"{self.kwargs['widebands_only']!r} has type "
+                    f"{type(self.kwargs['widebands_only']).__name__}; "
+                    "must be a bool."
                 )
-            assert isinstance(self.kwargs["widebands_only"], bool)
             # if self.kwargs["ignore_bands"] is not None:
             #     for band in self.kwargs["ignore_bands"]:
             #         # ensure this band exists
@@ -4676,26 +5036,33 @@ class Unmasked_Redwards_Lya_Selector(Redshift_Selector, Mask_Selector):
 
         Raises
         ------
-        AssertionError
-            If `"z"` is missing from `kwargs`, is not a `float`, does
-            not fall within exactly one redshift bin from
-            `extract_zbins`, or if the individual band masks do not
-            all have the same shape.
+        MissingKeyError
+            If `"z"` is missing from `kwargs`.
+        GalfindTypeError
+            If `kwargs["z"]` is not a `float`.
+        RangeError
+            If `kwargs["z"]` does not fall within exactly one redshift
+            bin from `extract_zbins`.
+        LengthMismatchError
+            If the individual band masks do not all have the same
+            shape.
         """
         try:
-            assert "z" in kwargs.keys(), galfind_logger.critical(
-                "Redshift must be provided to load the mask."
-            )
+            if "z" not in kwargs.keys():
+                raise MissingKeyError(
+                    "Redshift ('z') must be provided in kwargs to load "
+                    "the mask."
+                )
             z = kwargs["z"]
-            assert isinstance(z, float), galfind_logger.critical(
-                f"'z' must be a float, not {type(z)}."
-            )
+            if not isinstance(z, float):
+                raise GalfindTypeError(
+                    f"z={z!r} has type {type(z).__name__}; must be a float."
+                )
             zbins = self.extract_zbins(data)
             # choose zbin which contains the redshift
             zbin = [zbin for zbin in zbins if zbin[0] <= z < zbin[1]]
-            assert len(zbin) == 1, galfind_logger.critical(
-                f"Redshift {z} in zbins: {zbin}."
-            )
+            if not len(zbin) == 1:
+                raise RangeError(f"Redshift z={z!r} in zbins: {zbin!r}.")
             # zbin = zbin[0]
             # determine bands bluewards of Lya
             detect_filt_names = self.get_detect_filt_names(data.filterset, z)[
@@ -4709,12 +5076,11 @@ class Unmasked_Redwards_Lya_Selector(Redshift_Selector, Mask_Selector):
                     for filt_name in detect_filt_names
                 ]
             )
-            assert all(
-                mask.shape == masks[0].shape for mask in masks
-            ), galfind_logger.critical(
-                f"Mask shapes do not match: "
-                f"{[mask.shape for mask in masks]}"
-            )
+            if not all(mask.shape == masks[0].shape for mask in masks):
+                raise LengthMismatchError(
+                    "Mask shapes do not match: "
+                    f"{[mask.shape for mask in masks]!r}."
+                )
             if isinstance(self.kwargs["n_bands"], str):
                 if self.kwargs["n_bands"].lower() == "any":
                     combined_mask = np.logical_or.reduce(masks)
@@ -4943,12 +5309,20 @@ class Band_Mag_Selector(Photometry_Selector):
         return selected, kwargs_out
 
     def _assert_cat(self: Self, cat: Catalogue) -> None:
+        """Ensure `band` is present in `cat`'s filterset.
+
+        Raises
+        ------
+        MissingDataError
+            If `self.kwargs["band"]` is a `str` not present in
+            `cat.filterset.filt_names`.
+        """
         if isinstance(self.kwargs["band"], str):
-            assert (
-                self.kwargs["band"] in cat.filterset.filt_names
-            ), galfind_logger.critical(
-                f"{self.kwargs['band']} not in {cat.filterset.filt_names}."
-            )
+            if self.kwargs["band"] not in cat.filterset.filt_names:
+                raise MissingDataError(
+                    f"band={self.kwargs['band']!r} not in "
+                    f"cat.filterset.filt_names={cat.filterset.filt_names!r}."
+                )
         super()._assert_cat(cat)
 
     def _call_cat(
@@ -5107,12 +5481,20 @@ class Band_SNR_Selector(Photometry_Selector):
         return selected, kwargs_out
 
     def _assert_cat(self: Self, cat: Catalogue) -> None:
+        """Ensure `band` is present in `cat`'s filterset.
+
+        Raises
+        ------
+        MissingDataError
+            If `self.kwargs["band"]` is a `str` not present in
+            `cat.filterset.filt_names`.
+        """
         if isinstance(self.kwargs["band"], str):
-            assert (
-                self.kwargs["band"] in cat.filterset.filt_names
-            ), galfind_logger.critical(
-                f"{self.kwargs['band']} not in {cat.filterset.filt_names}."
-            )
+            if self.kwargs["band"] not in cat.filterset.filt_names:
+                raise MissingDataError(
+                    f"band={self.kwargs['band']!r} not in "
+                    f"cat.filterset.filt_names={cat.filterset.filt_names!r}."
+                )
         super()._assert_cat(cat)
 
     def _call_cat(
@@ -5974,17 +6356,28 @@ class Chi_Sq_Template_Diff_Selector(SED_fit_Selector):
         return selected, kwargs_out
 
     def _assert_cat(self: Self, cat: Catalogue) -> None:
+        """Ensure the secondary SED fitting run is loaded for `cat`.
+
+        Raises
+        ------
+        MissingDataError
+            If `self.kwargs["secondary_SED_fit_label"]` has not been
+            run for any galaxy in `cat`.
+        """
         # ensure a secondary SED fitting run has been run for at
         # least 1 galaxy in the catalogue
         cat_SED_fit_labels = [
             gal.aper_phot[self.aper_diam].SED_results.keys() for gal in cat
         ]
-        assert any(
+        if not any(
             self.kwargs["secondary_SED_fit_label"] in gal_labels
             for gal_labels in cat_SED_fit_labels
-        ), galfind_logger.critical(
-            f"{self.kwargs['secondary_SED_fit_label']} not run for any galaxy."
-        )
+        ):
+            raise MissingDataError(
+                "secondary_SED_fit_label="
+                f"{self.kwargs['secondary_SED_fit_label']!r} not run "
+                "for any galaxy in the catalogue."
+            )
         super()._assert_cat(cat)
 
     def _call_cat(
@@ -6307,13 +6700,20 @@ class Sextractor_Band_Radius_Selector(Data_Selector):
         self: Self,
         cat: Catalogue,
     ) -> None:
+        """Ensure `filt_name` is present in `cat`'s filterset.
+
+        Raises
+        ------
+        MissingDataError
+            If `self.kwargs["filt_name"]` is a `str` not present in
+            `cat.filterset.filt_names`.
+        """
         if isinstance(self.kwargs["filt_name"], str):
-            assert (
-                self.kwargs["filt_name"] in cat.filterset.filt_names
-            ), galfind_logger.critical(
-                f"{self.kwargs['filt_name']} not in"
-                + f" {cat.filterset.filt_names}!"
-            )
+            if self.kwargs["filt_name"] not in cat.filterset.filt_names:
+                raise MissingDataError(
+                    f"filt_name={self.kwargs['filt_name']!r} not in "
+                    f"cat.filterset.filt_names={cat.filterset.filt_names!r}."
+                )
         super()._assert_cat(cat)
 
     def _call_cat(
@@ -6514,14 +6914,23 @@ class Unmasked_Bands_Selector(Multiple_Mask_Selector):
         super().__init__(selectors, f"unmasked_{'+'.join(filt_names)}")
 
     def _assert_cat(self: Self, cat: Catalogue) -> None:
-        assert all(
-            name in cat.filterset.filt_names
-            for name in [
-                selector.kwargs["filt_name"] for selector in self.selectors
-            ]
-        ), galfind_logger.critical(
-            f"Not all bands in {cat.filterset.filt_names}!"
-        )
+        """Ensure every sub-selector's band is present in `cat`'s filterset.
+
+        Raises
+        ------
+        MissingDataError
+            If any sub-selector's `filt_name` is not present in
+            `cat.filterset.filt_names`.
+        """
+        band_names = [
+            selector.kwargs["filt_name"] for selector in self.selectors
+        ]
+        if not all(name in cat.filterset.filt_names for name in band_names):
+            raise MissingDataError(
+                f"Not all bands in band_names={band_names!r} are "
+                f"present in cat.filterset.filt_names="
+                f"{cat.filterset.filt_names!r}."
+            )
         super()._assert_cat(cat)
 
 
@@ -6534,11 +6943,12 @@ class Unmasked_Instrument_Selector(Multiple_Mask_Selector):
         cat_filterset: Optional[Multiple_Filter] = None,
     ):
         if isinstance(instrument, str):
-            assert (
-                instrument in expected_instr_bands.keys()
-            ), galfind_logger.critical(
-                f"{instrument=} not a valid instrument name."
-            )
+            if instrument not in expected_instr_bands.keys():
+                raise InvalidOptionError(
+                    f"instrument={instrument!r} is not a valid "
+                    "instrument name; must be one of "
+                    f"{sorted(expected_instr_bands.keys())}."
+                )
             instrument = [
                 instr()
                 for instr in Instrument.__subclasses__()
@@ -6605,11 +7015,12 @@ class Sextractor_Instrument_Radius_Selector(Multiple_Data_Selector):
         cat_filterset: Optional[Multiple_Filter] = None,
     ):
         if isinstance(instrument, str):
-            assert (
-                instrument in expected_instr_bands.keys()
-            ), galfind_logger.critical(
-                f"{instrument=} not a valid instrument name."
-            )
+            if instrument not in expected_instr_bands.keys():
+                raise InvalidOptionError(
+                    f"instrument={instrument!r} is not a valid "
+                    "instrument name; must be one of "
+                    f"{sorted(expected_instr_bands.keys())}."
+                )
             instrument = [
                 instr()
                 for instr in Instrument.__subclasses__()
@@ -6652,19 +7063,21 @@ class Sextractor_Instrument_Radius_PSF_FWHM_Selector(Multiple_Data_Selector):
         cat_filterset: Optional[Multiple_Filter] = None,
     ):
         if isinstance(instrument, str):
-            assert (
-                instrument in expected_instr_bands.keys()
-            ), galfind_logger.critical(
-                f"{instrument=} not a valid instrument name."
-            )
+            if instrument not in expected_instr_bands.keys():
+                raise InvalidOptionError(
+                    f"instrument={instrument!r} is not a valid "
+                    "instrument name; must be one of "
+                    f"{sorted(expected_instr_bands.keys())}."
+                )
             instrument = [
                 instr()
                 for instr in Instrument.__subclasses__()
                 if instr.__name__ == instrument
             ][0]
-        assert (
-            instrument.__class__.__name__ == "NIRCam"
-        ), galfind_logger.critical(f"{instrument.name=} must be NIRCam.")
+        if not instrument.__class__.__name__ == "NIRCam":
+            raise InvalidOptionError(
+                f"instrument={instrument.__class__.__name__!r} must be NIRCam."
+            )
         selectors = [
             Sextractor_Band_Radius_Selector(
                 filt_name=filt_name,
@@ -6693,15 +7106,16 @@ class Sextractor_Instrument_Radius_PSF_FWHM_Selector(Multiple_Data_Selector):
         return_copy: bool = True,
     ) -> Optional[Catalogue]:
         self.crop_to_filterset(cat.filterset)
-        assert all(
-            [
-                filt.filt_name in fwhm_nircam.keys()
-                for filt in cat.filterset
-                if filt.instrument_name == "NIRCam"
-            ]
-        ), galfind_logger.critical(
-            f"{cat.filterset.instrument_name=} must have all NIRCam bands."
-        )
+        if not all(
+            filt.filt_name in fwhm_nircam.keys()
+            for filt in cat.filterset
+            if filt.instrument_name == "NIRCam"
+        ):
+            raise MissingDataError(
+                f"cat.filterset (instrument_name="
+                f"{cat.filterset.instrument_name!r}) must have all "
+                "NIRCam bands present in fwhm_nircam."
+            )
         return Multiple_Data_Selector._call_cat(self, cat, return_copy)
 
 
@@ -6894,7 +7308,13 @@ class EPOCHS_unmasked_criteria(Multiple_Mask_Selector):
 
 
 class EPOCHS_Selector(Multiple_SED_fit_Selector):
-    """Select sources based on EPOCHS survey-specific SED criteria."""
+    """Select sources based on EPOCHS survey-specific SED criteria.
+
+    Raises
+    ------
+    InvalidOptionError
+        If `sample` is not `"good"` or `"robust"`.
+    """
 
     def __init__(
         self: Self,
@@ -6905,9 +7325,10 @@ class EPOCHS_Selector(Multiple_SED_fit_Selector):
         fit_filterset: Optional[Multiple_Filter] = None,
         sample: str = "robust",
     ):
-        assert sample in ["good", "robust"], galfind_logger.critical(
-            f"{sample=} not valid. Must be 'good' or 'robust'."
-        )
+        if sample not in ["good", "robust"]:
+            raise InvalidOptionError(
+                f"sample={sample!r} is not valid; must be 'good' or 'robust'."
+            )
         if sample == "robust":
             chi_sq_lim = 3.0
         else:  # sample == "good"

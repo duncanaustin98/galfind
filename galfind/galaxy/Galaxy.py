@@ -58,6 +58,14 @@ from ..photometry import Photometry_obs
 from ..sed_fitting.SED_result import SED_result
 from ..spectra.SED import SED_obs
 from ..utils import useful_funcs_austind as funcs
+from ..utils.exceptions import (
+    GalfindError,
+    InvalidOptionError,
+    LengthMismatchError,
+    MissingDataError,
+    MissingKeyError,
+    RangeError,
+)
 from ..visualization.Cutout import RGB, Multiple_Band_Cutout
 
 # should be exhaustive
@@ -370,11 +378,11 @@ class Galaxy:
         for key, value in self.__dict__.items():
             try:
                 setattr(result, key, deepcopy(value, memo))
-            except Exception:
-                galfind_logger.critical(
-                    f"deepcopy({repr(self)}) {key}: {value} FAIL!"
-                )
-                breakpoint()
+            except Exception as e:
+                raise GalfindError(
+                    f"deepcopy({repr(self)}) failed to copy attribute "
+                    f"{key!r}={value!r}: {e}"
+                ) from e
         return result
 
     def update_SED_results(
@@ -393,7 +401,7 @@ class Galaxy:
 
         Raises
         ------
-        AssertionError
+        MissingDataError
             If any `gal_SED_result.aper_diam` is not a key of
             `self.aper_phot`.
         """
@@ -404,10 +412,12 @@ class Galaxy:
             for gal_SED_result in gal_SED_results
             if gal_SED_result.aper_diam not in self.aper_phot.keys()
         ]
-        assert len(missing_aper_diams) == 0, galfind_logger.critical(
-            f"Galaxy {self.ID=} missing "
-            + f"{missing_aper_diams} aperture photometry."
-        )
+        if len(missing_aper_diams) != 0:
+            raise MissingDataError(
+                f"Galaxy ID={self.ID} is missing aperture photometry for "
+                f"aper_diam(s)={missing_aper_diams!r}; cannot attach "
+                "SED results for apertures that were never loaded."
+            )
         [
             self.aper_phot[gal_SED_result.aper_diam].update_SED_result(
                 gal_SED_result
@@ -523,7 +533,11 @@ class Galaxy:
             not in self.RGBs[f"{cutout_size.to(u.arcsec).value:.2f}as"].keys()
         ):
             RGB_obj = RGB.from_gal_data(self, data, rgb_bands, cutout_size)
-            assert RGB_obj.name == rgb_key
+            if RGB_obj.name != rgb_key:
+                raise GalfindError(
+                    f"RGB.from_gal_data returned RGB_obj.name="
+                    f"{RGB_obj.name!r}, expected rgb_key={rgb_key!r}."
+                )
             self.RGBs[cutout_size_str][rgb_key] = RGB_obj
         return self.RGBs[cutout_size_str][rgb_key]
 
@@ -1787,15 +1801,15 @@ class Galaxy:
 
         Raises
         ------
-        AttributeError
+        MissingDataError
             If `self.sex_FLUX_AUTO` has not been loaded.
         """
         # FLUX_AUTO must already be loaded
         if not hasattr(self, "sex_FLUX_AUTO"):
-            galfind_logger.critical(
-                f"Galaxy {self.ID=} has no {self.FLUX_AUTO=}!"
+            raise MissingDataError(
+                f"Galaxy ID={self.ID} has no 'sex_FLUX_AUTO' loaded; "
+                "load SExtractor FLUX_AUTO first."
             )
-            raise AttributeError("sex_FLUX_AUTO")
         # load ext_src_corrs into aper_phot
         for aper_diam in self.aper_phot.keys():
             self.aper_phot[aper_diam].load_sextractor_ext_src_corrs(
@@ -1838,28 +1852,26 @@ class Galaxy:
 
         Raises
         ------
-        AssertionError
-            If `ecsv_rows` is missing any of the required columns, or if
-            no rows exist in `ecsv_rows` for a given aperture diameter /
+        MissingKeyError
+            If `ecsv_rows` is missing any of the required columns.
+        MissingDataError
+            If no rows exist in `ecsv_rows` for a given aperture diameter /
             SED fitting code combination present in the galaxy.
         """
-        try:
-            assert all(
-                colname in ecsv_rows.colnames
-                for colname in [
-                    "aper_diam",
-                    "SED_fit_code",
-                    "region",
-                    "Vmax_total",
-                ]
-            ), galfind_logger.critical(
-                f"{repr(self)=} ecsv_rows missing cols for Vmax! "
-                f"{ecsv_rows.colnames=}"
+        required_colnames = [
+            "aper_diam",
+            "SED_fit_code",
+            "region",
+            "Vmax_total",
+        ]
+        if not all(
+            colname in ecsv_rows.colnames for colname in required_colnames
+        ):
+            raise MissingKeyError(
+                f"{repr(self)} ecsv_rows is missing required columns for "
+                f"Vmax; needed {required_colnames}, got "
+                f"ecsv_rows.colnames={ecsv_rows.colnames!r}."
             )
-        except Exception as e:
-            print(e)
-            breakpoint()
-            raise e
         # TODO: Currently only stores Vmax for a single redshift / selection
         aper_diam_arr = np.unique(ecsv_rows["aper_diam"].data) * u.arcsec
         SED_fit_code_arr = np.unique(ecsv_rows["SED_fit_code"].data)
@@ -1888,10 +1900,12 @@ class Galaxy:
                                 & (ecsv_rows["SED_fit_code"] == SED_fit_code)
                             )
                         ]
-                        assert len(ecsv_row) > 0, galfind_logger.critical(
-                            f"Galaxy {self.ID=} has no rows in "
-                            + f"ecsv for {aper_diam:.2f} {SED_fit_code=}"
-                        )
+                        if len(ecsv_row) == 0:
+                            raise MissingDataError(
+                                f"Galaxy ID={self.ID} has no rows in "
+                                f"ecsv_rows for aper_diam={aper_diam:.2f} "
+                                f"SED_fit_code={SED_fit_code!r}."
+                            )
                         regions = np.unique(ecsv_row["region"].data)
                         for region in regions:
                             region_row = ecsv_row[ecsv_row["region"] == region]
@@ -1979,25 +1993,38 @@ class Galaxy:
 
         Raises
         ------
-        AssertionError
-            If there is no `calc_Vmax_{Vmax_method.lower()}` method, if
-            `z_bin` does not have exactly two elements with
-            `z_bin[0] < z_bin[1]`, if `crops` is empty, or if no crops
-            remain after excluding data/morphology/SED-fit-dependent
-            selectors.
+        InvalidOptionError
+            If there is no `calc_Vmax_{Vmax_method.lower()}` method.
+        LengthMismatchError
+            If `z_bin` does not have exactly two elements.
+        RangeError
+            If `z_bin[0]` is not less than `z_bin[1]`, if `crops` is
+            empty, or if no crops remain after excluding data/morphology/
+            SED-fit-dependent selectors.
         """
-        assert hasattr(
-            self, f"calc_Vmax_{Vmax_method.lower()}"
-        ), galfind_logger.critical(
-            f"Galaxy.calc_Vmax has no method for {Vmax_method.lower()=}! "
-            + f"Please implement Galaxy.calc_Vmax_{Vmax_method.lower()}"
-        )
+        if not hasattr(self, f"calc_Vmax_{Vmax_method.lower()}"):
+            raise InvalidOptionError(
+                f"Vmax_method={Vmax_method!r} has no corresponding "
+                f"Galaxy.calc_Vmax_{Vmax_method.lower()} method; "
+                "implement it or pass a recognised Vmax_method."
+            )
 
         # TODO: remove dependence on full_survey_name input
         # input assertions
-        assert len(z_bin) == 2
-        assert z_bin[0] < z_bin[1]
-        assert crops != []
+        if len(z_bin) != 2:
+            raise LengthMismatchError(
+                f"z_bin={z_bin!r} has length {len(z_bin)}; must have "
+                "length 2 ([z_min, z_max])."
+            )
+        if z_bin[0] >= z_bin[1]:
+            raise RangeError(
+                f"z_bin={z_bin!r} must satisfy z_bin[0] < z_bin[1]."
+            )
+        if crops == []:
+            raise RangeError(
+                "crops must not be empty; at least one Selector is "
+                "required to compute Vmax."
+            )
         from . import (
             Data_Selector,
             Multiple_Selector,
@@ -2031,7 +2058,13 @@ class Galaxy:
                 ):
                     continue
             Vmax_crops.extend([crop])
-        assert Vmax_crops != []
+        if Vmax_crops == []:
+            raise RangeError(
+                "No crops remain after excluding data/morphology/"
+                "SED-fit-dependent selectors from crops="
+                f"{crops!r}; at least one crop applicable purely from "
+                "the (redshifted) photometry is required to compute Vmax."
+            )
         # calculate V_max
         if sed_result.z > z_bin[1] or sed_result.z < z_bin[0]:
             Vmax = {"all": -1.0}
@@ -2111,7 +2144,7 @@ class Galaxy:
 
         Raises
         ------
-        AssertionError
+        MissingDataError
             If any band in `data` is missing `med_depth` attributes or
             median depths for a given region.
         NotImplementedError
@@ -2145,17 +2178,19 @@ class Galaxy:
             calc_area = True
 
         for region in regions:
-            assert all(
-                hasattr(band_data, "med_depth") for band_data in data
-            ), galfind_logger.critical(
-                f"Not all bands in {repr(data)=} have med_depth attributes!"
-            )
-            assert all(
+            if not all(hasattr(band_data, "med_depth") for band_data in data):
+                raise MissingDataError(
+                    f"Not all bands in data={data!r} have med_depth "
+                    "attributes."
+                )
+            if not all(
                 region in band_data.med_depth[aper_diam].keys()
                 for band_data in data
-            ), galfind_logger.critical(
-                f"Not all bands in {repr(data)=} have med_depths for {region=}"
-            )
+            ):
+                raise MissingDataError(
+                    f"Not all bands in data={data!r} have med_depths for "
+                    f"region={region!r}."
+                )
 
             Vmax_output[region] = {}
             Vmax_kwargs_output[region] = {}
@@ -2388,7 +2423,7 @@ class Galaxy:
 
         Raises
         ------
-        AssertionError
+        MissingDataError
             If any band in `data` is missing `med_depth` attributes or
             median depths for a given region.
         """
@@ -2420,17 +2455,19 @@ class Galaxy:
         }  # data shared by all galaxies in this field
 
         for region in regions:
-            assert all(
-                hasattr(band_data, "med_depth") for band_data in data
-            ), galfind_logger.critical(
-                f"Not all bands in {repr(data)=} have med_depth attributes!"
-            )
-            assert all(
+            if not all(hasattr(band_data, "med_depth") for band_data in data):
+                raise MissingDataError(
+                    f"Not all bands in data={data!r} have med_depth "
+                    "attributes."
+                )
+            if not all(
                 region in band_data.med_depth[aper_diam].keys()
                 for band_data in data
-            ), galfind_logger.critical(
-                f"Not all bands in {repr(data)=} have med_depths for {region=}"
-            )
+            ):
+                raise MissingDataError(
+                    f"Not all bands in data={data!r} have med_depths for "
+                    f"region={region!r}."
+                )
 
             Vmax_output[region] = {}
             Vmax_kwargs_output[region] = {}

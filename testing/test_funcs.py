@@ -5,6 +5,18 @@ from astropy.coordinates import SkyCoord
 from astropy.table import Table
 
 from galfind import useful_funcs_austind as funcs
+from galfind.photometry import SExtractor
+from galfind.utils import Depths, Masking
+from galfind.utils.exceptions import (
+    EmptyCatalogueError,
+    GalfindTypeError,
+    IncompatibleKwargsError,
+    InvalidOptionError,
+    InvalidUnitError,
+    LengthMismatchError,
+    MissingKeyError,
+    RangeError,
+)
 
 
 @pytest.fixture(
@@ -114,7 +126,7 @@ def test_calc_1sigma_flux(calc_1sigma_flux_inputs):
                 "five_sigma_depth": 28.0,
                 "n": -1,
             },
-            AssertionError,
+            RangeError,
         ),
     ],
 )
@@ -208,9 +220,9 @@ def loc_depth_roundtrip_inputs(request):
 def test_flux_err_loc_depth_roundtrip(loc_depth_roundtrip_inputs):
     flux_err, zero_point = loc_depth_roundtrip_inputs
     loc_depth = funcs.flux_err_to_loc_depth(flux_err, zero_point)
-    assert funcs.loc_depth_to_flux_err(
-        loc_depth, zero_point
-    ) == pytest.approx(flux_err)
+    assert funcs.loc_depth_to_flux_err(loc_depth, zero_point) == pytest.approx(
+        flux_err
+    )
 
 
 @pytest.fixture(
@@ -516,10 +528,8 @@ def find_target_dir_inputs(request):
 def test_find_target_dir(find_target_dir_inputs):
     keyword, expected = find_target_dir_inputs
     if expected is ValueError:
-        with pytest.raises(ValueError):
-            funcs.find_target_dir(
-                "/work", "JADES", "v11", ["NIRCam"], keyword
-            )
+        with pytest.raises(InvalidOptionError):
+            funcs.find_target_dir("/work", "JADES", "v11", ["NIRCam"], keyword)
     else:
         out = funcs.find_target_dir(
             "/work", "JADES", "v11", ["NIRCam"], keyword
@@ -528,9 +538,7 @@ def test_find_target_dir(find_target_dir_inputs):
 
 
 def test_n_sigma_detection_at_depth_is_5sigma():
-    assert funcs.n_sigma_detection(
-        25.0, 25.0, 28.9
-    ) == pytest.approx(5.0)
+    assert funcs.n_sigma_detection(25.0, 25.0, 28.9) == pytest.approx(5.0)
 
 
 def test_convert_wav_units_same_unit_returns_input():
@@ -559,7 +567,7 @@ def test_convert_mag_units_jy_abmag_roundtrip():
 
 
 def test_convert_mag_units_invalid_units_raises():
-    with pytest.raises(Exception):
+    with pytest.raises(InvalidUnitError):
         funcs.convert_mag_units(1.0 * u.um, 1.0 * u.Jy, u.m)
 
 
@@ -585,32 +593,26 @@ def test_convert_mag_err_units_mismatched_units_raises():
         np.array([0.1, 0.1]) * u.ABmag,
         np.array([0.15, 0.15]) * u.ABmag,
     ]
-    with pytest.raises(AssertionError):
+    with pytest.raises(InvalidUnitError):
         funcs.convert_mag_err_units(wavs, mags, errs, u.Jy)
 
 
 def test_log_scale_fluxes():
     fluxes = np.array([1.0, 10.0, 100.0]) * u.Jy
-    np.testing.assert_allclose(
-        funcs.log_scale_fluxes(fluxes), [0.0, 1.0, 2.0]
-    )
+    np.testing.assert_allclose(funcs.log_scale_fluxes(fluxes), [0.0, 1.0, 2.0])
 
 
 def test_log_scale_flux_errors():
     fluxes = np.array([10.0]) * u.Jy
     flux_errs = [np.array([1.0]) * u.Jy, np.array([1.0]) * u.Jy]
     log_l1, log_u1 = funcs.log_scale_flux_errors(fluxes, flux_errs)
-    assert log_l1[0] == pytest.approx(
-        np.log10(10.0) - np.log10(9.0)
-    )
-    assert log_u1[0] == pytest.approx(
-        np.log10(11.0) - np.log10(10.0)
-    )
+    assert log_l1[0] == pytest.approx(np.log10(10.0) - np.log10(9.0))
+    assert log_u1[0] == pytest.approx(np.log10(11.0) - np.log10(10.0))
 
 
 def test_log_scale_flux_errors_wrong_length_raises():
     fluxes = np.array([10.0]) * u.Jy
-    with pytest.raises(AssertionError):
+    with pytest.raises(LengthMismatchError):
         funcs.log_scale_flux_errors(fluxes, [np.array([1.0]) * u.Jy])
 
 
@@ -675,23 +677,21 @@ def test_validate_quantity_correct_type_passthrough():
 
 
 def test_validate_quantity_wrong_type_raises():
-    with pytest.raises(AssertionError):
+    with pytest.raises(InvalidUnitError):
         funcs.validate_quantity(1.0 * u.um, "time")
 
 
 def test_beta_slope_power_law_func():
-    assert funcs.beta_slope_power_law_func(
-        10.0, 1.0, -2.0
-    ) == pytest.approx(0.1)
+    assert funcs.beta_slope_power_law_func(10.0, 1.0, -2.0) == pytest.approx(
+        0.1
+    )
 
 
 def test_crop_to_Calzetti94_filters():
     # windows include (1268,1284) and (1342,1371); 1290 falls in neither
     wavs = np.array([1275.0, 1290.0, 1350.0]) * u.AA
     mags = np.array([1.0, 2.0, 3.0])
-    cropped_wavs, cropped_mags = funcs.crop_to_Calzetti94_filters(
-        wavs, mags
-    )
+    cropped_wavs, cropped_mags = funcs.crop_to_Calzetti94_filters(wavs, mags)
     assert cropped_wavs.value.tolist() == [1275.0, 1350.0]
     assert cropped_mags.tolist() == [1.0, 3.0]
 
@@ -703,9 +703,9 @@ def test_ext_source_corr_log_data():
 
 
 def test_ext_source_corr_linear_data():
-    assert funcs.ext_source_corr(
-        2.0, 3.0, is_log_data=False
-    ) == pytest.approx(6.0)
+    assert funcs.ext_source_corr(2.0, 3.0, is_log_data=False) == pytest.approx(
+        6.0
+    )
 
 
 def test_power_law_beta_func():
@@ -727,9 +727,7 @@ def test_rolling_average():
 
 
 def test_group_positions_single_group():
-    coords = SkyCoord(
-        ra=[10.0, 10.0001] * u.deg, dec=[20.0, 20.0001] * u.deg
-    )
+    coords = SkyCoord(ra=[10.0, 10.0001] * u.deg, dec=[20.0, 20.0001] * u.deg)
     groups = funcs.group_positions(coords, match_radius=5.0 * u.arcsec)
     assert len(groups) == 1
     (indices,) = groups.values()
@@ -737,9 +735,7 @@ def test_group_positions_single_group():
 
 
 def test_group_positions_two_groups():
-    coords = SkyCoord(
-        ra=[10.0, 50.0] * u.deg, dec=[20.0, 60.0] * u.deg
-    )
+    coords = SkyCoord(ra=[10.0, 50.0] * u.deg, dec=[20.0, 60.0] * u.deg)
     groups = funcs.group_positions(coords, match_radius=5.0 * u.arcsec)
     assert len(groups) == 2
 
@@ -761,9 +757,7 @@ def test_get_ext_src_corr_label_default():
 
 
 def test_get_ext_src_corr_label_no_uplim():
-    assert (
-        funcs.get_ext_src_corr_label("UV", None) == "_extsrc_UV"
-    )
+    assert funcs.get_ext_src_corr_label("UV", None) == "_extsrc_UV"
 
 
 def test_get_ext_src_corr_label_none_key():
@@ -797,7 +791,7 @@ def test_fits_cat_to_np_no_reshape():
 
 def test_fits_cat_to_np_empty_table_raises():
     tab = Table({"a": [], "b": []})
-    with pytest.raises(AssertionError):
+    with pytest.raises(EmptyCatalogueError):
         funcs.fits_cat_to_np(tab, ["a", "b"])
 
 
@@ -829,13 +823,88 @@ def test_change_file_permissions_single_path(tmp_path):
     assert (target.stat().st_mode & 0o777) == 0o644
 
 
+def test_label_wavelengths_bad_frame_raises():
+    with pytest.raises(InvalidOptionError):
+        funcs.label_wavelengths(u.AA, False, "bogus_frame")
+
+
+def test_label_fluxes_unrecognised_unit_raises():
+    with pytest.raises(InvalidOptionError):
+        funcs.label_fluxes(u.m, False)
+
+
+def test_label_fluxes_abmag_log_scaled_raises():
+    with pytest.raises(IncompatibleKwargsError):
+        funcs.label_fluxes(u.ABmag, True)
+
+
+class _DummySelf:
+    """Minimal stand-in with a settable class name, used to exercise
+    class-dispatch validation without constructing a real Band_Data/Data
+    instance."""
+
+
+def test_depths_get_depth_dir_unrecognised_class_raises():
+    dummy = _DummySelf()
+    with pytest.raises(GalfindTypeError):
+        Depths.get_depth_dir(dummy, 0.32 * u.arcsec, "n_nearest")
+
+
+def test_sextractor_get_err_map_invalid_err_type_raises():
+    with pytest.raises(InvalidOptionError):
+        SExtractor.get_err_map(None, "bogus_err_type")
+
+
+def _valid_star_mask_params():
+    return {
+        "central": {"a": 1.0, "b": 2.0},
+        "spikes": {"a": 3.0, "b": 4.0},
+    }
+
+
+def test_check_star_mask_params_valid_passes():
+    # should not raise
+    Masking.check_star_mask_params(_valid_star_mask_params())
+
+
+def test_check_star_mask_params_not_a_dict_raises():
+    with pytest.raises(GalfindTypeError):
+        Masking.check_star_mask_params([1, 2, 3])
+
+
+def test_check_star_mask_params_missing_top_level_key_raises():
+    params = _valid_star_mask_params()
+    del params["spikes"]
+    with pytest.raises(MissingKeyError):
+        Masking.check_star_mask_params(params)
+
+
+def test_check_star_mask_params_central_not_a_dict_raises():
+    params = _valid_star_mask_params()
+    params["central"] = "not_a_dict"
+    with pytest.raises(GalfindTypeError):
+        Masking.check_star_mask_params(params)
+
+
+def test_check_star_mask_params_missing_nested_key_raises():
+    params = _valid_star_mask_params()
+    del params["central"]["b"]
+    with pytest.raises(MissingKeyError):
+        Masking.check_star_mask_params(params)
+
+
+def test_check_star_mask_params_non_numeric_scale_raises():
+    params = _valid_star_mask_params()
+    params["spikes"]["a"] = "not_a_number"
+    with pytest.raises(GalfindTypeError):
+        Masking.check_star_mask_params(params)
+
+
 def test_change_file_permissions_list_of_paths(tmp_path):
     targets = [tmp_path / "a.txt", tmp_path / "b.txt"]
     for t in targets:
         t.write_text("data")
-    funcs.change_file_permissions(
-        [str(t) for t in targets], permissions=0o600
-    )
+    funcs.change_file_permissions([str(t) for t in targets], permissions=0o600)
     for t in targets:
         assert (t.stat().st_mode & 0o777) == 0o600
 
@@ -893,8 +962,7 @@ def test_get_phot_cat_path():
         "F444W",
     )
     assert path.endswith(
-        "NIRCam/test_survey/(0.32)as/"
-        "test_survey_MASTER_Sel-F444W_v1.fits"
+        "NIRCam/test_survey/(0.32)as/test_survey_MASTER_Sel-F444W_v1.fits"
     )
 
 
@@ -929,9 +997,7 @@ def test_tqdm_joblib_restores_callback_and_closes():
 
     dummy = DummyTqdm()
     with funcs.tqdm_joblib(dummy):
-        assert (
-            joblib.parallel.BatchCompletionCallBack is not original_callback
-        )
+        assert joblib.parallel.BatchCompletionCallBack is not original_callback
     assert joblib.parallel.BatchCompletionCallBack is original_callback
     assert dummy.closed
 
@@ -953,9 +1019,7 @@ def fake_filterset():
 
 
 def test_get_first_bluewards_band(fake_filterset):
-    band = funcs.get_first_bluewards_band(
-        0.0, fake_filterset, 1500.0 * u.nm
-    )
+    band = funcs.get_first_bluewards_band(0.0, fake_filterset, 1500.0 * u.nm)
     assert band == "F090W"
 
 
@@ -974,9 +1038,7 @@ def test_get_first_bluewards_band_ignore_bands(fake_filterset):
 
 
 def test_get_first_redwards_band(fake_filterset):
-    band = funcs.get_first_redwards_band(
-        0.0, fake_filterset, 1200.0 * u.nm
-    )
+    band = funcs.get_first_redwards_band(0.0, fake_filterset, 1200.0 * u.nm)
     assert band == "F150W"
 
 

@@ -58,6 +58,13 @@ from .. import config, galfind_logger
 from ..spectra.SED import SED_obs
 from ..utils import useful_funcs_austind as funcs
 from ..utils.decorators import run_in_dir
+from ..utils.exceptions import (
+    GalfindTypeError,
+    IncompatibleKwargsError,
+    LengthMismatchError,
+    MissingFileError,
+    RangeError,
+)
 from ..visualization import Redshift_PDF
 from .SED_codes import SED_code
 
@@ -387,12 +394,12 @@ class EAZY(SED_code):
             zbest_arr = {}
             chi2_best_arr = {}
             for lowz_zmax in lowz_zmax_arr:
-                assert (
-                    lowz_zmax <= self.SED_fit_params["Z_MAX"]
-                ), galfind_logger.critical(
-                    f"{lowz_zmax=} cannot be greater than "
-                    + f"{self.SED_fit_params['Z_MAX']=}!"
-                )
+                if lowz_zmax > self.SED_fit_params["Z_MAX"]:
+                    raise RangeError(
+                        f"lowz_zmax={lowz_zmax} cannot be greater than "
+                        f"SED_fit_params['Z_MAX']="
+                        f"{self.SED_fit_params['Z_MAX']}."
+                    )
                 fit_copy = deepcopy(fit)
                 zgrid_mask = np.array(
                     [
@@ -1157,24 +1164,29 @@ class EAZY(SED_code):
 
         Raises
         ------
-        AssertionError
-            If `IDs` and `SED_paths` have different lengths, or if the
-            elements of `SED_paths` are not all identical.
+        LengthMismatchError
+            If `IDs` and `SED_paths` have different lengths.
+        IncompatibleKwargsError
+            If the elements of `SED_paths` are not all identical.
         """
         # ensure this works if only extracting 1 galaxy
         if isinstance(IDs, (str, int, float)):
             IDs = np.array([int(IDs)])
         if isinstance(SED_paths, str):
             SED_paths = [SED_paths]
-        assert len(IDs) == len(SED_paths), galfind_logger.critical(
-            f"{len(IDs)=} != {len(SED_paths)=}"
-        )
+        if len(IDs) != len(SED_paths):
+            raise LengthMismatchError(
+                f"len(IDs)={len(IDs)} != len(SED_paths)={len(SED_paths)}; "
+                "IDs and SED_paths must have the same length."
+            )
         # ensure that for EAZY all the SED_paths are the same
-        assert all(
-            SED_path == SED_paths[0] for SED_path in SED_paths
-        ), galfind_logger.critical(
-            f"SED_paths must all be the same for {__class__.__name__}"
-        )
+        if not all(SED_path == SED_paths[0] for SED_path in SED_paths):
+            raise IncompatibleKwargsError(
+                f"SED_paths={SED_paths!r} are not all identical; "
+                f"{self.__class__.__name__} stores every galaxy's best-fit "
+                "SED in a single per-catalogue .h5 file, so all SED_paths "
+                "entries must be the same path."
+            )
         # open .h5 file
         # return np.ones(len(IDs))
         hf = h5py.File(SED_paths[0], "r")
@@ -1232,11 +1244,18 @@ class EAZY(SED_code):
 
         Raises
         ------
-        AssertionError
-            If `PDF_paths` or `IDs` is not a `list`/`numpy.ndarray`, if
-            they differ in length, if the elements of `PDF_paths` are
-            not all identical, or if `PDF_paths[0]` does not have a
-            ``.h5`` extension, when `gal_property` is ``"z"``.
+        GalfindTypeError
+            If `PDF_paths` or `IDs` is not a `list`/`numpy.ndarray`, when
+            `gal_property` is ``"z"``.
+        LengthMismatchError
+            If `PDF_paths` and `IDs` differ in length, when
+            `gal_property` is ``"z"``.
+        IncompatibleKwargsError
+            If the elements of `PDF_paths` are not all identical, when
+            `gal_property` is ``"z"``.
+        MissingFileError
+            If `PDF_paths[0]` does not have a ``.h5`` extension, when
+            `gal_property` is ``"z"``.
         """
         # ensure this works if only extracting 1 galaxy
         if isinstance(IDs, (str, int, float)):
@@ -1249,28 +1268,37 @@ class EAZY(SED_code):
             return np.array(list(itertools.repeat(None, len(IDs))))
         else:
             # ensure the correct type
-            assert isinstance(
-                PDF_paths, (list, np.ndarray)
-            ), galfind_logger.critical(
-                f"type(data_paths) = {type(PDF_paths)} not in "
-                "[list, np.array]!"
-            )
-            assert isinstance(
-                IDs, (list, np.ndarray)
-            ), galfind_logger.critical(
-                f"type(IDs) = {type(IDs)} not in [list, np.array]!"
-            )
+            if not isinstance(PDF_paths, (list, np.ndarray)):
+                raise GalfindTypeError(
+                    f"PDF_paths has type {type(PDF_paths)}; must be a "
+                    "list or numpy.ndarray."
+                )
+            if not isinstance(IDs, (list, np.ndarray)):
+                raise GalfindTypeError(
+                    f"IDs has type {type(IDs)}; must be a list or "
+                    "numpy.ndarray."
+                )
             # ensure the correct array size
-            assert len(IDs) == len(PDF_paths), galfind_logger.critical(
-                f"len(IDs) = {len(IDs)} != len(data_paths) = {len(PDF_paths)}!"
-            )
+            if len(IDs) != len(PDF_paths):
+                raise LengthMismatchError(
+                    f"len(IDs)={len(IDs)} != len(PDF_paths)="
+                    f"{len(PDF_paths)}; IDs and PDF_paths must have the "
+                    "same length."
+                )
             # ensure all data_paths are the same and are of .h5 type
-            assert all(
-                PDF_path == PDF_paths[0] for PDF_path in PDF_paths
-            ), galfind_logger.critical("All data_paths must be the same!")
-            assert PDF_paths[0][-3:] == ".h5", galfind_logger.critical(
-                f"{PDF_paths[0]} must have .h5 file extension"
-            )
+            if not all(PDF_path == PDF_paths[0] for PDF_path in PDF_paths):
+                raise IncompatibleKwargsError(
+                    f"PDF_paths={PDF_paths!r} are not all identical; "
+                    f"{self.__class__.__name__} stores every galaxy's "
+                    "redshift PDF in a single per-catalogue .h5 file, so "
+                    "all PDF_paths entries must be the same path."
+                )
+            if PDF_paths[0][-3:] != ".h5":
+                raise MissingFileError(
+                    f"PDF_paths[0]={PDF_paths[0]!r} does not have a "
+                    "'.h5' file extension; EAZY redshift PDFs must be "
+                    "read from an HDF5 (.h5) output file."
+                )
             # open .h5 file
             hf = h5py.File(PDF_paths[0], "r")
             hf_z = np.array(hf["z"]) * u.dimensionless_unscaled

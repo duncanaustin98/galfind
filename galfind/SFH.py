@@ -24,6 +24,14 @@ except ImportError:
     )
 
 from . import galfind_logger
+from .utils.exceptions import (
+    GalfindTypeError,
+    InvalidOptionError,
+    InvalidUnitError,
+    LengthMismatchError,
+    MissingFileError,
+    MissingKeyError,
+)
 
 
 class SFH:
@@ -100,13 +108,18 @@ class SFH:
 
         Raises
         ------
-        FileNotFoundError
+        MissingFileError
             If `path` does not point to an existing file.
+        MissingKeyError
+            If the `basic_quantities` group in the file has no ``"sfh"``
+            entry, or the `advanced_quantities` group has no ``"redshift"``
+            entry (when `redshift` is not stored as a fixed value).
+        LengthMismatchError
+            If the fit instructions in `path` yield zero or more than one
+            candidate SFH type key.
         """
         if not Path(path).is_file():
-            err_message = f"SFH file {path} not found!"
-            galfind_logger.critical(err_message)
-            raise FileNotFoundError(err_message)
+            raise MissingFileError(f"SFH file path={path!r} not found.")
 
         import ast
 
@@ -114,11 +127,12 @@ class SFH:
 
         with h5py.File(path, "r") as h5:
             basic_quantities = h5["basic_quantities"]
-            assert (
-                "sfh" in dict(basic_quantities).keys()
-            ), galfind_logger.critical(
-                f"'SFH' not found in {path} basic quantites! "
-            )
+            if "sfh" not in dict(basic_quantities).keys():
+                keys = list(dict(basic_quantities).keys())
+                raise MissingKeyError(
+                    f"'sfh' key not found in path={path!r} "
+                    f"basic_quantities keys={keys}."
+                )
             sfh = np.array(basic_quantities["sfh"])
             fit_instructions = ast.literal_eval(h5.attrs["fit_instructions"])
             # extract z
@@ -127,11 +141,12 @@ class SFH:
             else:
                 # extract median redshift from the posterior
                 advanced_quantities = h5["advanced_quantities"]
-                assert (
-                    "redshift" in dict(advanced_quantities).keys()
-                ), galfind_logger.critical(
-                    f"'redshift' not found in {path} advanced quantites!"
-                )
+                if "redshift" not in dict(advanced_quantities).keys():
+                    raise MissingKeyError(
+                        f"'redshift' key not found in path={path!r} "
+                        "advanced_quantities keys="
+                        f"{list(dict(advanced_quantities).keys())}."
+                    )
                 z = np.median(advanced_quantities["redshift"])
             h5.close()
 
@@ -142,9 +157,12 @@ class SFH:
             for key in fit_instructions.keys()
             if not any(remove_substr in key for remove_substr in remove_keys)
         ]
-        assert len(sfh_type) == 1, galfind_logger.critical(
-            f"SFH type not uniquely defined in {path} fit instructions!"
-        )
+        if len(sfh_type) != 1:
+            raise LengthMismatchError(
+                f"sfh_type={sfh_type!r} derived from path={path!r} fit "
+                f"instructions has length {len(sfh_type)}; expected "
+                "exactly 1 candidate SFH type key."
+            )
         sfh_type = sfh_type[0]
 
         # extract time array (DIRECTLY FROM BAGPIPES)
@@ -263,46 +281,55 @@ class SFH:
 
         Raises
         ------
-        ValueError
+        InvalidUnitError
+            If `time_units`, `crop_ages`, or `zoom_time` does not have
+            physical type ``"time"``.
+        InvalidOptionError
             If `plot_type` is not ``"lookback"`` or ``"absolute"``.
+        LengthMismatchError
+            If `self.sfh_post`'s second axis does not match
+            ``len(self.ages)``, or `crop_ages` is not a two-element range.
+        GalfindTypeError
+            If `zoom_time.value` is not a `float`.
         NotImplementedError
             If `save` is truthy (saving is not yet implemented).
         """
         galfind_logger.debug(f"Plotting {repr(self)}")
-        assert (
-            u.get_physical_type(time_units) == "time"
-        ), galfind_logger.critical(
-            f"{time_units} with "
-            f"{u.get_physical_type(time_units)=}!='time'!"
-        )
+        if u.get_physical_type(time_units) != "time":
+            raise InvalidUnitError(
+                f"time_units={time_units!r} has physical type "
+                f"{u.get_physical_type(time_units)!r}; expected 'time'."
+            )
         if plot_type == "lookback":
             x = self.ages
         elif plot_type == "absolute":
             x = self.age_of_universe - self.ages
         else:
-            err_message = f"{plot_type=} must be 'lookback' or 'absolute'!"
-            galfind_logger.critical(err_message)
-            raise ValueError(err_message)
+            raise InvalidOptionError(
+                f"plot_type={plot_type!r} is not a recognised option; "
+                "must be one of ['lookback', 'absolute']."
+            )
         # convert ages to desired units
         x = x.to(time_units).value
 
         # calculate median and confidence interval for SFH posterior
-        assert self.sfh_post.shape[1] == len(
-            self.ages
-        ), galfind_logger.critical(
-            f"SFH posterior shape {self.sfh.shape=} does not "
-            f"match ages length {len(self.ages)=}!"
-        )
+        if self.sfh_post.shape[1] != len(self.ages):
+            raise LengthMismatchError(
+                f"sfh_post.shape={self.sfh_post.shape!r} does not match "
+                f"ages length {len(self.ages)}; sfh_post.shape[1] must "
+                "equal len(ages)."
+            )
         if crop_ages is not None:
-            assert (
-                u.get_physical_type(crop_ages) == "time"
-            ), galfind_logger.critical(
-                f"{crop_ages} with "
-                f"{u.get_physical_type(crop_ages)=}!='time'!"
-            )
-            assert len(crop_ages) == 2, galfind_logger.critical(
-                f"{crop_ages=} must be a list of two elements!"
-            )
+            if u.get_physical_type(crop_ages) != "time":
+                raise InvalidUnitError(
+                    f"crop_ages={crop_ages!r} has physical type "
+                    f"{u.get_physical_type(crop_ages)!r}; expected 'time'."
+                )
+            if len(crop_ages) != 2:
+                raise LengthMismatchError(
+                    f"crop_ages={crop_ages!r} has length {len(crop_ages)}; "
+                    "must be a two-element [min, max] time range."
+                )
             crop_ages = crop_ages.to(time_units)
             crop_mask = (self.ages.to(time_units) > crop_ages[0]) & (
                 self.ages.to(time_units) < crop_ages[1]
@@ -386,16 +413,16 @@ class SFH:
             ax.grid(False)
 
         if zoom_time is not None:
-            assert (
-                u.get_physical_type(zoom_time) == "time"
-            ), galfind_logger.critical(
-                f"{zoom_time=} with "
-                f"{u.get_physical_type(zoom_time)=}!='time'!"
-            )
-            assert isinstance(zoom_time.value, float), galfind_logger.critical(
-                f"{zoom_time.value=} must be a float, "
-                f"got {type(zoom_time.value)=}!"
-            )
+            if u.get_physical_type(zoom_time) != "time":
+                raise InvalidUnitError(
+                    f"zoom_time={zoom_time!r} has physical type "
+                    f"{u.get_physical_type(zoom_time)!r}; expected 'time'."
+                )
+            if not isinstance(zoom_time.value, float):
+                raise GalfindTypeError(
+                    f"zoom_time.value={zoom_time.value!r} has type "
+                    f"{type(zoom_time.value).__name__}; must be a float."
+                )
             # make inset axis zooming in to most recent 'zoom_time' years
             zoom_time = zoom_time.to(time_units)
             zoom_ax = inset_axes(

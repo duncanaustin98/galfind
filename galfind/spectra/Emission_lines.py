@@ -12,6 +12,8 @@ import astropy.units as u
 import matplotlib.pyplot as plt
 import numpy as np
 
+from ..utils.exceptions import InvalidOptionError
+
 wav_lyman_alpha = 1215.67  # u.AA
 line_diagnostics = {
     "Lya": {
@@ -265,11 +267,9 @@ class Emission_line:
         if self.voigt_type == "Tepper-Garcia+06":
             profile = self.Tepper_Garcia06_profile()
         else:
-            raise (
-                Exception(
-                    f"voigt_type={self.voigt_type} not available. "
-                    "Must be one of ['Tepper-Garcia+06']!"
-                )
+            raise InvalidOptionError(
+                f"voigt_type={self.voigt_type!r} not available. "
+                "Must be one of ['Tepper-Garcia+06']."
             )
         # normalize profile
         line_flux = np.trapezoid(profile["flux"], profile["wavs"])

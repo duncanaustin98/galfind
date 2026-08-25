@@ -41,6 +41,7 @@ from ..catalogues.Catalogue import (
     open_galfind_cat,
     open_galfind_hdr,
 )
+from ..utils.exceptions import LengthMismatchError, MissingDataError
 
 
 class Galaxy_Creator(Catalogue_Creator):
@@ -247,27 +248,27 @@ class Galaxy_Creator(Catalogue_Creator):
                 [phot, phot_err, depths],
                 ["photometry", "photometry error", "depths"],
             ):
-                msg = (
-                    f"{label.capitalize()} for {repr(self)}"
-                    f" missing {aper_diam}!"
-                )
-                assert aper_diam in arr, galfind_logger.critical(msg)
+                if aper_diam not in arr:
+                    raise MissingDataError(
+                        f"{label.capitalize()} for {repr(self)} is "
+                        f"missing aper_diam={aper_diam!r}."
+                    )
         selection_flags_arr, selection_kwargs_arr = (
             self.load_selection_flags_kwargs(cropped=True)
         )
         filterset_arr = self.load_gal_filtersets(length=len(IDs), cropped=True)
-        assert (
-            len(IDs)
-            == len(sky_coords)
-            == len(selection_flags_arr)
-            == len(selection_kwargs_arr)
-            == len(filterset_arr)
-            == 1
-        ), galfind_logger.critical(
-            f"{len(IDs)=} != {len(sky_coords)=} != "
-            f"{len(selection_flags_arr)=} != {len(selection_kwargs_arr)=} "
-            f"!= {len(filterset_arr)=} != 1"
-        )
+        lengths = {
+            "IDs": len(IDs),
+            "sky_coords": len(sky_coords),
+            "selection_flags_arr": len(selection_flags_arr),
+            "selection_kwargs_arr": len(selection_kwargs_arr),
+            "filterset_arr": len(filterset_arr),
+        }
+        if not all(length == 1 for length in lengths.values()):
+            raise LengthMismatchError(
+                f"{repr(self)} loaded mismatched lengths (all must be "
+                f"1 for a single galaxy): lengths={lengths!r}."
+            )
         sky_coord = sky_coords[0]
         phot = {aper_diam: phot[aper_diam][0] for aper_diam in self.aper_diams}
         phot_err = {
@@ -327,6 +328,9 @@ class Galaxy_Creator(Catalogue_Creator):
         crop_mask = np.full(len(tab), False)
         crop_mask[tab[self.ID_label] == self.id] = True
         self.crop_mask = crop_mask
-        assert np.sum(crop_mask) == 1, galfind_logger.critical(
-            f"Galaxy ID {self.id} not found in catalogue {self.cat_path}!"
-        )
+        if np.sum(crop_mask) != 1:
+            raise MissingDataError(
+                f"Galaxy ID={self.id} not found (or not unique) in "
+                f"catalogue cat_path={self.cat_path!r}; matched "
+                f"{int(np.sum(crop_mask))} row(s), expected exactly 1."
+            )

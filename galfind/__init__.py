@@ -143,6 +143,7 @@ wav_lyman_lim = 911.8  # * u.AA
 
 from .utils import useful_funcs_austind
 from .utils import utils
+from .utils import exceptions
 from .visualization import figs
 from .utils import decorators
 
@@ -161,6 +162,7 @@ __all__ = [
     "all_filt_names",
     "useful_funcs_austind",
     "utils",
+    "exceptions",
     "figs",
     "decorators",
 ]

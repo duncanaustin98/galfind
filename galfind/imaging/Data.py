@@ -72,6 +72,20 @@ from .. import config, galfind_logger
 from ..photometry import Photutils, SExtractor
 from ..utils import Depths, Masking
 from ..utils import useful_funcs_austind as funcs
+from ..utils.exceptions import (
+    AbstractMethodError,
+    ExternalToolError,
+    GalfindError,
+    GalfindTypeError,
+    IncompatibleKwargsError,
+    InvalidOptionError,
+    InvalidUnitError,
+    LengthMismatchError,
+    MissingDataError,
+    MissingFileError,
+    MissingKeyError,
+    RangeError,
+)
 from .Filter import Filter, Multiple_Filter
 from .Instrument import (  # noqa F501
     ACS_SBC,
@@ -423,6 +437,13 @@ class Band_Data_Base(ABC):
             Whether to require RMS error data. Default is `True`.
         incl_wht : `bool`, optional
             Whether to require weight data. Default is `True`.
+
+        Raises
+        ------
+        ExternalToolError
+            If the science image, RMS error, or weight FITS file's
+            `EXTNAME` header keyword is not one of the extension names
+            configured for this band.
         """
         # make im_ext_name lists if not already
         if isinstance(self.im_ext_name, str):
@@ -433,31 +454,31 @@ class Band_Data_Base(ABC):
             self.wht_ext_name = [self.wht_ext_name]
         # load image header
         im_hdr = self.load_im()[1]
-        assert im_hdr["EXTNAME"] in self.im_ext_name, galfind_logger.critical(
-            f"Image extension name {im_hdr['EXTNAME']} "
-            + f"not in {str(self.im_ext_name)} for {self.filt.filt_name}"
-        )
+        if im_hdr["EXTNAME"] not in self.im_ext_name:
+            raise ExternalToolError(
+                f"Image extension name EXTNAME={im_hdr['EXTNAME']!r} "
+                f"not in expected im_ext_name={self.im_ext_name!r} for "
+                f"filt={self.filt.filt_name!r}."
+            )
         if incl_rms_err:
             # load rms error header
             rms_err_hdr = self.load_rms_err(output_hdr=True)[1]
             if rms_err_hdr["EXTNAME"] not in self.rms_err_ext_name:
-                breakpoint()
-            assert (
-                rms_err_hdr["EXTNAME"] in self.rms_err_ext_name
-            ), galfind_logger.critical(
-                f"RMS error at {self.rms_err_path} has "
-                f"{rms_err_hdr['EXTNAME']=}!={str(self.rms_err_ext_name)}"
-            )
+                raise ExternalToolError(
+                    f"RMS error file at rms_err_path="
+                    f"{self.rms_err_path!r} has "
+                    f"EXTNAME={rms_err_hdr['EXTNAME']!r}, not in expected "
+                    f"rms_err_ext_name={self.rms_err_ext_name!r}."
+                )
         if incl_wht:
             # load weight header
             wht_hdr = self.load_wht(output_hdr=True)[1]
-            assert (
-                wht_hdr["EXTNAME"] in self.wht_ext_name
-            ), galfind_logger.critical(
-                f"Weight extension name {wht_hdr['EXTNAME']} "
-                f"not in {str(self.wht_ext_name)} "
-                f"for {self.filt.filt_name}"
-            )
+            if wht_hdr["EXTNAME"] not in self.wht_ext_name:
+                raise ExternalToolError(
+                    f"Weight extension name EXTNAME={wht_hdr['EXTNAME']!r} "
+                    f"not in expected wht_ext_name={self.wht_ext_name!r} "
+                    f"for filt={self.filt.filt_name!r}."
+                )
 
     def _check_aper_diams(self: Self) -> NoReturn:
         """Validate that aperture diameters are properly configured.
@@ -467,33 +488,34 @@ class Band_Data_Base(ABC):
 
         Raises
         ------
-        Exception
-            If aperture diameters are not defined, not a Quantity, or don't
-            have angular units.
+        MissingDataError
+            If aperture diameters have not been loaded for this band.
+        GalfindTypeError
+            If `self.aper_diams` is not an `astropy.units.Quantity`.
+        InvalidUnitError
+            If `self.aper_diams` does not have angular units.
         """
         if hasattr(self, "aper_diams"):
             if not isinstance(self.aper_diams, u.Quantity):
-                err_message = (
-                    f"Aperture diameters for {self.filt_name} "
-                    + "not an astropy Quantity!"
+                raise GalfindTypeError(
+                    f"aper_diams for filt_name={self.filt_name!r} has "
+                    f"type={type(self.aper_diams).__name__}; must be an "
+                    f"astropy.units.Quantity."
                 )
-                galfind_logger.critical(err_message)
-                raise (Exception(err_message))
             elif not u.get_physical_type(self.aper_diams.unit) == "angle":
-                err_message = (
-                    f"Aperture diameters for {self.filt_name} "
-                    f"must have angular units!"
+                raise InvalidUnitError(
+                    f"aper_diams for filt_name={self.filt_name!r} has "
+                    f"unit={self.aper_diams.unit!r} with physical_type="
+                    f"{u.get_physical_type(self.aper_diams.unit)!r}; must "
+                    f"have angular units."
                 )
-                galfind_logger.critical(err_message)
-                raise (Exception(err_message))
             else:
                 pass
         else:
-            err_message = (
-                f"Aperture diameters not loaded for {self.filt_name}!"
+            raise MissingDataError(
+                f"aper_diams not loaded for filt_name={self.filt_name!r}. "
+                f"Call set_aper_diams() first."
             )
-            galfind_logger.critical(err_message)
-            raise (Exception(err_message))
 
     # %% Loading methods
 
@@ -544,11 +566,16 @@ class Band_Data_Base(ABC):
 
         Raises
         ------
-        AssertionError
+        MissingDataError
             If segmentation has not yet been performed for this band (i.e.
             `seg_args` is not set).
         """
-        assert hasattr(self, "seg_args")
+        if not hasattr(self, "seg_args"):
+            raise MissingDataError(
+                f"seg_args not set for filt_name={self.filt_name!r}; "
+                f"segmentation has not been performed yet. Run "
+                f"segmentation first."
+            )
         # load science image data and header (and hdul)
         im_data, im_header = self.load_im()
         # load segmentation data and header
@@ -585,17 +612,16 @@ class Band_Data_Base(ABC):
 
         Raises
         ------
-        Exception
+        MissingFileError
             If `im_path` does not point to an existing FITS file.
         """
         # load image data and header
         if not Path(self.im_path).is_file():
-            err_message = (
-                f"Image for {self.survey} {self.filt_name}"
-                + f" at {self.im_path} is not a .fits image!"
+            raise MissingFileError(
+                f"Image for survey={self.survey!r} "
+                f"filt_name={self.filt_name!r} at im_path="
+                f"{self.im_path!r} is not an existing .fits image."
             )
-            galfind_logger.critical(err_message)
-            raise (Exception(err_message))
         im_hdul = fits.open(self.im_path, ignore_missing_simple=True, **kwargs)
         im_data = im_hdul[self.im_ext].data
         # im_data = im_data.byteswap().newbyteorder() slow
@@ -747,21 +773,16 @@ class Band_Data_Base(ABC):
 
         Raises
         ------
-        Exception
+        MissingFileError
             If `seg_path` does not point to an existing FITS file.
         """
         # TODO: load from the correct hdu rather than the first one
-        try:
-            if not Path(self.seg_path).is_file():
-                err_message = (
-                    f"Segmentation map for {self.survey} "
-                    f"{self.filt_name} at {self.seg_path} "
-                    f"is not a .fits image!"
-                )
-                galfind_logger.critical(err_message)
-                raise (Exception(err_message))
-        except Exception as e:
-            raise e
+        if not Path(self.seg_path).is_file():
+            raise MissingFileError(
+                f"Segmentation map for survey={self.survey!r} "
+                f"filt_name={self.filt_name!r} at seg_path="
+                f"{self.seg_path!r} is not an existing .fits image."
+            )
         seg_hdul = fits.open(
             self.seg_path, ignore_missing_simple=True, **kwargs
         )
@@ -802,6 +823,12 @@ class Band_Data_Base(ABC):
             a `dict` of `numpy.ndarray` (`astropy.io.fits.Header`) keyed by
             extension name otherwise. Both elements are `None` if no mask
             has been set for this band.
+
+        Raises
+        ------
+        MissingKeyError
+            If `ext` is given but is not one of the extension names present
+            in the mask FITS file.
         """
         if hasattr(self, "mask_args"):
             # load mask
@@ -816,12 +843,11 @@ class Band_Data_Base(ABC):
                 }
                 if ext is not None:
                     ext = ext.upper()
-                    assert (
-                        ext in hdu_names_indices.keys()
-                    ), galfind_logger.critical(
-                        f"{ext=} not in mask extensions: "
-                        f"{list(hdu_names_indices.keys())}"
-                    )
+                    if ext not in hdu_names_indices.keys():
+                        raise MissingKeyError(
+                            f"ext={ext!r} not in mask extensions: "
+                            f"{list(hdu_names_indices.keys())}."
+                        )
                     mask = hdul[hdu_names_indices[ext]].data
                     if invert:
                         mask = (~mask.astype(bool)).astype(int)
@@ -898,13 +924,14 @@ class Band_Data_Base(ABC):
 
         Raises
         ------
-        AssertionError
+        MissingDataError
             If no PSF has been loaded for this band (`self.psf` not set).
         """
-        assert self.psf is not None, galfind_logger.critical(
-            f"PSF not loaded for {self.filt_name}! "
-            f"Cannot make PSF homogenization kernel!"
-        )
+        if self.psf is None:
+            raise MissingDataError(
+                f"psf not loaded for filt_name={self.filt_name!r}; cannot "
+                f"make PSF homogenization kernel."
+            )
 
         if use_fft_conv:
             convolve_func = convolve_fft
@@ -1085,7 +1112,7 @@ class Band_Data_Base(ABC):
 
         Raises
         ------
-        Exception
+        InvalidOptionError
             If `method` does not contain ``"sextractor"``.
         """
         # do not re-segment if already done
@@ -1103,11 +1130,10 @@ class Band_Data_Base(ABC):
                     overwrite=overwrite,
                 )
             else:
-                raise (
-                    Exception(
-                        f"segmentation {method.lower()=} does not contain "
-                        f"'sextractor'"
-                    )
+                raise InvalidOptionError(
+                    f"segmentation method={method.lower()!r} does not "
+                    f"contain 'sextractor'; no other segmentation method "
+                    f"is currently supported."
                 )
             self.seg_args = {
                 "err_type": err_type,
@@ -1155,7 +1181,7 @@ class Band_Data_Base(ABC):
 
         Raises
         ------
-        Exception
+        InvalidOptionError
             If `method` does not contain ``"sextractor"``.
         """
         # do not re-perform forced photometry if already done
@@ -1175,10 +1201,10 @@ class Band_Data_Base(ABC):
                     )
                 )
             else:
-                raise (
-                    Exception(
-                        f"{method.lower()=} does not contain 'sextractor'"
-                    )
+                raise InvalidOptionError(
+                    f"forced photometry method={method.lower()!r} does "
+                    f"not contain 'sextractor'; no other forced "
+                    f"photometry method is currently supported."
                 )
 
     def _get_master_tab(self, output_ids_locs: bool = False) -> Table:
@@ -1194,11 +1220,11 @@ class Band_Data_Base(ABC):
                 "DELTA_J2000",
             ]
         else:
-            raise (
-                Exception(
-                    f"{self.forced_phot_args['method'].lower()} "
-                    f"does not contain 'sextractor'"
-                )
+            raise InvalidOptionError(
+                f"forced_phot_args['method']="
+                f"{self.forced_phot_args['method'].lower()!r} does not "
+                f"contain 'sextractor'; no other forced photometry method "
+                f"is currently supported."
             )
         if output_ids_locs:
             if "sextractor" in self.forced_phot_args["method"].lower():
@@ -1295,7 +1321,7 @@ class Band_Data_Base(ABC):
 
         Raises
         ------
-        Exception
+        InvalidOptionError
             If `method` is not one of ``"auto"`` or ``"manual"``.
         """
         if not (hasattr(self, "mask_args") and hasattr(self, "mask_path")):
@@ -1328,11 +1354,9 @@ class Band_Data_Base(ABC):
                     overwrite,
                 )
             else:
-                raise (
-                    Exception(
-                        f"Invalid masking method {method} "
-                        f"(not in ['auto', 'manual'])"
-                    )
+                raise InvalidOptionError(
+                    f"Invalid masking method={method!r}; must be one of "
+                    f"['auto', 'manual']."
                 )
 
     def run_depths(
@@ -1408,7 +1432,7 @@ class Band_Data_Base(ABC):
 
         Raises
         ------
-        AssertionError
+        RangeError
             If more than one set of depth parameters is generated
             internally (should not normally occur for a single band).
         """
@@ -1430,10 +1454,12 @@ class Band_Data_Base(ABC):
                 overwrite,
                 master_cat_path,
             )
-            assert len(params_arr) == 1, galfind_logger.critical(
-                f"Depths run for {self.filt_name} with {len(params_arr)} "
-                + "parameter sets! Only one set of parameters should be used!"
-            )
+            if len(params_arr) != 1:
+                raise RangeError(
+                    f"Depths run for filt_name={self.filt_name!r} with "
+                    f"len(params_arr)={len(params_arr)}; only one set of "
+                    f"parameters should be used."
+                )
             params = params_arr[0]
             # run depths
             Depths.calc_band_depth(params)
@@ -1526,12 +1552,13 @@ class Band_Data_Base(ABC):
                 )
             }
             depths = Depths.get_depths_from_h5(self, params[1], params[2])
-            assert all(
-                [key in depths[0].keys() for key in depths[1].keys()]
-            ), galfind_logger.critical(
-                f"Depths keys {depths[0].keys()} not in {depths[1].keys()} "
-                + f"for {self.filt_name} {params[1]} {params[2]}"
-            )
+            if not all(key in depths[0].keys() for key in depths[1].keys()):
+                raise MissingKeyError(
+                    f"Depths keys {list(depths[1].keys())} not all in "
+                    f"{list(depths[0].keys())} for filt_name="
+                    f"{self.filt_name!r}, aper_diam={params[1]!r}, "
+                    f"mode={params[2]!r}."
+                )
             for key in depths[0].keys():
                 self._update_depths(
                     params[1], depths[0][key], depths[1][key], key
@@ -1606,21 +1633,29 @@ class Band_Data_Base(ABC):
 
         Raises
         ------
-        AssertionError
+        InvalidOptionError
             If `aper_diam` is not in `self.aper_diams`, or `plot_type` is
             not a recognised value.
         """
-        assert aper_diam in self.aper_diams, galfind_logger.critical(
-            f"{aper_diam=} not in {self.aper_diams} for {self.filt_name}"
-        )
-        assert plot_type in [
+        if aper_diam not in self.aper_diams:
+            raise InvalidOptionError(
+                f"aper_diam={aper_diam!r} not in "
+                f"aper_diams={self.aper_diams!r} for filt_name="
+                f"{self.filt_name!r}."
+            )
+        valid_plot_types = [
             "rolling_average",
             "rolling_average_diag",
             "labels",
             "hist",
             "cat_depths",
             "cat_diag",
-        ], galfind_logger.critical(f"{plot_type=} not valid!")
+        ]
+        if plot_type not in valid_plot_types:
+            raise InvalidOptionError(
+                f"plot_type={plot_type!r} not valid; must be one of "
+                f"{valid_plot_types}."
+            )
         if fig is None or ax is None:
             fig, ax = plt.subplots()
         hf_output = Depths.get_hf_output(self, aper_diam)
@@ -1909,7 +1944,7 @@ class Band_Data_Base(ABC):
 
         Raises
         ------
-        Exception
+        InvalidOptionError
             If the provided extension `ext` is not one of the allowed
             values.
         """
@@ -1927,11 +1962,9 @@ class Band_Data_Base(ABC):
             data = self.load_mask()[0]["MASK"]
             normalize = False
         else:
-            raise (
-                Exception(
-                    f"Invalid extension {ext}. "
-                    + "Must be one of ['SCI', 'RMS_ERR', 'WHT', 'SEG', 'MASK']"
-                )
+            raise InvalidOptionError(
+                f"Invalid ext={ext!r}; must be one of "
+                f"['SCI', 'RMS_ERR', 'WHT', 'SEG', 'MASK']."
             )
         # make a fresh axis if one is not provided
         if ax is None:
@@ -1955,10 +1988,12 @@ class Band_Data_Base(ABC):
     def _combine_seg_data_and_mask(self) -> np.ndarray:
         seg_data = self.load_seg()[0]
         mask = self.load_mask()[0]["MASK"]
-        assert seg_data.shape == mask.shape, galfind_logger.critical(
-            f"{self.seg_path=} with {seg_data.shape=} != "
-            f"{mask.shape=} from {self.mask_path=}"
-        )
+        if seg_data.shape != mask.shape:
+            raise LengthMismatchError(
+                f"seg_path={self.seg_path!r} has seg_data.shape="
+                f"{seg_data.shape!r} != mask.shape={mask.shape!r} from "
+                f"mask_path={self.mask_path!r}."
+            )
         combined_mask = np.logical_or(seg_data > 0, mask == 1).astype(int)
         return combined_mask
 
@@ -2080,9 +2115,11 @@ class Band_Data_Base(ABC):
             if isinstance(mask, tuple):
                 mask = np.logical_and.reduce(mask)
             # ensure mask is the same shape as your imaging
-            assert mask.shape == self.data_shape, galfind_logger.critical(
-                f"{mask_name=} shape {mask.shape} != {self.data_shape=}"
-            )
+            if mask.shape != self.data_shape:
+                raise LengthMismatchError(
+                    f"mask_name={mask_name!r} shape={mask.shape!r} != "
+                    f"data_shape={self.data_shape!r}."
+                )
             # calculate unmasked area
             unmasked_area = funcs.calc_unmasked_area(mask, self.pixel_scale)
             self.unmasked_area[mask_name.upper()] = unmasked_area
@@ -2194,10 +2231,12 @@ class Band_Data(Band_Data_Base):
 
         Raises
         ------
-        NotImplementedError
+        AbstractMethodError
             This method is not yet implemented.
         """
-        raise (NotImplementedError)
+        raise AbstractMethodError(
+            "Band_Data.from_band_data_arr() is not yet implemented."
+        )
         # make sure all filters are the same
         # stack bands by multiplication
 
@@ -2226,7 +2265,12 @@ class Band_Data(Band_Data_Base):
         # if other is an array of data objects, make a list
         # of band_data objects
         if isinstance(other[0], Data):
-            assert all(isinstance(_other, Data) for _other in other)
+            if not all(isinstance(_other, Data) for _other in other):
+                raise GalfindTypeError(
+                    f"Band_Data.__add__: all elements of other={other!r} "
+                    f"must be Data instances when other[0] is a Data "
+                    f"instance."
+                )
             other_band_data = []
             for _other in other:
                 other_band_data.extend(_other.band_data_arr)
@@ -2248,19 +2292,15 @@ class Band_Data(Band_Data_Base):
             ) == len(new_band_data_arr):
                 return Data(new_band_data_arr)
             else:
-                raise (
-                    Exception(
-                        "Cannot add Data/Band_Data objects with the "
-                        "same filters. You may want to use "
-                        "Band_Data.__mul__() to stack!"
-                    )
+                raise IncompatibleKwargsError(
+                    "Cannot add Data/Band_Data objects with the same "
+                    "filters. You may want to use Band_Data.__mul__() to "
+                    "stack!"
                 )
         else:
-            raise (
-                Exception(
-                    "Cannot add Data/Band_Data objects from different "
-                    "surveys or versions."
-                )
+            raise IncompatibleKwargsError(
+                "Cannot add Data/Band_Data objects from different surveys "
+                "or versions."
             )
 
     # stacking/mosaicing
@@ -2271,17 +2311,26 @@ class Band_Data(Band_Data_Base):
         # if other is not a list, make it one
         if not isinstance(other, list):
             other = [other]
-        assert all(
+        if not all(
             isinstance(_other, tuple(Band_Data_Base.__subclasses__()))
             for _other in other
-        )
+        ):
+            raise GalfindTypeError(
+                f"Band_Data.__mul__: all elements of other={other!r} must "
+                f"be instances of a Band_Data_Base subclass."
+            )
         # flatten array of other band_data objects
         band_data_arr = []
         for _other in other:
             if isinstance(_other, Band_Data):
                 band_data_arr.extend([_other])
             elif isinstance(_other, Stacked_Band_Data):
-                assert hasattr(other, "band_data_arr")
+                if not hasattr(other, "band_data_arr"):
+                    raise MissingDataError(
+                        "Band_Data.__mul__: other must have a "
+                        "band_data_arr attribute when it contains a "
+                        "Stacked_Band_Data."
+                    )
                 band_data_arr.extend(_other.band_data_arr)
         # stack/mosaic bands
         if all(band_data.filt == self.filt for band_data in band_data_arr):
@@ -2320,7 +2369,7 @@ class Band_Data(Band_Data_Base):
 
         Raises
         ------
-        AssertionError
+        MissingKeyError
             If a required alignment parameter is missing from both
             `kwargs` and the instrument's `align_params`.
         """
@@ -2339,12 +2388,12 @@ class Band_Data(Band_Data_Base):
         for name in req_params:
             if name not in kwargs.keys():
                 # use default from instrument
-                assert (
-                    name in self.filt.instrument.align_params.keys()
-                ), galfind_logger.critical(
-                    f"{repr(self)}.sky_align: {name} not in "
-                    f"{self.filt.instrument.align_params.keys()=}!"
-                )
+                if name not in self.filt.instrument.align_params.keys():
+                    raise MissingKeyError(
+                        f"{self!r}.sky_align: name={name!r} not in "
+                        f"kwargs and not in "
+                        f"align_params={list(self.filt.instrument.align_params.keys())!r}."
+                    )
                 kwargs[name] = self.filt.instrument.align_params[name]
 
         galfind_logger.info(
@@ -2484,7 +2533,7 @@ class Band_Data(Band_Data_Base):
 
         Raises
         ------
-        Exception
+        MissingKeyError
             If neither band's header contains any recognised zero-point
             keyword (``PHOTFLAM``, ``PHOTPLAM``, ``PHOTZP``, ``ZEROPNT``,
             ``ZP``, ``PIX_SCALE``, or ``PIXSCALE``).
@@ -2532,12 +2581,10 @@ class Band_Data(Band_Data_Base):
             if ZP_key in sci_hdr.keys()
         }
         if len(ZP_info) == 0:
-            err_message = (
-                f"{repr(self)} header with {sci_hdr.keys()=} does not "
-                f"contain any {possible_ZP_keys=}!"
+            raise MissingKeyError(
+                f"{self!r} header with keys={list(sci_hdr.keys())!r} does "
+                f"not contain any of possible_ZP_keys={possible_ZP_keys!r}."
             )
-            galfind_logger.critical(err_message)
-            raise Exception(err_message)
 
         copied_filenames = []
         for name, path, ext, load_func in zip(
@@ -2604,10 +2651,12 @@ class Band_Data(Band_Data_Base):
                     f"{Band_Data_Base._pix_scale_to_str(self.pix_scale)}/",
                     f"{target_pix_scale_str}/",
                 )
-                assert out_path != path, galfind_logger.critical(
-                    f"Failed to change pixel scale in {path=} to "
-                    f"{align_band_data.pix_scale=}!"
-                )
+                if out_path == path:
+                    raise GalfindError(
+                        f"Failed to change pixel scale in path={path!r} "
+                        f"to align_band_data.pix_scale="
+                        f"{align_band_data.pix_scale!r}."
+                    )
                 funcs.make_dirs(out_path)
                 hdul.writeto(out_path, overwrite=True)
                 funcs.change_file_permissions(out_path)
@@ -2774,15 +2823,21 @@ class Stacked_Band_Data(Band_Data_Base):
 
         Raises
         ------
-        AssertionError
+        IncompatibleKwargsError
             If any two bands in `band_data_arr` share the same filter.
         """
         # make sure all filters are different
-        assert all(
+        if not all(
             band_data.filt_name != band_data_arr[0].filt_name
             for i, band_data in enumerate(band_data_arr)
             if i != 0
-        )
+        ):
+            raise IncompatibleKwargsError(
+                f"Stacked_Band_Data.from_band_data_arr: band_data_arr="
+                f"{[bd.filt_name for bd in band_data_arr]!r} contains "
+                f"bands with duplicate filters; all bands must have "
+                f"distinct filters."
+            )
 
         # TODO: if all band_data in band_data_arr have been PSF homogenized,
         # update the stacking path names
@@ -2798,13 +2853,15 @@ class Stacked_Band_Data(Band_Data_Base):
         )
         # instantiate the stacked band data object
         try:
-            assert all(
+            if not all(
                 getattr(band_data, "psf") == getattr(band_data_arr[0], "psf")
                 for band_data in band_data_arr
-            ), galfind_logger.critical(
-                "All band_data in band_data_arr must have the same "
-                "PSF homogenization status!"
-            )
+            ):
+                raise IncompatibleKwargsError(
+                    "Stacked_Band_Data.from_band_data_arr: all band_data "
+                    "in band_data_arr must have the same PSF "
+                    "homogenization status."
+                )
         except Exception as e:
             galfind_logger.error(
                 f"Error checking PSF homogenization status of "
@@ -2893,9 +2950,11 @@ class Stacked_Band_Data(Band_Data_Base):
             # extract ZP information from the header
             # open image
             im_hdr = self.load_im(return_hdul=False)[1]
-            assert "ZEROPNT" in im_hdr.keys(), galfind_logger.critical(
-                f"{repr(self)} header does not contain 'ZEROPNT' key!"
-            )
+            if "ZEROPNT" not in im_hdr.keys():
+                raise MissingKeyError(
+                    f"{self!r} header does not contain 'ZEROPNT' key; "
+                    f"available keys={list(im_hdr.keys())!r}."
+                )
             return float(im_hdr["ZEROPNT"])
 
     def __iter__(self):
@@ -2926,17 +2985,27 @@ class Stacked_Band_Data(Band_Data_Base):
         # if other is not a list, make it one
         if not isinstance(other, list):
             other = [other]
-        assert all(
+        if not all(
             isinstance(_other, tuple(Band_Data_Base.__subclasses__()))
             for _other in other
-        )
+        ):
+            raise GalfindTypeError(
+                f"Stacked_Band_Data.__mul__: all elements of "
+                f"other={other!r} must be instances of a Band_Data_Base "
+                f"subclass."
+            )
         # flatten array of other band_data objects
         band_data_arr = []
         for _other in other:
             if isinstance(_other, Band_Data):
                 band_data_arr.extend([_other])
             elif isinstance(_other, Stacked_Band_Data):
-                assert hasattr(other, "band_data_arr")
+                if not hasattr(other, "band_data_arr"):
+                    raise MissingDataError(
+                        "Stacked_Band_Data.__mul__: other must have a "
+                        "band_data_arr attribute when it contains a "
+                        "Stacked_Band_Data."
+                    )
                 band_data_arr.extend(_other.band_data_arr)
 
         return Stacked_Band_Data.from_band_data_arr(
@@ -2954,11 +3023,16 @@ class Stacked_Band_Data(Band_Data_Base):
         band_data_arr: List[Band_Data],
         err_type: str = "rms_err",
     ) -> str:
-        assert all(
+        if not all(
             getattr(band_data, name) == getattr(band_data_arr[0], name)
             for name in ["survey", "version", "pix_scale"]
             for band_data in band_data_arr
-        )
+        ):
+            raise IncompatibleKwargsError(
+                "Stacked_Band_Data._get_stacked_band_data_path: all "
+                "band_data in band_data_arr must share the same survey, "
+                "version, and pix_scale."
+            )
         survey = band_data_arr[0].survey
         version = band_data_arr[0].version
         band_data_arr = funcs.sort_band_data_arr(band_data_arr)
@@ -2989,9 +3063,10 @@ class Stacked_Band_Data(Band_Data_Base):
         err_type: str = "rms_err",
         overwrite: bool = False,
     ) -> Tuple[str, Dict[str, Union[str, int]]]:
-        assert err_type.lower() in ["rms_err", "wht"], galfind_logger.critical(
-            f"{err_type=} not in ['rms_err', 'wht']"
-        )
+        if err_type.lower() not in ["rms_err", "wht"]:
+            raise InvalidOptionError(
+                f"err_type={err_type!r} not in ['rms_err', 'wht']."
+            )
 
         # make rms_err/wht maps if they do not exist and are required
         # used_galfind_err = False
@@ -3032,20 +3107,25 @@ class Stacked_Band_Data(Band_Data_Base):
         )
         if not Path(stacked_band_data_path).is_file() or overwrite:
             # ensure all shapes are the same for the band data images
-            assert all(
+            if not all(
                 band_data.data_shape == band_data_arr[0].data_shape
                 for band_data in band_data_arr
-            ), galfind_logger.critical(
-                "All band data images in stacking bands must have "
-                "the same shape!"
-            )
+            ):
+                raise LengthMismatchError(
+                    "All band data images in stacking bands must have "
+                    "the same shape; got shapes="
+                    f"{[bd.data_shape for bd in band_data_arr]!r}."
+                )
             # ensure all band data images have the same pixel scale
-            assert all(
+            if not all(
                 band_data.pix_scale == band_data_arr[0].pix_scale
                 for band_data in band_data_arr
-            ), galfind_logger.critical(
-                "All image pixel scales must be the same!"
-            )
+            ):
+                raise IncompatibleKwargsError(
+                    "All image pixel scales must be the same when "
+                    "stacking; got pix_scales="
+                    f"{[bd.pix_scale for bd in band_data_arr]!r}."
+                )
             # stack band data SCI/ERR/WHT images (inverse variance weighted)
             galfind_logger.info(
                 f"Stacking "
@@ -3290,13 +3370,14 @@ class Multiple_Band_Data_Base:
         band_data_arr: List[Type[Band_Data_Base]],
         name: str,
     ):
-        assert all(
+        if not all(
             isinstance(band_data, funcs.all_subclasses(Band_Data_Base))
             for band_data in band_data_arr
-        ), galfind_logger.critical(
-            "All band_data in band_data_arr must be subclasses of "
-            "Band_Data_Base!"
-        )
+        ):
+            raise GalfindTypeError(
+                "All band_data in band_data_arr must be subclasses of "
+                "Band_Data_Base."
+            )
         self.band_data_arr = band_data_arr
         self.name = name
 
@@ -3671,10 +3752,12 @@ class Data:
 
         Raises
         ------
-        Exception
-            If no imaging data is found for a requested instrument, or if
-            multiple images are found for the same filter (band
-            stacking/mosaicing across files is not yet implemented).
+        MissingFileError
+            If no imaging data is found for a requested instrument.
+        ExternalToolError
+            If multiple images are found for the same filter (band
+            stacking/mosaicing across files is not yet implemented), or if
+            the number of images/RMS-errors/weights found is inconsistent.
         """
         # make im/rms_err/wht extension names lists if not already
         if isinstance(im_ext_name, str):
@@ -3736,12 +3819,11 @@ class Data:
                 for filt in instrument.filt_names
             }
             if all(len(values) == 0 for values in filt_names_paths.values()):
-                err_message = (
-                    f"No data found for {survey} {version} {instr_name} "
-                    f"in {search_dir}"
+                raise MissingFileError(
+                    f"No data found for survey={survey!r} "
+                    f"version={version!r} instr_name={instr_name!r} in "
+                    f"search_dir={search_dir!r}."
                 )
-                galfind_logger.critical(err_message)
-                raise Exception(err_message)
             else:
                 bands_found = [
                     key
@@ -3778,26 +3860,27 @@ class Data:
                     }
                 else:
                     psfs_dict = psfs
-                assert all(
+                if not all(
                     filt_name in psfs_dict.keys()
                     for filt_name in im_paths.keys()
-                ), galfind_logger.critical(
-                    "PSF dictionary keys must match filter names for all "
-                    "filters with data!"
-                )
+                ):
+                    raise MissingKeyError(
+                        f"psfs dictionary keys={list(psfs_dict.keys())!r} "
+                        f"must include all filt_names="
+                        f"{list(im_paths.keys())!r} with data."
+                    )
 
             for filt_name in im_paths.keys():
                 if len(im_paths[filt_name]) > 1:
                     # stack sci/rms_err/wht images together and move the
                     # old ones to a new directory
-                    err_message = (
-                        f"Multiple images found for {filt_name}. "
-                        "Stacking multiple images in the same band not yet "
-                        "implemented"
-                    )
                     # NOTE: This can only be done when the images are
                     # in the same fits file but different extensions.
-                    raise NotImplementedError(err_message)
+                    raise AbstractMethodError(
+                        f"Multiple images found for filt_name={filt_name!r}. "
+                        f"Stacking multiple images in the same band is not "
+                        f"yet implemented."
+                    )
                 else:
                     if psfs is None:
                         psf = None
@@ -3854,9 +3937,14 @@ class Data:
                 for instr in Instrument.__subclasses__()
                 if instr.__name__ == instrument
             ]
-            assert len(instrument_arr) == 1, galfind_logger.critical(
-                f"Instrument {instrument} not found!"
-            )
+            if len(instrument_arr) != 1:
+                valid_names = [
+                    instr.__name__ for instr in Instrument.__subclasses__()
+                ]
+                raise InvalidOptionError(
+                    f"instrument={instrument!r} not found; must be one of "
+                    f"{valid_names}."
+                )
             instrument = instrument_arr[0]()
         if version_to_dir_dict is not None:
             version = version_to_dir_dict[version.split("_")[0]]
@@ -3932,12 +4020,13 @@ class Data:
                 for name, count in zip(unique_ext_names, unique_ext_counts)
                 if count > 1
             ]
-            assert all(
-                count == 1 for count in unique_ext_counts
-            ), galfind_logger.critical(
-                f"Extension names {duplicate_names} appear in "
-                f"multiple image types!"
-            )
+            if not all(count == 1 for count in unique_ext_counts):
+                raise IncompatibleKwargsError(
+                    f"Extension names duplicate_names={duplicate_names!r} "
+                    f"appear in multiple of im_ext_name/rms_err_ext_name/"
+                    f"wht_ext_name; each extension name must be unique "
+                    f"across image types."
+                )
             # check to see if all paths are science images
             for path in paths:
                 # if all paths are science images
@@ -3953,9 +4042,13 @@ class Data:
                     n_unique_types = (
                         [is_sci[path]] + [is_rms_err[path]] + [is_wht[path]]
                     ).count(True)
-                    assert n_unique_types < 2, galfind_logger.critical(
-                        f"Multiple image types found for {filt_name}, {path}"
-                    )
+                    if n_unique_types >= 2:
+                        raise ExternalToolError(
+                            f"Multiple image types found for filt_name="
+                            f"{filt_name!r}, path={path!r}; filename "
+                            f"cannot be unambiguously classified as sci/"
+                            f"rms_err/wht."
+                        )
                     single_path = False
                     if (
                         is_sci[path]
@@ -4005,9 +4098,10 @@ class Data:
                     n_data_hdul = len(
                         [is_data for is_data in is_data_hdu if is_data]
                     )
-                    assert n_data_hdul > 0, galfind_logger.critical(
-                        f"No data HDU found in {path}!"
-                    )
+                    if n_data_hdul == 0:
+                        raise ExternalToolError(
+                            f"No 2D data HDU found in path={path!r}."
+                        )
                     for j, (hdu, is_data) in enumerate(zip(hdul, is_data_hdu)):
                         if is_data:
                             if is_sci[path]:
@@ -4172,9 +4266,10 @@ class Data:
                 im_exts[filt_name]
             )
             if n_im_ext_missing != 0:
-                err_message = f"SCI image extension not found for {filt_name}"
-                galfind_logger.critical(err_message)
-                raise (Exception(err_message))
+                raise ExternalToolError(
+                    f"SCI image extension not found for filt_name="
+                    f"{filt_name!r}."
+                )
             n_rms_err_ext_missing = len(im_paths[filt_name]) - len(
                 rms_err_exts[filt_name]
             )
@@ -4189,14 +4284,23 @@ class Data:
                 wht_exts[filt_name].extend(
                     list(itertools.repeat(None, n_wht_ext_missing))
                 )
-            assert (
+            if not (
                 len(im_paths[filt_name])
                 == len(im_exts[filt_name])
                 == len(rms_err_paths[filt_name])
                 == len(rms_err_exts[filt_name])
                 == len(wht_paths[filt_name])
                 == len(wht_exts[filt_name])
-            )
+            ):
+                raise LengthMismatchError(
+                    f"For filt_name={filt_name!r}, mismatched lengths: "
+                    f"im_paths={len(im_paths[filt_name])}, "
+                    f"im_exts={len(im_exts[filt_name])}, "
+                    f"rms_err_paths={len(rms_err_paths[filt_name])}, "
+                    f"rms_err_exts={len(rms_err_exts[filt_name])}, "
+                    f"wht_paths={len(wht_paths[filt_name])}, "
+                    f"wht_exts={len(wht_exts[filt_name])}."
+                )
 
         return (
             im_paths,
@@ -4209,18 +4313,34 @@ class Data:
 
     @property
     def survey(self: Self) -> str:
-        """`str`: Survey name shared by all bands in `self`."""
-        assert all(
-            band_data.survey == self[0].survey for band_data in self
-        ), galfind_logger.critical("Multiple surveys found across bands!")
+        """`str`: Survey name shared by all bands in `self`.
+
+        Raises
+        ------
+        IncompatibleKwargsError
+            If bands in `self` do not all share the same survey.
+        """
+        if not all(band_data.survey == self[0].survey for band_data in self):
+            raise IncompatibleKwargsError(
+                "Multiple surveys found across bands; all bands in a "
+                "Data object must share the same survey."
+            )
         return self[0].survey
 
     @property
     def version(self: Self) -> str:
-        """`str`: Reduction version shared by all bands in `self`."""
-        assert all(
-            band_data.version == self[0].version for band_data in self
-        ), galfind_logger.critical("Multiple versions found across bands!")
+        """`str`: Reduction version shared by all bands in `self`.
+
+        Raises
+        ------
+        IncompatibleKwargsError
+            If bands in `self` do not all share the same version.
+        """
+        if not all(band_data.version == self[0].version for band_data in self):
+            raise IncompatibleKwargsError(
+                "Multiple versions found across bands; all bands in a "
+                "Data object must share the same version."
+            )
         return self[0].version
 
     @property
@@ -4521,15 +4641,23 @@ class Data:
         # if other is an array of data objects, make a list
         # of band_data objects
         if isinstance(other[0], Data):
-            assert all(isinstance(_other, Data) for _other in other)
+            if not all(isinstance(_other, Data) for _other in other):
+                raise GalfindTypeError(
+                    f"Data.__add__: all elements of other={other!r} must "
+                    f"be Data instances when other[0] is a Data instance."
+                )
             other_band_data = []
             for _other in other:
                 other_band_data.extend(_other.band_data_arr)
             other = other_band_data
-        assert all(
+        if not all(
             isinstance(_other, tuple(Band_Data_Base.__subclasses__()))
             for _other in other
-        )
+        ):
+            raise GalfindTypeError(
+                f"Data.__add__: all elements of other={other!r} must be "
+                f"instances of a Band_Data_Base subclass."
+            )
         new_band_data_arr = self.band_data_arr + other
         # ensure all bands come from the same survey and version
         if all(
@@ -4547,18 +4675,13 @@ class Data:
             ) == len(new_band_data_arr):
                 return Data(new_band_data_arr)
             else:
-                raise (
-                    Exception(
-                        "Cannot add Data objects with the same filters."
-                        + " You may want to use Data.__mul__() to stack!"
-                    )
+                raise IncompatibleKwargsError(
+                    "Cannot add Data objects with the same filters. You "
+                    "may want to use Data.__mul__() to stack!"
                 )
         else:
-            raise (
-                Exception(
-                    "Cannot add Data objects from different surveys or "
-                    "versions."
-                )
+            raise IncompatibleKwargsError(
+                "Cannot add Data objects from different surveys or versions."
             )
 
     def __eq__(self: Self, other: Data) -> bool:
@@ -4594,11 +4717,13 @@ class Data:
         if isinstance(filt_names, str):
             filt_names = filt_names.split("+")
         # make sure all names are filters in the filterset
-        assert all(
+        if not all(
             name in [band.filt_name for band in self] for name in filt_names
-        ), galfind_logger.warning(
-            f"Not all {filt_names} in {self.filterset.filt_names}"
-        )
+        ):
+            raise InvalidOptionError(
+                f"Not all filt_names={filt_names!r} in "
+                f"filterset={self.filterset.filt_names!r}."
+            )
         return [i for i in range(len(self)) if self[i].filt_name in filt_names]
 
     def _sort_band_dependent_params(
@@ -4608,7 +4733,11 @@ class Data:
     ):
         if isinstance(params, list):
             # ensure params is the same length as the bands
-            assert len(params) == len(self)
+            if len(params) != len(self):
+                raise LengthMismatchError(
+                    f"_sort_band_dependent_params: len(params)="
+                    f"{len(params)} != len(self)={len(self)}."
+                )
             return params[self._indices_from_filt_names(filt_name)]
         elif isinstance(params, dict):
             # if filter name is the name of a Stacked_Band_Data object
@@ -4616,23 +4745,28 @@ class Data:
                 galfind_logger.debug(f"{filt_name} not in {params.keys()}!")
                 split_filt_names = filt_name.split("+")
                 # ensure all filters are included in the object
-                assert all(
-                    name in params.keys() for name in split_filt_names
-                ), galfind_logger.critical(
-                    f"Not all {filt_name} in {params.keys()}"
-                )
+                if not all(name in params.keys() for name in split_filt_names):
+                    raise MissingKeyError(
+                        f"Not all split_filt_names={split_filt_names!r} "
+                        f"in params.keys()={list(params.keys())!r} for "
+                        f"filt_name={filt_name!r}."
+                    )
                 # ensure all parameters are the same
-                assert all(
+                if not all(
                     params[name] == params[split_filt_names[0]]
                     for i, name in enumerate(split_filt_names)
-                ), galfind_logger.critical(
-                    f"Not all {params} are the same for {filt_name}"
-                )
+                ):
+                    raise IncompatibleKwargsError(
+                        f"Not all params={params!r} are the same for "
+                        f"filt_name={filt_name!r}."
+                    )
                 return params[split_filt_names[0]]
             else:
-                assert filt_name in params.keys(), galfind_logger.critical(
-                    f"{filt_name} not in {params.keys()}"
-                )
+                if filt_name not in params.keys():
+                    raise MissingKeyError(
+                        f"filt_name={filt_name!r} not in "
+                        f"params.keys()={list(params.keys())!r}."
+                    )
                 return params[filt_name]
         else:
             return params
@@ -4962,41 +5096,46 @@ class Data:
 
         Raises
         ------
-        AssertionError
-            If forced photometry has already been performed on `self`, or
-            if `align_band_data` (given as a `str`) is not a filter name
-            present in `self.filterset`.
-        Exception
-            If `align_band_data` is a `Band_Data` object not present in
-            `self`, or is not a `str`/`Band_Data`.
+        MissingDataError
+            If forced photometry has already been performed on `self`.
+        InvalidOptionError
+            If `align_band_data` (given as a `str`) is not a filter name
+            present in `self.filterset`, or if `align_band_data` (given
+            as a `Band_Data` object) has a filter name not present in
+            `self.filterset`.
+        GalfindTypeError
+            If `align_band_data` is not a `str`/`Band_Data`.
         """
-        assert not hasattr(self, "forced_phot_band"), galfind_logger.critical(
-            f"Should not have already loaded "
-            f"{self.forced_phot_band=} if trying to sky align!"
-        )
-        if isinstance(align_band_data, str):
-            assert (
-                align_band_data in self.filterset.filt_names
-            ), galfind_logger.critical(
-                f"{align_band_data=} not in {self.filterset.filt_names}, "
-                f"cannot sky align!"
+        if hasattr(self, "forced_phot_band"):
+            raise MissingDataError(
+                f"Should not have already loaded "
+                f"forced_phot_band={self.forced_phot_band!r} if trying to "
+                f"sky align!"
             )
+        if isinstance(align_band_data, str):
+            if align_band_data not in self.filterset.filt_names:
+                raise InvalidOptionError(
+                    f"align_band_data={align_band_data!r} not in "
+                    f"filterset={self.filterset.filt_names!r}, cannot sky "
+                    f"align."
+                )
             align_band_data = self[align_band_data]
         elif isinstance(
             align_band_data, tuple(Band_Data_Base.__subclasses__())
         ):
-            assert (
-                align_band_data.filt_name in self.filterset.filt_names
-            ), galfind_logger.critical(
-                f"{align_band_data.filt_name=} not in "
-                f"{self.filterset.filt_names}, cannot sky align!"
-            )
+            if align_band_data.filt_name not in self.filterset.filt_names:
+                raise InvalidOptionError(
+                    f"align_band_data.filt_name="
+                    f"{align_band_data.filt_name!r} not in "
+                    f"filterset={self.filterset.filt_names!r}, cannot sky "
+                    f"align."
+                )
         else:
-            err_message = (
-                f"{align_band_data=} must be a string or Band_Data object!"
+            raise GalfindTypeError(
+                f"align_band_data={align_band_data!r} must be a string or "
+                f"Band_Data object, got type "
+                f"{type(align_band_data).__name__}."
             )
-            galfind_logger.critical(err_message)
-            raise Exception(err_message)
 
         for band_data in self:
             if band_data.filt_name != align_band_data.filt_name:
@@ -5045,36 +5184,36 @@ class Data:
 
         Raises
         ------
-        AssertionError
+        InvalidOptionError
             If `align_band_data` (given as a `str`) is not a filter name
             present in `self.filterset`, or if `align_band_data` (given
             as a `Band_Data` object) is not present in `self`.
-        Exception
+        GalfindTypeError
             If `align_band_data` is not a `str` or `Band_Data` object.
         """
         # determine shape of every band_data in self
         if isinstance(align_band_data, str):
-            assert (
-                align_band_data in self.filterset.filt_names
-            ), galfind_logger.critical(
-                f"{align_band_data=} not in {self.filterset.filt_names}, "
-                f"cannot xy align!"
-            )
+            if align_band_data not in self.filterset.filt_names:
+                raise InvalidOptionError(
+                    f"align_band_data={align_band_data!r} not in "
+                    f"filterset={self.filterset.filt_names!r}, cannot xy "
+                    f"align."
+                )
             align_band_data = self[align_band_data]
         elif isinstance(
             align_band_data, tuple(Band_Data_Base.__subclasses__())
         ):
-            assert align_band_data in self, galfind_logger.critical(
-                f"{repr(align_band_data)=} not in {repr(self)}, "
-                f"cannot xy align!"
-            )
+            if align_band_data not in self:
+                raise InvalidOptionError(
+                    f"align_band_data={align_band_data!r} not in "
+                    f"self={self!r}, cannot xy align."
+                )
         else:
-            err_message = (
-                f"{align_band_data=} must be a string or of type "
-                f"{tuple(Band_Data_Base.__subclasses__())}!"
+            raise GalfindTypeError(
+                f"align_band_data={align_band_data!r} must be a string or "
+                f"of type {tuple(Band_Data_Base.__subclasses__())!r}, got "
+                f"type {type(align_band_data).__name__}."
             )
-            galfind_logger.critical(err_message)
-            raise Exception(err_message)
         for band_data in self:
             if band_data.filt_name != align_band_data.filt_name:
                 band_data.xy_align(align_band_data, n_cores=n_cores)
@@ -5120,21 +5259,36 @@ class Data:
 
         Raises
         ------
-        AssertionError
+        MissingDataError
             If `self` is already PSF-matched (`self.psf_matched` is not
-            `None`), or if `n_jobs` is not a positive integer.
+            `None`).
+        GalfindTypeError
+            If `n_jobs` is not an `int`.
+        RangeError
+            If `n_jobs` is not positive.
+        InvalidOptionError
+            If `psf` (given as a `str`) is not a filter name present in
+            `self.filterset`.
         """
-        assert getattr(self, "psf_matched") is None, galfind_logger.critical(
-            f"Data already has {self.psf_matched=}, cannot PSF homogenize!"
-        )
-        assert isinstance(n_jobs, int) and n_jobs > 0, galfind_logger.critical(
-            f"{n_jobs=} must be a positive integer!"
-        )
-        if isinstance(psf, str):
-            assert psf in self.filterset.filt_names, galfind_logger.critical(
-                f"{psf=} not in {self.filterset.filt_names}, "
-                f"cannot PSF homogenize!"
+        if getattr(self, "psf_matched") is not None:
+            raise MissingDataError(
+                f"Data already has psf_matched={self.psf_matched!r}, "
+                f"cannot PSF homogenize."
             )
+        if not isinstance(n_jobs, int):
+            raise GalfindTypeError(
+                f"n_jobs={n_jobs!r} has type {type(n_jobs).__name__}; "
+                f"must be a positive int."
+            )
+        if n_jobs <= 0:
+            raise RangeError(f"n_jobs={n_jobs!r} must be a positive int.")
+        if isinstance(psf, str):
+            if psf not in self.filterset.filt_names:
+                raise InvalidOptionError(
+                    f"psf={psf!r} not in "
+                    f"filterset={self.filterset.filt_names!r}, cannot PSF "
+                    f"homogenize."
+                )
             psf = self[psf].psf
 
         if save_native:
@@ -5349,15 +5503,16 @@ class Data:
         band_data_base: Union[str, List[str], Type[Band_Data_Base]],
     ) -> Optional[Type[Band_Data_Base]]:
         if isinstance(band_data_base, tuple(Band_Data_Base.__subclasses__())):
-            filt_names_err = (
-                f"{band_data_base.filt_name=} not in "
-                f"{self.filterset.filt_names}, cannot load "
-                f"forced photometry band!"
-            )
-            assert all(
+            if not all(
                 name in self.filterset.filt_names
                 for name in band_data_base.filt_name.split("+")
-            ), galfind_logger.critical(filt_names_err)
+            ):
+                raise InvalidOptionError(
+                    f"band_data_base.filt_name="
+                    f"{band_data_base.filt_name!r} not in "
+                    f"filterset={self.filterset.filt_names!r}, cannot "
+                    f"load forced photometry band."
+                )
         else:
             # create a forced_phot_band object from given string
             if isinstance(band_data_base, str):
@@ -5365,18 +5520,18 @@ class Data:
             elif isinstance(band_data_base, list):
                 filt_names = band_data_base
             else:
-                err_message = (
-                    f"{band_data_base=} must be a string, list of "
-                    f"strings, or Band_Data_Base subclass!"
+                raise GalfindTypeError(
+                    f"band_data_base={band_data_base!r} must be a string, "
+                    f"list of strings, or Band_Data_Base subclass; got "
+                    f"type {type(band_data_base).__name__}."
                 )
-                galfind_logger.critical(err_message)
-                raise Exception(err_message)
-            filt_not_in_err = (
-                f"Not all {filt_names} in {self.filterset.filt_names}"
-            )
-            assert all(
+            if not all(
                 name in self.filterset.filt_names for name in filt_names
-            ), galfind_logger.critical(filt_not_in_err)
+            ):
+                raise InvalidOptionError(
+                    f"Not all filt_names={filt_names!r} in "
+                    f"filterset={self.filterset.filt_names!r}."
+                )
             if len(filt_names) == 1:
                 band_data_base = self[filt_names[0]]
             else:
@@ -5405,10 +5560,10 @@ class Data:
 
         Raises
         ------
-        AssertionError
+        GalfindTypeError
             If the resulting stacked band data is not a `Stacked_Band_Data`
             instance.
-        NotImplementedError
+        AbstractMethodError
             If a stacked band data has already been loaded.
         """
         if isinstance(stacked_band_data_arr, list) and isinstance(
@@ -5422,18 +5577,17 @@ class Data:
             stacked_band_data_arr = [
                 self._make_band_data_base(stacked_band_data_arr)
             ]
-        stacked_err = (
-            f"{stacked_band_data_arr=} must be a list of "
-            f"Stacked_Band_Data objects!"
-        )
-        assert all(
+        if not all(
             isinstance(stacked_band_data, Stacked_Band_Data)
             for stacked_band_data in stacked_band_data_arr
-        ), galfind_logger.critical(stacked_err)
+        ):
+            raise GalfindTypeError(
+                f"stacked_band_data_arr={stacked_band_data_arr!r} must be "
+                f"a list of Stacked_Band_Data objects."
+            )
         # save stacked_band_data in self
         if hasattr(self, "stacked_band_data_arr"):
-            breakpoint()
-            raise NotImplementedError(
+            raise AbstractMethodError(
                 "Currently cannot load multiple stacked_band_data objects!"
             )
             # if stacked_band_data in self.stacked_band_data_arr:
@@ -5462,18 +5616,20 @@ class Data:
 
         Raises
         ------
-        AssertionError
+        MissingDataError
             If a different forced photometry band has already been loaded.
         """
         if forced_phot_band is not None:
             forced_phot_band = self._make_band_data_base(forced_phot_band)
             # save forced phot band in self
             if hasattr(self, "forced_phot_band"):
-                assert (
-                    forced_phot_band == self.forced_phot_band
-                ), galfind_logger.critical(
-                    f"{self.forced_phot_band=} already loaded"
-                )
+                if forced_phot_band != self.forced_phot_band:
+                    raise MissingDataError(
+                        f"forced_phot_band="
+                        f"{self.forced_phot_band!r} already loaded and "
+                        f"differs from the requested "
+                        f"forced_phot_band={forced_phot_band!r}."
+                    )
             else:
                 self.forced_phot_band = forced_phot_band
             return self.forced_phot_band
@@ -5482,7 +5638,7 @@ class Data:
 
     def _get_phot_cat_path(self) -> str:
         # ensure aperture diamters are the same for all bands
-        assert all(
+        if not all(
             all(
                 diam == diam_0
                 for diam, diam_0 in zip(
@@ -5490,34 +5646,60 @@ class Data:
                 )
             )
             for band_data in self
-        )
-        assert all(
+        ):
+            raise IncompatibleKwargsError(
+                "_get_phot_cat_path: all bands in self must share the "
+                "same aper_diams."
+            )
+        if not all(
             diam == diam_0
             for diam, diam_0 in zip(
                 self.forced_phot_band.aper_diams, self[0].aper_diams
             )
-        )
+        ):
+            raise IncompatibleKwargsError(
+                "_get_phot_cat_path: forced_phot_band.aper_diams must "
+                "match self[0].aper_diams."
+            )
         # ensure all bands have the same forced photometry band
         if hasattr(self.forced_phot_band, "forced_phot_args"):
-            assert all(
+            if not all(
                 band_data.forced_phot_args["forced_phot_band"]
                 == self.forced_phot_band
                 for band_data in self
-            )
-            assert (
+            ):
+                raise IncompatibleKwargsError(
+                    "_get_phot_cat_path: all bands in self must have been "
+                    "forced-photometered with the same forced_phot_band."
+                )
+            if (
                 self.forced_phot_band.forced_phot_args["forced_phot_band"]
-                == self.forced_phot_band
-            )  # points to itself?
+                != self.forced_phot_band
+            ):  # points to itself?
+                raise IncompatibleKwargsError(
+                    "_get_phot_cat_path: forced_phot_band's own "
+                    "forced_phot_args['forced_phot_band'] must point to "
+                    "itself."
+                )
             # ensure all bands are made using the same err map
-            assert all(
+            if not all(
                 band_data.forced_phot_args["err_type"]
                 == self[0].forced_phot_args["err_type"]
                 for band_data in self
-            )
-            assert (
+            ):
+                raise IncompatibleKwargsError(
+                    "_get_phot_cat_path: all bands in self must share the "
+                    "same forced_phot_args['err_type']."
+                )
+            if (
                 self.forced_phot_band.forced_phot_args["method"]
-                == self[0].forced_phot_args["method"]
-            )
+                != self[0].forced_phot_args["method"]
+            ):
+                raise IncompatibleKwargsError(
+                    "_get_phot_cat_path: forced_phot_band.forced_phot_args"
+                    "['method'] must match self[0].forced_phot_args"
+                    "['method']."
+                )
 
         # determine photometric catalogue path
         phot_cat_path = funcs.get_phot_cat_path(
@@ -5541,7 +5723,10 @@ class Data:
         if not hasattr(self, "phot_cat_path"):
             self.phot_cat_path = phot_cat_path
         else:
-            raise (Exception("MASTER Photometric catalogue already exists!"))
+            raise MissingDataError(
+                "MASTER Photometric catalogue already exists at "
+                f"phot_cat_path={self.phot_cat_path!r}."
+            )
 
         if (
             not Path(phot_cat_path).is_file()
@@ -5713,10 +5898,17 @@ class Data:
             Maximum GAIA row index to include in mask. Default is 500.
         overwrite : `bool`, `list`, or `dict`, optional
             Whether to regenerate masks even if they exist. Default is `False`.
+
+        Raises
+        ------
+        InvalidOptionError
+            If `method` is not one of ``"auto"`` or ``"manual"``.
         """
-        assert method in ["auto", "manual"], galfind_logger.warning(
-            f"Method {method} not recognised. Must be 'auto' or 'manual'"
-        )
+        if method not in ["auto", "manual"]:
+            raise InvalidOptionError(
+                f"method={method!r} not recognised; must be 'auto' or "
+                f"'manual'."
+            )
 
         if hasattr(self, "forced_phot_band"):
             if (
@@ -6084,6 +6276,11 @@ class Data:
             - Depth values by band
             - Depth errors by band
             - Unmasked area by band (in square arcsec)
+
+        Raises
+        ------
+        RangeError
+            If `z` is given but matches zero or more than one redshift bin.
         """
 
         # extract zbin label
@@ -6091,9 +6288,11 @@ class Data:
             zbins = mask_selector.extract_zbins(self)
             # select zbin which matches the redshift of the data
             zbin = [zbin_ for zbin_ in zbins if zbin_[0] <= z < zbin_[1]]
-            assert len(zbin) == 1, galfind_logger.critical(
-                f"Multiple or no zbins found for {z=}!"
-            )
+            if len(zbin) != 1:
+                raise RangeError(
+                    f"Found {len(zbin)} zbins matching z={z!r}; must "
+                    f"match exactly 1."
+                )
             zbin = zbin[0]
             zbin_label = f"{zbin[0]:.2f}<z<{zbin[1]:.2f}"
         else:
@@ -6360,19 +6559,20 @@ class Data:
 
         Raises
         ------
-        AssertionError
+        InvalidOptionError
             If any of the specified bands are not available in this Data
             object.
         """
         # ensure all blue, green and red bands are contained in the data object
-        assert all(
+        if not all(
             band in self.instrument.filt_names
             for band in blue_bands + green_bands + red_bands
-        ), galfind_logger.warning(
-            "Cannot make galaxy RGB as not all "
-            + f"{blue_bands + green_bands + red_bands} "
-            + f"are in {self.instrument.filt_names}"
-        )
+        ):
+            raise InvalidOptionError(
+                f"Cannot make galaxy RGB as not all bands="
+                f"{blue_bands + green_bands + red_bands!r} are in "
+                f"instrument.filt_names={self.instrument.filt_names!r}."
+            )
         # construct out_path
         band_str = (
             f"B={'+'.join(blue_bands)},"
@@ -6434,7 +6634,9 @@ class Data:
                 )
                 Trilogy(in_path, images=None).run()
             elif method == "lupton":
-                raise (NotImplementedError())
+                raise AbstractMethodError(
+                    "plot_RGB(method='lupton') is not yet implemented."
+                )
 
     def append_loc_depth_cols(
         self: Self,
@@ -6473,6 +6675,14 @@ class Data:
         ----------
         overwrite : `bool`, optional
             Whether to overwrite existing columns. Default is `False`.
+
+        Raises
+        ------
+        IncompatibleKwargsError
+            If aperture diameters are not the same for all bands.
+        AbstractMethodError
+            If `overwrite` is `True` (deleting existing columns is not yet
+            implemented).
         """
         cat = Table.read(self.phot_cat_path)
         if (
@@ -6488,7 +6698,7 @@ class Data:
                     all_bands += [self.forced_phot_band]
             if hasattr(self, "stacked_band_data_arr"):
                 all_bands += self.stacked_band_data_arr
-            assert all(
+            if not all(
                 all(
                     diam == diam_0
                     for diam, diam_0 in zip(
@@ -6496,12 +6706,16 @@ class Data:
                     )
                 )
                 for band_data in all_bands
-            ), galfind_logger.critical(
-                "Aperture diameters are not the same for all bands!"
-            )
+            ):
+                raise IncompatibleKwargsError(
+                    "Aperture diameters are not the same for all bands."
+                )
             if overwrite:
                 # TODO: Delete already existing columns
-                raise (Exception())
+                raise AbstractMethodError(
+                    "append_aper_corr_cols(overwrite=True): deleting "
+                    "already existing columns is not yet implemented."
+                )
             aper_diams = self[0].aper_diams.to(u.arcsec).value
             for i, band_data in tqdm(
                 enumerate(self),
@@ -6644,25 +6858,33 @@ class Data:
 
         Raises
         ------
-        AssertionError
-            If forced photometry has not been performed on all bands or if
-            RA/DEC labels differ across bands.
+        MissingDataError
+            If forced photometry has not been performed on all bands.
+        IncompatibleKwargsError
+            If RA/DEC labels differ across bands.
         """
         # ensure forced photometry has been run on every band in catalogue
-        assert all(
+        if not all(
             hasattr(band_data, "forced_phot_args") for band_data in self
-        ), galfind_logger.critical(
-            "Forced photometry not performed on all bands!"
-        )
-        assert all(
-            band_data.forced_phot_args["ra_label"]
-            == self[0].forced_phot_args["ra_label"]
-            for band_data in self
-        ) and all(
-            band_data.forced_phot_args["dec_label"]
-            == self[0].forced_phot_args["dec_label"]
-            for band_data in self
-        ), galfind_logger.critical("RA/DEC labels not the same for all bands!")
+        ):
+            raise MissingDataError(
+                "Forced photometry not performed on all bands!"
+            )
+        if not (
+            all(
+                band_data.forced_phot_args["ra_label"]
+                == self[0].forced_phot_args["ra_label"]
+                for band_data in self
+            )
+            and all(
+                band_data.forced_phot_args["dec_label"]
+                == self[0].forced_phot_args["dec_label"]
+                for band_data in self
+            )
+        ):
+            raise IncompatibleKwargsError(
+                "RA/DEC labels not the same for all bands!"
+            )
         tab = Table.read(self.phot_cat_path)
 
         all_bands = deepcopy(self.band_data_arr)
@@ -6898,16 +7120,17 @@ class Data:
 
         Raises
         ------
-        AssertionError
+        IncompatibleKwargsError
             If bands have different area table paths.
         """
         area_tab_paths = [band_data.get_area_tab_path() for band_data in self]
-        assert all(
+        if not all(
             area_tab_path == area_tab_paths[0]
             for area_tab_path in area_tab_paths
-        ), galfind_logger.critical(
-            "Area table paths for all bands are not the same!"
-        )
+        ):
+            raise IncompatibleKwargsError(
+                "Area table paths for all bands are not the same!"
+            )
         return area_tab_paths[0]
 
     def calc_unmasked_area(
@@ -6945,6 +7168,12 @@ class Data:
         -------
         `astropy.units.Quantity`
             Unmasked area in the specified units.
+
+        Raises
+        ------
+        RangeError
+            If ``kwargs["z"]`` is given but matches zero or more than one
+            redshift bin.
         """
 
         from ..selection import Mask_Selector
@@ -6987,9 +7216,11 @@ class Data:
                     for zbin_ in zbins
                     if zbin_[0] <= kwargs["z"] < zbin_[1]
                 ]
-                assert len(zbin) == 1, galfind_logger.critical(
-                    f"Multiple or no zbins found for z={kwargs['z']}!"
-                )
+                if len(zbin) != 1:
+                    raise RangeError(
+                        f"Found {len(zbin)} zbins matching "
+                        f"z={kwargs['z']!r}; must match exactly 1."
+                    )
                 zbin = zbin[0]
         else:
             zbin = None
@@ -7065,13 +7296,13 @@ class Data:
             & (area_tab["mask_type"] == mask_save_name)
             & (area_tab["region"] == reg_name)
         ]["unmasked_area"]
-        area_err_msg = (
-            f"Multiple unmasked areas found for {mask_selector_name} "
-            f"{mask_save_name} {reg_name}"
-        )
-        assert len(unmasked_area_tab) == 1, galfind_logger.critical(
-            area_err_msg
-        )
+        if len(unmasked_area_tab) != 1:
+            raise RangeError(
+                f"Found {len(unmasked_area_tab)} unmasked areas for "
+                f"mask_selector_name={mask_selector_name!r}, "
+                f"mask_save_name={mask_save_name!r}, reg_name="
+                f"{reg_name!r}; must match exactly 1."
+            )
         unmasked_area = unmasked_area_tab[0] * area_tab["unmasked_area"].unit
         return unmasked_area
 
@@ -7091,11 +7322,14 @@ class Data:
             )
 
         if zbin is not None:
-            assert len(zbin) == 2, galfind_logger.critical(
-                f"zbin must be a tuple of (zbin_min, zbin_max), got {zbin=}"
-            )
-            assert zbin[0] < zbin[1], galfind_logger.critical(
-                f"zbin_min must be less than zbin_max, got {zbin=}"
-            )
+            if len(zbin) != 2:
+                raise LengthMismatchError(
+                    f"zbin must be a tuple of (zbin_min, zbin_max) with "
+                    f"length 2, got zbin={zbin!r} with length {len(zbin)}."
+                )
+            if not zbin[0] < zbin[1]:
+                raise RangeError(
+                    f"zbin_min must be less than zbin_max, got zbin={zbin!r}."
+                )
             mask_selector_name += f"_{zbin[0]:.2f}<z<{zbin[1]:.2f}"
         return mask_selector_name

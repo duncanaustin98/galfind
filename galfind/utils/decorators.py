@@ -15,6 +15,7 @@ import yagmail
 from astropy import units as u
 
 from .. import galfind_logger
+from .exceptions import GalfindError
 
 
 def run_in_dir(path):
@@ -254,7 +255,7 @@ def email_update(
                     f"{time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime())}",
                     f"Terminating {func.__name__}",
                 )
-                raise (Exception(f"Terminating {func.__name__}"))
+                raise GalfindError(f"Terminating {func.__name__}")
             # compose ending email
             setup.send(
                 to,

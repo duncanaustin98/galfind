@@ -2,10 +2,19 @@ import sys
 import types
 
 import astropy.units as u
+import h5py
 import numpy as np
 import pytest
 
 from galfind.SFH import SFH
+from galfind.utils.exceptions import (
+    GalfindTypeError,
+    InvalidOptionError,
+    InvalidUnitError,
+    LengthMismatchError,
+    MissingFileError,
+    MissingKeyError,
+)
 
 
 @pytest.fixture
@@ -82,7 +91,7 @@ def test_plot_invalid_plot_type_raises(sfh):
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots()
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidOptionError, match="plot_type"):
         sfh.plot(ax, plot_type="bogus")
     plt.close(fig)
 
@@ -200,7 +209,7 @@ def test_plot_crop_ages_wrong_length_raises(sfh):
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots()
-    with pytest.raises(Exception):
+    with pytest.raises(LengthMismatchError, match="crop_ages"):
         sfh.plot(ax, plot_type="lookback", crop_ages=[0.0] * u.Myr)
     plt.close(fig)
 
@@ -212,7 +221,7 @@ def test_plot_crop_ages_wrong_unit_raises(sfh):
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots()
-    with pytest.raises(Exception):
+    with pytest.raises(InvalidUnitError, match="crop_ages"):
         sfh.plot(ax, plot_type="lookback", crop_ages=[0.0, 1.0] * u.AA)
     plt.close(fig)
 
@@ -238,7 +247,7 @@ def test_plot_mismatched_sfh_post_shape_raises(ages):
     bad_sfh_post = np.ones((5, len(ages) - 1))
     sfh = SFH(z=6.0, ages=ages, sfh_post=bad_sfh_post)
     fig, ax = plt.subplots()
-    with pytest.raises(Exception):
+    with pytest.raises(LengthMismatchError, match="sfh_post"):
         sfh.plot(ax, plot_type="lookback")
     plt.close(fig)
 
@@ -274,3 +283,98 @@ def test_plot_zoom_time_creates_inset_axes(sfh, fake_bagpipes):
     assert zoom_ax is not None
     assert zoom_ax.get_xlim()[1] == pytest.approx(500.0)
     plt.close(fig)
+
+
+def test_plot_invalid_time_units_raises(sfh):
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots()
+    with pytest.raises(InvalidUnitError, match="time_units"):
+        sfh.plot(ax, time_units=u.AA, plot_type="lookback")
+    plt.close(fig)
+
+
+def test_plot_zoom_time_wrong_unit_raises(sfh, fake_bagpipes):
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots()
+    with pytest.raises(InvalidUnitError, match="zoom_time"):
+        sfh.plot(ax, plot_type="lookback", zoom_time=500.0 * u.AA)
+    plt.close(fig)
+
+
+def test_plot_zoom_time_non_float_value_raises(sfh, fake_bagpipes):
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots()
+    with pytest.raises(GalfindTypeError, match="zoom_time"):
+        sfh.plot(ax, plot_type="lookback", zoom_time=np.array([500]) * u.Myr)
+    plt.close(fig)
+
+
+def _write_pipes_h5(
+    path,
+    *,
+    include_sfh_key=True,
+    redshift=6.0,
+    include_redshift_key=True,
+    fit_instruction_keys=("continuity",),
+):
+    """Write a minimal stand-in Bagpipes posterior HDF5 file for testing
+    `SFH.from_pipes_post`'s validation paths.
+    """
+    import ast
+
+    with h5py.File(path, "w") as h5:
+        basic = h5.create_group("basic_quantities")
+        if include_sfh_key:
+            basic.create_dataset("sfh", data=np.ones((5, 10)))
+        fit_instructions = {"t_bc": 0.01, "dust": {}, "nebular": {}}
+        fit_instructions["redshift"] = redshift
+        for key in fit_instruction_keys:
+            fit_instructions[key] = {}
+        h5.attrs["fit_instructions"] = repr(fit_instructions)
+        # sanity check the repr round-trips the way `ast.literal_eval` needs
+        ast.literal_eval(h5.attrs["fit_instructions"])
+        if not isinstance(redshift, float):
+            advanced = h5.create_group("advanced_quantities")
+            if include_redshift_key:
+                advanced.create_dataset(
+                    "redshift", data=np.array([5.9, 6.0, 6.1])
+                )
+
+
+def test_from_pipes_post_missing_file_raises(tmp_path):
+    missing_path = str(tmp_path / "does_not_exist.h5")
+    with pytest.raises(MissingFileError, match="does_not_exist.h5"):
+        SFH.from_pipes_post(missing_path)
+
+
+def test_from_pipes_post_missing_sfh_key_raises(tmp_path, fake_bagpipes):
+    path = tmp_path / "no_sfh.h5"
+    _write_pipes_h5(path, include_sfh_key=False)
+    with pytest.raises(MissingKeyError, match="sfh"):
+        SFH.from_pipes_post(str(path))
+
+
+def test_from_pipes_post_missing_redshift_key_raises(tmp_path, fake_bagpipes):
+    path = tmp_path / "no_redshift.h5"
+    _write_pipes_h5(path, redshift="uniform 0 10", include_redshift_key=False)
+    with pytest.raises(MissingKeyError, match="redshift"):
+        SFH.from_pipes_post(str(path))
+
+
+def test_from_pipes_post_non_unique_sfh_type_raises(tmp_path, fake_bagpipes):
+    path = tmp_path / "ambiguous_type.h5"
+    _write_pipes_h5(path, fit_instruction_keys=("continuity", "delayed"))
+    with pytest.raises(LengthMismatchError, match="sfh_type"):
+        SFH.from_pipes_post(str(path))

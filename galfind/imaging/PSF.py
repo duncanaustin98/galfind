@@ -55,6 +55,15 @@ except ImportError:
 
 from .. import config, figs, galfind_logger
 from ..utils import useful_funcs_austind as funcs
+from ..utils.exceptions import (
+    GalfindError,
+    GalfindTypeError,
+    InvalidOptionError,
+    LengthMismatchError,
+    MissingFileError,
+    MissingKeyError,
+    RangeError,
+)
 
 
 class PSF_Base(ABC):
@@ -86,9 +95,8 @@ class PSF_Base(ABC):
         name: str,
         **kwargs: Dict[str, Any],
     ):
-        assert Path(eec_path).is_file(), galfind_logger.critical(
-            f"{eec_path=} not found!"
-        )
+        if not Path(eec_path).is_file():
+            raise MissingFileError(f"eec_path={eec_path!r} not found.")
         self.eec_path = eec_path
         self.name = name
 
@@ -102,11 +110,11 @@ class PSF_Base(ABC):
         for key, value in self.__dict__.items():
             try:
                 setattr(result, key, deepcopy(value, memo))
-            except Exception:
-                galfind_logger.critical(
-                    f"deepcopy({self.__class__.__name__}) {key}: {value} FAIL!"
-                )
-                breakpoint()
+            except Exception as e:
+                raise GalfindError(
+                    f"deepcopy({self.__class__.__name__}) failed for "
+                    f"key={key!r} value={value!r}: {e}"
+                ) from e
         return result
 
     def __repr__(self: Self) -> str:
@@ -197,12 +205,10 @@ class PSF_Base(ABC):
         elif out_type == "mag":
             aper_corr = -2.5 * np.log10(encircled)
         else:
-            err_message = (
-                f"{out_type=} not in ['flux', 'mag'] for aperture "
-                "correction output type!"
+            raise InvalidOptionError(
+                f"out_type={out_type!r} not in ['flux', 'mag'] for "
+                "aperture correction output type."
             )
-            galfind_logger.critical(err_message)
-            raise ValueError(err_message)
         return aper_corr
 
     def make_kernel(
@@ -338,15 +344,17 @@ class PSF_Cutout(PSF_Base):
             out_name += f"_pa{pa_v3:.1f}"
         else:
             pa_v3 = band_data_hdr.get("PA_V3", None)
-            assert pa_v3 is not None, galfind_logger.critical(
-                "PA_V3 not found in image header for PSF normalization!"
-            )
+            if pa_v3 is None:
+                raise MissingKeyError(
+                    "PA_V3 not found in image header for PSF normalization."
+                )
             pa_v3 = float(pa_v3)
         if jitter_sigma is not None and jitter_kernel is not None:
-            assert jitter_kernel in ["gaussian"], galfind_logger.critical(
-                f"{jitter_kernel=} not recognised for PSF_Cutout "
-                "from_stpsf method!"
-            )
+            if jitter_kernel not in ["gaussian"]:
+                raise InvalidOptionError(
+                    f"jitter_kernel={jitter_kernel!r} not recognised for "
+                    "PSF_Cutout.from_stpsf; must be one of ['gaussian']."
+                )
             out_name += f"_jitter{int(jitter_sigma.to(u.mas).value)}mas"
 
         out_dir = f"{band_data.filt.instrument.get_psf_dir(band_data)}/model"
@@ -355,11 +363,12 @@ class PSF_Cutout(PSF_Base):
 
         if not Path(out_path).is_file() or overwrite:
             # make PSF
-            assert (
-                band_data.filt.instrument.facility.__class__.__name__ == "JWST"
-            ), galfind_logger.critical(
-                "Currently only JWST PSFs can be made with stpsf!"
-            )
+            if band_data.filt.instrument.facility.__class__.__name__ != "JWST":
+                raise InvalidOptionError(
+                    "Currently only JWST PSFs can be made with stpsf; "
+                    "facility="
+                    f"{band_data.filt.instrument.facility.__class__.__name__!r}."
+                )
             if band_data.filt.instrument.__class__.__name__ == "NIRCam":
                 psf_model = stpsf.NIRCam()
             else:  # band_data.filt.instrument.__class__.__name__ == "MIRI":
@@ -488,12 +497,13 @@ class PSF_Cutout(PSF_Base):
         )
 
         if isinstance(band_data, Multiple_Band_Data_Base):
-            assert all(
+            if not all(
                 band_data_.filt == band_data.filt for band_data_ in band_data
-            ), galfind_logger.critical(
-                "All bands in Multiple_Band_Data_Base must have the same "
-                "filter for PSF generation!"
-            )
+            ):
+                raise GalfindError(
+                    "All bands in Multiple_Band_Data_Base must have the "
+                    "same filter for PSF generation."
+                )
 
         if not Path(psf_filepath).is_file() or overwrite:
             if isinstance(band_data, Multiple_Band_Data_Base):
@@ -553,22 +563,22 @@ class PSF_Cutout(PSF_Base):
                 if cat is not None:
                     from . import ID_Selector
 
-                    assert (
-                        band_data.filt_name in cat.filterset.filt_names
-                    ), galfind_logger.critical(
-                        f"{band_data.filt_name=} not found in "
-                        f"{repr(cat)} filterset!"
-                    )
-                    assert (
-                        band_data.survey == cat.survey
-                    ), galfind_logger.critical(
-                        f"{band_data.survey=}!={cat.survey}!"
-                    )
-                    assert (
-                        band_data.version == cat.version
-                    ), galfind_logger.critical(
-                        f"{band_data.version=}!={cat.version}!"
-                    )
+                    if band_data.filt_name not in cat.filterset.filt_names:
+                        raise InvalidOptionError(
+                            f"filt_name={band_data.filt_name!r} not found "
+                            f"in {repr(cat)} filterset; must be one of "
+                            f"{cat.filterset.filt_names}."
+                        )
+                    if band_data.survey != cat.survey:
+                        raise GalfindError(
+                            f"band_data.survey={band_data.survey!r} != "
+                            f"cat.survey={cat.survey!r}."
+                        )
+                    if band_data.version != cat.version:
+                        raise GalfindError(
+                            f"band_data.version={band_data.version!r} != "
+                            f"cat.version={cat.version!r}."
+                        )
                     # sky cross-match for IDs
                     cat_ids = []
                     raise NotImplementedError()
@@ -577,12 +587,11 @@ class PSF_Cutout(PSF_Base):
                     )
                     star_selector(cat)
             else:
-                err_message = (
-                    f"{repr(band_data)=} not in ['Band_Data', "
-                    "'Multiple_Band_Data_Base'] for PSF generation!"
+                raise GalfindTypeError(
+                    f"band_data={band_data!r} has type="
+                    f"{type(band_data).__name__}; must be 'Band_Data' or "
+                    "'Multiple_Band_Data_Base' for PSF generation."
                 )
-                galfind_logger.critical(err_message)
-                raise ValueError(err_message)
 
         return cls.from_fits(
             psf_filepath,
@@ -628,9 +637,7 @@ class PSF_Cutout(PSF_Base):
     ) -> PSF_Cutout:
         """Create PSF model from FITS file."""
         if not Path(fits_path).is_file():
-            err_message = f"File {fits_path} not found!"
-            galfind_logger.critical(err_message)
-            raise FileNotFoundError(err_message)
+            raise MissingFileError(f"fits_path={fits_path!r} not found.")
         # if psf_out_dir is None:
         #     psf_out_dir = f"{config['PSF']['PSF_WORK_DIR']}/" + \
         #         f"{pix_scale.to(u.arcsec).value}as/{filt.filt_name}"
@@ -646,7 +653,14 @@ class PSF_Cutout(PSF_Base):
             image = CCDData.read(fits_path, unit="adu")
             hdul = fits.open(fits_path)
             hdr = hdul[0].header
-            assert all(key in hdr.keys() for key in ["NAXIS1", "NAXIS2"])
+            missing_keys = [
+                key for key in ["NAXIS1", "NAXIS2"] if key not in hdr.keys()
+            ]
+            if missing_keys:
+                raise MissingKeyError(
+                    f"fits_path={fits_path!r} header missing required "
+                    f"keys: {missing_keys}."
+                )
             dim_x = hdr["NAXIS1"]
             dim_y = hdr["NAXIS2"]
             psf_cutout = Cutout2D(
@@ -982,11 +996,11 @@ class PSF_Cutout(PSF_Base):
             # open PSF data
             self_psf_hdr, self_psf_data = self.cutout.load()
             match_psf_hdr, match_psf_data = match_psf.cutout.load()
-            assert (
-                self_psf_data.shape == match_psf_data.shape
-            ), galfind_logger.critical(
-                f"{self_psf_data.shape}!={match_psf_data.shape}!"
-            )
+            if self_psf_data.shape != match_psf_data.shape:
+                raise LengthMismatchError(
+                    f"self_psf_data.shape={self_psf_data.shape} != "
+                    f"match_psf_data.shape={match_psf_data.shape}."
+                )
             if oversample > 1:
                 galfind_logger.debug(f"Oversampling PSFs by {oversample}x")
                 self_psf_data = zoom(self_psf_data, oversample)
@@ -1067,19 +1081,20 @@ class PSF_Cutout(PSF_Base):
         match_psf: PSF_Cutout,
         kernel_dir: Optional[str] = None,
     ) -> Optional[str]:
-        assert (
+        if (
             self.cutout.band_data.pix_scale
-            == match_psf.cutout.band_data.pix_scale
-        ), galfind_logger.critical(
-            f"{self.cutout.band_data.pix_scale=}!="
-            + f"{match_psf.cutout.band_data.pix_scale=}"
-        )
-        assert (
-            self.cutout.cutout_size == match_psf.cutout.cutout_size
-        ), galfind_logger.critical(
-            f"{self.cutout.cutout_size=}!="
-            + f"{match_psf.cutout.cutout_size=}"
-        )
+            != match_psf.cutout.band_data.pix_scale
+        ):
+            raise GalfindError(
+                f"self pix_scale={self.cutout.band_data.pix_scale!r} != "
+                "match_psf pix_scale="
+                f"{match_psf.cutout.band_data.pix_scale!r}."
+            )
+        if self.cutout.cutout_size != match_psf.cutout.cutout_size:
+            raise GalfindError(
+                f"self cutout_size={self.cutout.cutout_size!r} != "
+                f"match_psf cutout_size={match_psf.cutout.cutout_size!r}."
+            )
         # determine kernel save path
         if kernel_dir is None:
             kernel_dir = "/".join(self.cutout.cutout_path.split("/")[:-1])
@@ -1116,24 +1131,24 @@ class PSF_Cutout(PSF_Base):
                 "skipping convolution!"
             )
             return None
-        assert (
-            kernel.is_kernel and not self.is_kernel
-        ), galfind_logger.critical(
-            f"{repr(self)} must be a PSF cutout "
-            + f"and {repr(kernel)} must be a kernel cutout!"
-        )
-        assert (
+        if not (kernel.is_kernel and not self.is_kernel):
+            raise GalfindError(
+                f"{repr(self)} must be a PSF cutout and {repr(kernel)} "
+                "must be a kernel cutout."
+            )
+        if (
             self.cutout.band_data.pix_scale
-            == kernel.cutout.band_data.pix_scale
-        ), galfind_logger.critical(
-            f"{repr(self)} and {repr(kernel)} must have the same pixel scale!"
-        )
-        assert (
-            self.cutout.cutout_size == kernel.cutout.cutout_size
-        ), galfind_logger.critical(
-            f"{repr(self)} and {repr(kernel)} must have the same "
-            "cutout size!"
-        )
+            != kernel.cutout.band_data.pix_scale
+        ):
+            raise GalfindError(
+                f"{repr(self)} and {repr(kernel)} must have the same "
+                "pixel scale."
+            )
+        if self.cutout.cutout_size != kernel.cutout.cutout_size:
+            raise GalfindError(
+                f"{repr(self)} and {repr(kernel)} must have the same "
+                "cutout size."
+            )
         galfind_logger.info(
             f"Convolving {repr(kernel)} with kernel {repr(self)}"
         )
@@ -1323,9 +1338,10 @@ def find_stars(
     )
     ih = np.argmax(h[0])
     rmode = h[1][ih]
-    assert rmode > 0, galfind_logger.critical(
-        f"Mode of r distribution is non-positive: {rmode=}"
-    )
+    if rmode <= 0:
+        raise RangeError(
+            f"Mode of r distribution is non-positive: rmode={rmode}."
+        )
     ok_mode = ((r / rmode - 1) > threshold_mode[0]) & (
         (r / rmode - 1) < threshold_mode[1]
     )

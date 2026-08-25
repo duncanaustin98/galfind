@@ -7,6 +7,13 @@ import pytest
 from galfind.imaging import Filter, Multiple_Filter, NIRCam
 from galfind.imaging.Filter import UVJ, J, Tophat_Filter, U, V
 from galfind.imaging.Instrument import JWST, Facility
+from galfind.utils.exceptions import (
+    ExternalToolError,
+    GalfindTypeError,
+    InvalidOptionError,
+    LengthMismatchError,
+    RangeError,
+)
 
 
 @pytest.fixture(scope="module")
@@ -96,9 +103,9 @@ class TestFilterInstantiation:
             (["JWST", "MIRI", "F770W"], True),
             (["Paranal", "VISTA", "Z"], True),
             (["Spitzer", "IRAC", "I1"], True),
-            (["JWST", "NON_EXISTENT_INSTRUMENT", "F444W"], Exception),
-            (["JWST", "NIRCam", "NON_EXISTENT_FILTER"], Exception),
-            (["NON_EXISTENT_FACILITY", "NIRCam", "F444W"], Exception),
+            (["JWST", "NON_EXISTENT_INSTRUMENT", "F444W"], ExternalToolError),
+            (["JWST", "NIRCam", "NON_EXISTENT_FILTER"], ExternalToolError),
+            (["NON_EXISTENT_FACILITY", "NIRCam", "F444W"], ExternalToolError),
         ],
     )
     def from_svo_case(self, request):
@@ -110,9 +117,9 @@ class TestFilterInstantiation:
             ("F444W", True),
             ("JWST/NIRCam/F444W", True),
             ("JWST/NIRCam.F444W", True),
-            ("JWST/UNKNOWN_INSTRUMENT/F444W", Exception),
-            ("JWST/NIRCam/UNKNOWN_FILTER", Exception),
-            ("UNKNOWN_FACILITY/NIRCam/F444W", Exception),
+            ("JWST/UNKNOWN_INSTRUMENT/F444W", InvalidOptionError),
+            ("JWST/NIRCam/UNKNOWN_FILTER", ExternalToolError),
+            ("UNKNOWN_FACILITY/NIRCam/F444W", ExternalToolError),
         ],
     )
     def from_filt_name_case(self, request):
@@ -158,10 +165,10 @@ class TestFilterDunderMethods:
             ("JWST/NIRCam.F356W", False, True),
             ("JWST/NIRCam.F444W", True, True),
             (U, False, True),
-            (Tophat_Filter, None, Exception),
-            (NIRCam, None, Exception),
+            (Tophat_Filter, None, GalfindTypeError),
+            (NIRCam, None, GalfindTypeError),
             (U(), False, True),
-            (12345, None, Exception),
+            (12345, None, GalfindTypeError),
         ],
     )
     def add_to_f444w_case(self, request):
@@ -217,7 +224,7 @@ class TestMultipleFilterInstantiation:
     @pytest.fixture(
         scope="class",
         params=[
-            (["NON_EXISTENT_FACILITY"], Exception),
+            (["NON_EXISTENT_FACILITY"], RangeError),
             # ([JWST, JWST], Exception),
             # (NIRCam, Exception),
             # (JWST, Exception),
@@ -234,9 +241,9 @@ class TestMultipleFilterInstantiation:
     @pytest.fixture(
         scope="class",
         params=[
-            ("NON_EXISTENT_FACILITY", Exception),
-            (0.32 * u.arcsec, Exception),
-            (NIRCam, Exception),
+            ("NON_EXISTENT_FACILITY", RangeError),
+            (0.32 * u.arcsec, GalfindTypeError),
+            (NIRCam, GalfindTypeError),
         ],
     )
     def facility_case(self, request):
@@ -245,9 +252,9 @@ class TestMultipleFilterInstantiation:
     @pytest.fixture(
         scope="class",
         params=[
-            (["NON_EXISTENT_INSTRUMENT"], Exception),
+            (["NON_EXISTENT_INSTRUMENT"], InvalidOptionError),
             # ([NIRCam, NIRCam], Exception),
-            (JWST, Exception),
+            (JWST, TypeError),
             # ([NIRCam, ACS_WFC], True),
             # ([NIRCam()], True),
             # (np.array([NIRCam, ACS_WFC()]), True),
@@ -355,10 +362,10 @@ class TestMultipleFilterDunderMethods:
             ("JWST/NIRCam.F356W", True, True),
             ("JWST/NIRCam.F444W", True, True),
             (U, False, True),
-            (Tophat_Filter, None, Exception),
-            (NIRCam, None, Exception),
+            (Tophat_Filter, None, GalfindTypeError),
+            (NIRCam, None, GalfindTypeError),
             (U(), False, True),
-            (12345, None, Exception),
+            (12345, None, GalfindTypeError),
         ],
     )
     def add_sub_nircam_case(self, request):
@@ -473,3 +480,53 @@ class TestPlotting:
         )
         path = plot_dir / Path(f"nircam_multi_filter_plot.{plot_args['fmt']}")
         assert path.is_file()
+
+
+class TestFilterValidation:
+    """Focused tests for constructor/kwarg validation failure paths."""
+
+    def test_filter_init_length_mismatch(self):
+        with pytest.raises(LengthMismatchError, match="length"):
+            Filter(
+                None,
+                "test_filt",
+                [1.0, 2.0, 3.0] * u.AA,
+                [0.5, 0.5],
+            )
+
+    def test_filter_init_unknown_instrument_str(self):
+        with pytest.raises(InvalidOptionError, match="instrument"):
+            Filter(
+                "NON_EXISTENT_INSTRUMENT",
+                "test_filt",
+                [1.0, 2.0] * u.AA,
+                [0.5, 0.5],
+            )
+
+    def test_get_facility_instrument_filt_malformed(self):
+        with pytest.raises(InvalidOptionError, match="format"):
+            Filter._get_facility_instrument_filt("JWST/NIRCam.F444W.extra")
+
+    def test_from_instrument_invalid_origin(self):
+        with pytest.raises(InvalidOptionError, match="origin"):
+            Multiple_Filter.from_instrument("NIRCam", origin="not_svo")
+
+    def test_multiple_filter_invalid_sort_order_init(self):
+        with pytest.raises(InvalidOptionError, match="sort_order"):
+            Multiple_Filter([U(), V()], sort_order="descending")
+
+    def test_multiple_filter_invalid_sort_order_instrument_name(self):
+        multi_filt = Multiple_Filter([U(), V()])
+        multi_filt.sort_order = "descending"
+        with pytest.raises(InvalidOptionError, match="sort_order"):
+            multi_filt.instrument_name
+
+    def test_multiple_filter_invalid_sort_order_sort_bands(self):
+        multi_filt = Multiple_Filter([U(), V()])
+        multi_filt.sort_order = "descending"
+        with pytest.raises(InvalidOptionError, match="sort_order"):
+            multi_filt.sort_bands()
+
+    def test_multiple_filter_getitem_invalid_type(self, nircam_multi_filter):
+        with pytest.raises(GalfindTypeError, match="__getitem__"):
+            nircam_multi_filter[{"bad": "key"}]

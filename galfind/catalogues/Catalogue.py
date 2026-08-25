@@ -68,6 +68,14 @@ from ..sed_fitting.SED_codes import SED_code
 from ..spectra.Spectrum import Spectral_Catalogue
 from ..utils import Depths
 from ..utils import useful_funcs_austind as funcs
+from ..utils.exceptions import (
+    GalfindError,
+    GalfindTypeError,
+    InvalidOptionError,
+    LengthMismatchError,
+    MissingDataError,
+    MissingKeyError,
+)
 from ..visualization.Cutout import (
     Multiple_Band_Cutout,
     Multiple_RGB,
@@ -195,29 +203,41 @@ def phot_property_from_galfind_tab(
             )
             kwargs["cat_aper_diams"] = aper_diams
         else:
-            assert isinstance(
-                kwargs["cat_aper_diams"], u.Quantity
-            ), galfind_logger.critical(
-                f"{type(kwargs['cat_aper_diams'])=} != u.Quantity!"
-            )
-            assert isinstance(
+            if not isinstance(kwargs["cat_aper_diams"], u.Quantity):
+                raise GalfindTypeError(
+                    f"kwargs['cat_aper_diams']={kwargs['cat_aper_diams']!r} "
+                    f"has type {type(kwargs['cat_aper_diams']).__name__}; "
+                    "must be an astropy.units.Quantity."
+                )
+            if not isinstance(
                 kwargs["cat_aper_diams"].value, (list, np.ndarray)
-            ), galfind_logger.critical(
-                f"{type(kwargs['cat_aper_diams'])=} != list!"
-            )
+            ):
+                raise GalfindTypeError(
+                    "kwargs['cat_aper_diams'].value has type "
+                    f"{type(kwargs['cat_aper_diams'].value).__name__}; "
+                    "must be a list or np.ndarray."
+                )
         # load aperture diameter indices
         aper_diam_indices = [
             i
             for i, aper_diam in enumerate(kwargs["cat_aper_diams"])
             if aper_diam in aper_diams
         ]
-        assert len(aper_diam_indices) > 0, galfind_logger.critical(
-            "len(aper_diam_indices) <= 0"
-        )
+        if not len(aper_diam_indices) > 0:
+            raise MissingDataError(
+                f"len(aper_diam_indices)={len(aper_diam_indices)} <= 0; "
+                f"none of aper_diams={aper_diams!r} were found in "
+                f"kwargs['cat_aper_diams']={kwargs['cat_aper_diams']!r}."
+            )
         # ensure labels are formatted properly
-        assert all(
+        if not all(
             label == labels[aper_diams[0]] for label in labels.values()
-        ), galfind_logger.critical("All phot_labels not equal!")
+        ):
+            raise LengthMismatchError(
+                f"labels={labels!r} values are not all equal; every "
+                "aperture diameter must map to the same list of column "
+                "names."
+            )
         properties = {}
         if "reshape_by_aper_diams" in kwargs.keys() and isinstance(
             kwargs["reshape_by_aper_diams"], bool
@@ -268,9 +288,11 @@ def phot_property_from_fits(
     aper_diams = [label.value for label in labels.keys()] * list(
         labels.keys()
     )[0].unit
-    assert len(aper_diams) > 0, galfind_logger.critical(
-        f"{len(aper_diams)=} <= 0"
-    )
+    if not len(aper_diams) > 0:
+        raise MissingDataError(
+            f"len(aper_diams)={len(aper_diams)} <= 0; labels={labels!r} "
+            "has no aperture diameter keys."
+        )
     if "cat_aper_diams" not in kwargs.keys():
         galfind_logger.warning(
             f"cat_aper_diams not in {kwargs.keys()=}! "
@@ -278,20 +300,24 @@ def phot_property_from_fits(
         )
         kwargs["cat_aper_diams"] = aper_diams
     else:
-        assert isinstance(
-            kwargs["cat_aper_diams"], u.Quantity
-        ), galfind_logger.critical(
-            f"{type(kwargs['cat_aper_diams'])=} != u.Quantity!"
-        )
-        assert isinstance(
-            kwargs["cat_aper_diams"].value, (list, np.ndarray)
-        ), galfind_logger.critical(
-            f"{type(kwargs['cat_aper_diams'])=} != list!"
-        )
+        if not isinstance(kwargs["cat_aper_diams"], u.Quantity):
+            raise GalfindTypeError(
+                f"kwargs['cat_aper_diams']={kwargs['cat_aper_diams']!r} "
+                f"has type {type(kwargs['cat_aper_diams']).__name__}; "
+                "must be an astropy.units.Quantity."
+            )
+        if not isinstance(kwargs["cat_aper_diams"].value, (list, np.ndarray)):
+            raise GalfindTypeError(
+                "kwargs['cat_aper_diams'].value has type "
+                f"{type(kwargs['cat_aper_diams'].value).__name__}; "
+                "must be a list or np.ndarray."
+            )
     # ensure labels are formatted properly
-    assert all(
-        label == labels[aper_diams[0]] for label in labels.values()
-    ), galfind_logger.critical("All phot_labels not equal!")
+    if not all(label == labels[aper_diams[0]] for label in labels.values()):
+        raise LengthMismatchError(
+            f"labels={labels!r} values are not all equal; every "
+            "aperture diameter must map to the same list of column names."
+        )
     # extract properties from fits table
     properties = {}
     for aper_diam in aper_diams:
@@ -332,10 +358,13 @@ def load_galfind_phot(
         ``(phot, phot_err)``, each a mapping from aperture diameter
         (`u.Quantity`) to `np.ndarray` fluxes/errors in Jy.
     """
-    assert phot_labels.keys() == err_labels.keys(), galfind_logger.critical(
-        f"{phot_labels.keys()=} != {err_labels.keys()=}!"
-    )
-    assert "ZP" in kwargs.keys(), galfind_logger.critical("ZP not in kwargs!")
+    if not phot_labels.keys() == err_labels.keys():
+        raise LengthMismatchError(
+            f"phot_labels.keys()={phot_labels.keys()!r} != "
+            f"err_labels.keys()={err_labels.keys()!r}."
+        )
+    if "ZP" not in kwargs.keys():
+        raise MissingKeyError("ZP not in kwargs.")
     phot = {
         aper_diam: funcs.flux_image_to_Jy(_phot, kwargs["ZP"])
         for aper_diam, _phot in phot_property_from_galfind_tab(
@@ -382,10 +411,13 @@ def load_phot(
         ``(phot, phot_err)``, each a mapping from aperture diameter
         (`u.Quantity`) to `np.ndarray` fluxes/errors in Jy.
     """
-    assert phot_labels.keys() == err_labels.keys(), galfind_logger.critical(
-        f"{phot_labels.keys()=} != {err_labels.keys()=}!"
-    )
-    assert "ZP" in kwargs.keys(), galfind_logger.critical("ZP not in kwargs!")
+    if not phot_labels.keys() == err_labels.keys():
+        raise LengthMismatchError(
+            f"phot_labels.keys()={phot_labels.keys()!r} != "
+            f"err_labels.keys()={err_labels.keys()!r}."
+        )
+    if "ZP" not in kwargs.keys():
+        raise MissingKeyError("ZP not in kwargs.")
     phot = {
         aper_diam: funcs.flux_image_to_Jy(_phot, kwargs["ZP"])
         for aper_diam, _phot in phot_property_from_fits(
@@ -585,9 +617,8 @@ def galfind_phot_labels(
         (`u.Quantity`) to the `list` of `str` flux/error column names (one
         per band in `filterset`).
     """
-    assert "min_flux_pc_err" in kwargs.keys(), galfind_logger.critical(
-        "min_flux_pc_err not in kwargs!"
-    )
+    if "min_flux_pc_err" not in kwargs.keys():
+        raise MissingKeyError("min_flux_pc_err not in kwargs.")
     phot_labels = {
         aper_diam * aper_diams.unit: [
             f"FLUX_APER_{filt.filt_name}_aper_corr_Jy" for filt in filterset
@@ -631,9 +662,8 @@ def jaguar_phot_labels(
         (`u.Quantity`) to the `list` of `str` flux column names (one per
         band in `filterset`) and to an empty `list` respectively.
     """
-    assert "min_flux_pc_err" in kwargs.keys(), galfind_logger.critical(
-        "min_flux_pc_err not in kwargs!"
-    )
+    if "min_flux_pc_err" not in kwargs.keys():
+        raise MissingKeyError("min_flux_pc_err not in kwargs.")
     phot_labels = {
         aper_diam * aper_diams.unit: [
             f"NRC_{filt.filt_name}_fnu"
@@ -674,9 +704,8 @@ def scattered_phot_labels(
         / ``<instrument>.<band>_err`` column names (one per band in
         `filterset`).
     """
-    assert "min_flux_pc_err" in kwargs.keys(), galfind_logger.critical(
-        "min_flux_pc_err not in kwargs!"
-    )
+    if "min_flux_pc_err" not in kwargs.keys():
+        raise MissingKeyError("min_flux_pc_err not in kwargs.")
     phot_labels = {
         aper_diam * aper_diams.unit: [
             f"{filt.instrument_name}.{filt.filt_name}_scattered"
@@ -1057,16 +1086,27 @@ class Catalogue_Creator:
 
         See the class docstring for detailed parameter descriptions.
         """
+        # set before any validation below so __del__ never sees these
+        # attributes missing if __init__ raises partway through
+        self._tab_cache = {}
+        self._fits_handle = None
+
         self.survey = survey
         self.version = version
         self.cat_path = cat_path
         self.filterset = filterset
-        assert isinstance(aper_diams, u.Quantity), galfind_logger.critical(
-            f"{type(aper_diams)=} != u.Quantity!"
-        )
-        assert isinstance(
-            aper_diams.value, (list, np.ndarray)
-        ), galfind_logger.critical(f"{type(aper_diams.value)=} != list!")
+        if not isinstance(aper_diams, u.Quantity):
+            raise GalfindTypeError(
+                f"aper_diams={aper_diams!r} has type "
+                f"{type(aper_diams).__name__}; must be an "
+                "astropy.units.Quantity."
+            )
+        if not isinstance(aper_diams.value, (list, np.ndarray)):
+            raise GalfindTypeError(
+                f"aper_diams.value has type "
+                f"{type(aper_diams.value).__name__}; must be a list or "
+                "np.ndarray."
+            )
         self.aper_diams = aper_diams
         self.open_cat = open_cat
         self.open_hdr = open_hdr
@@ -1093,8 +1133,6 @@ class Catalogue_Creator:
         self.apply_gal_instr_mask = apply_gal_instr_mask
         self.cache_fits_handle = cache_fits_handle
         self.simulated = simulated
-        self._tab_cache = {}
-        self._fits_handle = None
 
         self.load_crops(crops)
 
@@ -1102,13 +1140,19 @@ class Catalogue_Creator:
         # in primary header which stores the IDs
         hdr = self.open_hdr(self.cat_path, "ID")
         if "SURVEY" in hdr.keys():
-            assert hdr["SURVEY"] == self.survey, galfind_logger.critical(
-                f"{hdr['SURVEY']=} != {self.survey=}"
-            )
+            if not hdr["SURVEY"] == self.survey:
+                raise InvalidOptionError(
+                    f"FITS header SURVEY={hdr['SURVEY']!r} does not match "
+                    f"Catalogue_Creator.survey={self.survey!r}; the two "
+                    "must be equal."
+                )
         if "VERSION" in hdr.keys():
-            assert hdr["VERSION"] == self.version, galfind_logger.critical(
-                f"{hdr['VERSION']=} != {self.version=}"
-            )
+            if not hdr["VERSION"] == self.version:
+                raise InvalidOptionError(
+                    f"FITS header VERSION={hdr['VERSION']!r} does not "
+                    f"match Catalogue_Creator.version={self.version!r}; "
+                    "the two must be equal."
+                )
 
     def __del__(self: Self) -> None:
         """Close the cached FITS file handle when the object is destroyed."""
@@ -1231,12 +1275,12 @@ class Catalogue_Creator:
                 }
                 for i in range(len(filterset_arr))
             ]
-            assert (
-                len(IDs) == len(sky_coords) == len(phot_obs_arr)
-            ), galfind_logger.critical(
-                f"{len(IDs)=} != {len(sky_coords)=} "
-                f"!= {len(phot_obs_arr)=}!"
-            )
+            if not len(IDs) == len(sky_coords) == len(phot_obs_arr):
+                raise LengthMismatchError(
+                    f"len(IDs)={len(IDs)} != len(sky_coords)="
+                    f"{len(sky_coords)} != len(phot_obs_arr)="
+                    f"{len(phot_obs_arr)}; these must all be equal."
+                )
             # make an array of galaxy objects to be stored in the catalogue
             galfind_logger.debug(
                 f"Loading {self.survey} {self.version} "
@@ -1692,7 +1736,7 @@ class Catalogue_Creator:
 
         Raises
         ------
-        Exception
+        GalfindError
             If `load_mask_func` raises while loading the mask.
         """
         tab = self.load_tab("mask", cropped)
@@ -1709,9 +1753,10 @@ class Catalogue_Creator:
                     tab, mask_labels, **self.load_mask_kwargs
                 )
             except Exception as e:
-                err_message = f"Error loading mask: {e}"
-                galfind_logger.critical(err_message)
-                raise (Exception(err_message))
+                raise GalfindError(
+                    f"Error loading mask via load_mask_func="
+                    f"{self.load_mask_func!r}: {e}"
+                ) from e
             if self.apply_gal_instr_mask:
                 if cropped and self.crop_mask is not None:
                     gal_instr_mask = self.gal_instr_mask[self.crop_mask]
@@ -1748,7 +1793,7 @@ class Catalogue_Creator:
 
         Raises
         ------
-        Exception
+        GalfindError
             If `load_depth_func` raises while loading the depths.
         """
         tab = self.load_tab("depths", cropped)
@@ -1764,9 +1809,10 @@ class Catalogue_Creator:
                     tab, depth_labels, **self.load_depth_kwargs
                 )
             except Exception as e:
-                err_message = f"Error loading depths: {e}"
-                galfind_logger.critical(err_message)
-                raise (Exception(err_message))
+                raise GalfindError(
+                    f"Error loading depths via load_depth_func="
+                    f"{self.load_depth_func!r}: {e}"
+                ) from e
             if self.apply_gal_instr_mask:
                 if cropped and self.crop_mask is not None:
                     gal_instr_mask = self.gal_instr_mask[self.crop_mask]
@@ -1818,7 +1864,10 @@ class Catalogue_Creator:
 
         Raises
         ------
-        Exception
+        LengthMismatchError
+            If a loaded selection value array does not have the same
+            length as the catalogue table.
+        MissingDataError
             If the ``"SELECTION"`` extension exists but no
             `load_selection_func`/`get_selection_labels` is provided.
         """
@@ -1836,13 +1885,15 @@ class Catalogue_Creator:
             )
             # ensure all selection dict values are the same length as
             # the catalogue
-            assert all(
+            if not all(
                 len(selection) == len(tab)
                 for selection in select_dict.values()
-            ), galfind_logger.critical(
-                "Not all selection values are the same length "
-                "as the catalogue!"
-            )
+            ):
+                raise LengthMismatchError(
+                    f"Not all selection values in select_dict="
+                    f"{select_dict!r} have the same length as the "
+                    f"catalogue table (len(tab)={len(tab)})."
+                )
             selection_flags = [
                 {key: bool(values[i]) for key, values in select_dict.items()}
                 for i in range(len(tab))
@@ -1886,9 +1937,11 @@ class Catalogue_Creator:
             selection_flags = list(itertools.repeat(None, len(tab)))
             selection_kwargs = list(itertools.repeat(None, len(tab)))
         else:
-            err_message = "Selection function not provided!"
-            galfind_logger.critical(err_message)
-            raise Exception(err_message)
+            raise MissingDataError(
+                "'SELECTION' table extension exists but no "
+                "load_selection_func/get_selection_labels provided on "
+                f"{self!r}."
+            )
 
         return selection_flags, selection_kwargs
 
@@ -1926,7 +1979,7 @@ class Catalogue_Creator:
 
         Raises
         ------
-        Exception
+        MissingDataError
             If neither the catalogue header nor `self.survey`/`self.filterset`/
             `self.aper_diams` provide enough information to determine the
             cache directory.
@@ -1953,13 +2006,12 @@ class Catalogue_Creator:
                 + f"has_data_mask/{self.filterset.instrument_name}"
             )
         else:
-            err_message = (
-                f"Not all of {req_metakeys} in {self.cat_path} "
-                + "nor 'survey', 'filterset', and 'aper_diams' "
-                "provided in self!"
+            raise MissingDataError(
+                f"Not all of req_metakeys={req_metakeys} present in "
+                f"header of {self.cat_path}, and 'survey', 'filterset', "
+                "and 'aper_diams' are not all provided on self; cannot "
+                "determine the gal_instr_mask cache directory."
             )
-            galfind_logger.critical(err_message)
-            raise Exception(err_message)
         cat_basename = Path(self.cat_path).stem
         save_path = f"{save_dir}/{cat_basename}.h5"
         funcs.make_dirs(save_path)
@@ -2043,10 +2095,17 @@ class Catalogue_Creator:
         -------
         `list` of `np.ndarray`
             Masked arrays, one per galaxy, containing only bands with data.
+
+        Raises
+        ------
+        LengthMismatchError
+            If `gal_instr_mask` and `arr` do not have the same length.
         """
-        assert len(gal_instr_mask) == len(arr), galfind_logger.critical(
-            f"{len(gal_instr_mask)} != {len(arr)}!"
-        )
+        if not len(gal_instr_mask) == len(arr):
+            raise LengthMismatchError(
+                f"len(gal_instr_mask)={len(gal_instr_mask)} != "
+                f"len(arr)={len(arr)}."
+            )
         return [ele[mask] for ele, mask in zip(arr, gal_instr_mask)]
 
     def load_gal_filtersets(
@@ -2378,11 +2437,11 @@ class Catalogue(Catalogue_Base):
         #     filterset_arr = [filterset_arr]
         phot_tab = self.cat_creator.load_tab("phot", cropped=True)
         mask_tab = self.cat_creator.load_tab("mask", cropped=True)
-        assert (
-            len(phot_tab) == len(mask_tab) == len(self)
-        ), galfind_logger.critical(
-            f"{len(phot_tab)=} != {len(mask_tab)=} != {len(self)=}!"
-        )
+        if not len(phot_tab) == len(mask_tab) == len(self):
+            raise LengthMismatchError(
+                f"len(phot_tab)={len(phot_tab)} != "
+                f"len(mask_tab)={len(mask_tab)} != len(self)={len(self)}."
+            )
         snr_labels = get_snr_colnames(
             self.data.stacked_band_data_arr, self.aper_diams
         )
@@ -2487,11 +2546,19 @@ class Catalogue(Catalogue_Base):
         timed : `bool`, optional
             Unused (accepted for a stable call signature); a progress bar is
             always shown unless logging is suppressed. Default is `True`.
+
+        Raises
+        ------
+        LengthMismatchError
+            If `cat_SED_results` is not the same length as `self`.
         """
-        assert len(cat_SED_results) == len(
-            self
-        )  # if this is not the case then instead should cross match
-        # IDs between self and gal_SED_result
+        if not len(cat_SED_results) == len(self):
+            # if this is not the case then instead should cross match
+            # IDs between self and gal_SED_result
+            raise LengthMismatchError(
+                f"len(cat_SED_results)={len(cat_SED_results)} != "
+                f"len(self)={len(self)}."
+            )
         galfind_logger.info("Updating SED results in galfind catalogue object")
         [
             gal.update_SED_results(gal_SED_result)
@@ -2519,10 +2586,18 @@ class Catalogue(Catalogue_Base):
         zmax_info_arr : `list`
             Per-galaxy low-z zmax info, in the same order as `self`. Must be
             the same length as `self`.
+
+        Raises
+        ------
+        LengthMismatchError
+            If `zmax_info_arr` is not the same length as `self`.
         """
-        assert len(zmax_info_arr) == len(self), galfind_logger.critical(
-            "Length of zmax_info_dict must be the same as the catalogue!"
-        )
+        if not len(zmax_info_arr) == len(self):
+            raise LengthMismatchError(
+                f"len(zmax_info_arr)={len(zmax_info_arr)} != "
+                f"len(self)={len(self)}; zmax_info_arr must be the same "
+                "length as the catalogue."
+            )
         galfind_logger.info(
             "Updating low-z zmax info in galfind catalogue object"
         )
@@ -2675,9 +2750,16 @@ class Catalogue(Catalogue_Base):
                 if hdu.find(code.__name__) != -1
             ]
         ):
-            raise NotImplementedError
+            raise NotImplementedError(
+                f"_append_property_to_tab does not yet support "
+                f"SED_code-named hdu={hdu!r} extensions."
+            )
         else:
-            raise NotImplementedError
+            raise NotImplementedError(
+                f"_append_property_to_tab does not support hdu={hdu!r}; "
+                "must be one of ['OBJECTS', 'SELECTION'] or a "
+                "SED_code-named extension."
+            )
         # TODO: Need to attach self.open_cat to catalogue_creator.open_cat
         append_tab = self.open_cat(cropped=False, hdu=hdu)
         # append to .fits table only if not already
@@ -2701,7 +2783,12 @@ class Catalogue(Catalogue_Base):
         gal_IDs = getattr(self, "ID")
         # TODO: get an array of properties to save (NOT an array in all cases!)
         gal_properties = np.array(getattr(self, property_name)).astype(dtype)
-        assert len(gal_properties) == len(gal_IDs)
+        if not len(gal_properties) == len(gal_IDs):
+            raise LengthMismatchError(
+                f"len(gal_properties)={len(gal_properties)} != "
+                f"len(gal_IDs)={len(gal_IDs)} for property_name="
+                f"{property_name!r}."
+            )
         # mask any NaN values
         # i = 0
         # property_type = None
@@ -2742,7 +2829,7 @@ class Catalogue(Catalogue_Base):
 
         Raises
         ------
-        Exception
+        MissingDataError
             If data object is not available for unit conversion.
         """
         if hasattr(self, "data"):
@@ -2755,17 +2842,20 @@ class Catalogue(Catalogue_Base):
                 "FLUX_RADIUS", "sex_Re", multiply_factor=pix_to_as_dict
             )
         else:
-            err_message = (
-                "Loading SExtractor Re from catalogue "
-                + f"only works when hasattr({repr(self)}, data)!"
+            raise MissingDataError(
+                "Loading SExtractor Re from catalogue only works when "
+                f"hasattr({repr(self)}, 'data') is True."
             )
-            galfind_logger.critical(err_message)
-            raise Exception(err_message)
 
     def load_sextractor_auto_mags(self) -> None:
         """Load SExtractor AUTO magnitudes for all galaxies and bands.
 
         Extracts MAG_AUTO (isophotal magnitudes) from SExtractor catalogues.
+
+        Raises
+        ------
+        MissingDataError
+            If data object is not available.
         """
         if hasattr(self, "data"):
             # load Re from SExtractor
@@ -2776,12 +2866,10 @@ class Catalogue(Catalogue_Base):
                 for aper_diam in gal.aper_phot.keys():
                     gal.aper_phot[aper_diam].sex_MAG_AUTO = gal.sex_MAG_AUTO
         else:
-            err_message = (
-                "Loading SExtractor auto mags from catalogue "
-                + f"only works when hasattr({repr(self)}, data)!"
+            raise MissingDataError(
+                "Loading SExtractor auto mags from catalogue only works "
+                f"when hasattr({repr(self)}, 'data') is True."
             )
-            galfind_logger.critical(err_message)
-            raise Exception(err_message)
 
     def load_sextractor_auto_fluxes(
         self: Self, multiply_factor: Optional[Dict[str, float]] = None
@@ -2799,15 +2887,17 @@ class Catalogue(Catalogue_Base):
 
         Raises
         ------
-        Exception
+        MissingDataError
             If neither data object nor multiply_factor is provided.
         """
         if hasattr(self, "data") or multiply_factor is not None:
             # load Re from SExtractor
             if multiply_factor is None:
-                assert hasattr(self, "data"), galfind_logger.critical(
-                    "Either provide multiply_factor or have self.data!"
-                )
+                if not hasattr(self, "data"):
+                    raise MissingDataError(
+                        "Either provide multiply_factor or have "
+                        f"hasattr({repr(self)}, 'data') be True."
+                    )
                 multiply_factor = {
                     band_data.filt_name: funcs.flux_image_to_Jy(
                         1.0, band_data.ZP
@@ -2815,19 +2905,21 @@ class Catalogue(Catalogue_Base):
                     for band_data in self.data
                 }
             else:
-                assert isinstance(
-                    multiply_factor, dict
-                ), galfind_logger.critical(
-                    f"{type(multiply_factor)=} != dict!"
-                )
-                assert all(
-                    [
-                        key in self.filterset.filt_names
-                        for key in multiply_factor.keys()
-                    ]
-                ), galfind_logger.critical(
-                    f"{len(multiply_factor)=} != " + f"{len(self.filterset)=}!"
-                )
+                if not isinstance(multiply_factor, dict):
+                    raise GalfindTypeError(
+                        f"multiply_factor={multiply_factor!r} has type "
+                        f"{type(multiply_factor).__name__}; must be a "
+                        "dict."
+                    )
+                if not all(
+                    key in self.filterset.filt_names
+                    for key in multiply_factor.keys()
+                ):
+                    raise InvalidOptionError(
+                        f"multiply_factor keys={list(multiply_factor.keys())} "
+                        "must all be in "
+                        f"self.filterset.filt_names={self.filterset.filt_names}."
+                    )
             self.load_band_properties_from_cat(
                 "FLUX_AUTO", "sex_FLUX_AUTO", multiply_factor=multiply_factor
             )
@@ -2835,13 +2927,11 @@ class Catalogue(Catalogue_Base):
                 for aper_diam in gal.aper_phot.keys():
                     gal.aper_phot[aper_diam].sex_FLUX_AUTO = gal.sex_FLUX_AUTO
         else:
-            err_message = (
-                "Loading SExtractor flux autos from catalogue "
-                + f"only works when hasattr({repr(self)}, data) "
-                f"or multiply_factor is not None!"
+            raise MissingDataError(
+                "Loading SExtractor flux autos from catalogue only works "
+                f"when hasattr({repr(self)}, 'data') is True or "
+                "multiply_factor is not None."
             )
-            galfind_logger.critical(err_message)
-            raise Exception(err_message)
 
     def load_sextractor_kron_radii(self) -> None:
         """Load SExtractor Kron radii and morphological parameters.
@@ -3081,7 +3171,10 @@ class Catalogue(Catalogue_Base):
                 f"loading {cat_colname=}"
             )
             return None
-        assert dest in ["gal", "phot_obs"]
+        if dest not in ["gal", "phot_obs"]:
+            raise InvalidOptionError(
+                f"dest={dest!r} must be one of ['gal', 'phot_obs']."
+            )
         if dest == "gal":
             has_attr = hasattr(self[0], save_name)
         else:  # dest == "phot_obs"
@@ -3117,13 +3210,12 @@ class Catalogue(Catalogue_Base):
                 and filt.filt_name in multiply_factor.keys()
             }
             if len(cat_band_properties) == 0:
-                err_message = (
-                    f"Could not load {cat_colname=} from {self.cat_path} "
-                    + f"as no '{cat_colname}_band' exists for band "
-                    f"in {self.instrument.filt_names=}!"
+                raise MissingDataError(
+                    f"Could not load cat_colname={cat_colname!r} from "
+                    f"{self.cat_path}, as no '{cat_colname}_<band>' "
+                    f"column exists for any band in "
+                    f"self.instrument.filt_names={self.instrument.filt_names}."
                 )
-                galfind_logger.info(err_message)
-                raise Exception(err_message)
 
             cat_band_properties = [
                 {
@@ -3141,7 +3233,10 @@ class Catalogue(Catalogue_Base):
                         )
                     ]
                 else:  # dest == "phot_obs"
-                    raise NotImplementedError
+                    raise NotImplementedError(
+                        "load_band_properties_from_cat does not yet "
+                        "support dest='phot_obs'."
+                    )
                     [
                         gal.phot.load_property(gal_properties, save_name)
                         for gal, gal_properties in zip(
@@ -3181,7 +3276,10 @@ class Catalogue(Catalogue_Base):
             store on photometry object. Default is ``"gal"``.
         """
         dest = "gal"
-        assert dest in ["gal", "phot_obs"]
+        if dest not in ["gal", "phot_obs"]:
+            raise InvalidOptionError(
+                f"dest={dest!r} must be one of ['gal', 'phot_obs']."
+            )
         if dest == "gal":
             has_attr = hasattr(self[0], save_name)
         else:  # dest == "phot_obs"
@@ -3191,7 +3289,12 @@ class Catalogue(Catalogue_Base):
             fits_cat = self.open_cat(cropped=True)
             if cat_colname in fits_cat.colnames:
                 cat_property = np.array(fits_cat[cat_colname])
-                assert len(cat_property) == len(self)
+                if not len(cat_property) == len(self):
+                    raise LengthMismatchError(
+                        f"len(cat_property)={len(cat_property)} != "
+                        f"len(self)={len(self)} for cat_colname="
+                        f"{cat_colname!r}."
+                    )
                 if dest == "gal":
                     [
                         gal.load_property(
@@ -3261,12 +3364,13 @@ class Catalogue(Catalogue_Base):
 
         Raises
         ------
-        AssertionError
+        LengthMismatchError
             If redshift array length doesn't match catalogue length.
         """
-        assert len(z_arr) == len(self), galfind_logger.critical(
-            f"{len(z_arr)} != {len(self)}! {z_arr=} and {self=}"
-        )
+        if not len(z_arr) == len(self):
+            raise LengthMismatchError(
+                f"len(z_arr)={len(z_arr)} != len(self)={len(self)}."
+            )
 
         [
             gal.load_fixz_SED_result(aper_diam, z_value, z_label)
@@ -3297,9 +3401,11 @@ class Catalogue(Catalogue_Base):
             names to `Band_Cutout_Base` objects.
         """
         if native:
-            assert hasattr(self.data, "native"), galfind_logger.critical(
-                "Native data not available"
-            )
+            if not hasattr(self.data, "native"):
+                raise MissingDataError(
+                    "native=True requested but self.data has no 'native' "
+                    "attribute; native data not available."
+                )
             data = self.data.native
         else:
             data = self.data
@@ -3331,9 +3437,11 @@ class Catalogue(Catalogue_Base):
             Cutout objects, one per galaxy, for the specified band.
         """
         if native:
-            assert hasattr(self.data, "native"), galfind_logger.critical(
-                "Native data not available"
-            )
+            if not hasattr(self.data, "native"):
+                raise MissingDataError(
+                    "native=True requested but self.data has no 'native' "
+                    "attribute; native data not available."
+                )
             data = self.data.native
         else:
             data = self.data
@@ -3818,9 +3926,8 @@ class Catalogue(Catalogue_Base):
         `np.ndarray` of `float`
             Vmax values for each galaxy in the catalogue.
         """
-        assert hasattr(self, "data"), galfind_logger.critical(
-            f"{repr(self)} does not have data loaded!"
-        )
+        if not hasattr(self, "data"):
+            raise MissingDataError(f"{repr(self)} does not have data loaded.")
         return self._calc_Vmax(
             self.data,
             z_bin=z_bin,
@@ -3865,7 +3972,11 @@ class Catalogue(Catalogue_Base):
             Whether to recompute flux errors after scattering. Default is
             `True`.
         """
-        assert all(aper_diam in gal.aper_phot.keys() for gal in self)
+        if not all(aper_diam in gal.aper_phot.keys() for gal in self):
+            raise MissingDataError(
+                f"aper_diam={aper_diam!r} aperture photometry is not "
+                "loaded for at least one galaxy in this catalogue."
+            )
         # load galaxy depths from the average depths of the field
         if hasattr(self, "data"):
             self._update_depths_from_data(aper_diam, mode, depth_region)
@@ -3907,25 +4018,32 @@ class Catalogue(Catalogue_Base):
         depth_region : `str`, optional
             Region to calculate depth statistics from. Default is "all".
         """
-        assert hasattr(self, "data"), galfind_logger.critical(
-            f"{self.cat_name} does not have data loaded!"
-        )
+        if not hasattr(self, "data"):
+            raise MissingDataError(
+                f"{self.cat_name} does not have data loaded."
+            )
         self.load_depths(aper_diam, mode)
-        assert all(
-            [hasattr(band_data, "med_depth") for band_data in self.data]
-        )
-        assert all(
-            [
-                aper_diam in band_data.med_depth.keys()
-                for band_data in self.data
-            ]
-        )
-        assert all(
-            [
-                depth_region in band_data.med_depth[aper_diam].keys()
-                for band_data in self.data
-            ]
-        )
+        if not all(hasattr(band_data, "med_depth") for band_data in self.data):
+            raise MissingDataError(
+                "Not every band in self.data has a 'med_depth' attribute; "
+                "median depths must be computed first."
+            )
+        if not all(
+            aper_diam in band_data.med_depth.keys() for band_data in self.data
+        ):
+            raise MissingDataError(
+                f"aper_diam={aper_diam!r} not present in med_depth for "
+                "at least one band in self.data."
+            )
+        if not all(
+            depth_region in band_data.med_depth[aper_diam].keys()
+            for band_data in self.data
+        ):
+            raise MissingDataError(
+                f"depth_region={depth_region!r} not present in "
+                f"med_depth[{aper_diam!r}] for at least one band in "
+                "self.data."
+            )
         depths = (
             np.array(
                 [

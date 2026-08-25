@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from galfind.utils import utils
+from galfind.utils.exceptions import InvalidOptionError
 
 
 def test_get_data_dir_default_pix_scale():
@@ -32,7 +33,7 @@ def test_get_data_dir_version_to_dir_dict():
 
 
 def test_get_data_dir_unrecognised_version_raises():
-    with pytest.raises(AssertionError):
+    with pytest.raises(InvalidOptionError):
         utils.get_data_dir(
             "/data",
             "MySurvey",
@@ -43,7 +44,7 @@ def test_get_data_dir_unrecognised_version_raises():
 
 
 def test_get_data_dir_unrecognised_instrument_raises():
-    with pytest.raises(AssertionError):
+    with pytest.raises(InvalidOptionError):
         utils.get_data_dir("/data", "MySurvey", "v1", ["BogusInstrument"])
 
 

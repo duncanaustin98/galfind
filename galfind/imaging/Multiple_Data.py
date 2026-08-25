@@ -6,6 +6,8 @@ instrument names, and excluded bands.
 
 import numpy as np
 
+from ..utils.exceptions import GalfindTypeError, LengthMismatchError
+
 
 class Multiple_Data:
     """Container for a collection of ``Data`` objects spanning
@@ -68,14 +70,22 @@ class Multiple_Data:
 
         Raises
         ------
-        Exception
+        GalfindTypeError
             If ``instrument_names_arr`` or ``excl_bands_arr`` is not a
             `str`, `list` or `numpy.ndarray`, or if their nested elements
             are not `str`, `list` or `numpy.ndarray`.
+        LengthMismatchError
+            If ``versions``, ``instrument_names_arr`` or
+            ``excl_bands_arr`` (after normalization) does not have one
+            entry per survey.
         """
         if isinstance(versions, str):
             versions = [versions for i in range(len(surveys))]
-        assert len(versions) == len(surveys)
+        if len(versions) != len(surveys):
+            raise LengthMismatchError(
+                f"len(versions)={len(versions)} != "
+                f"len(surveys)={len(surveys)}."
+            )
 
         if isinstance(instrument_names_arr, str):
             instrument_names_arr = [
@@ -90,10 +100,22 @@ class Multiple_Data:
                 # already formatted correctly
                 pass
             else:
-                raise (Exception())
+                raise GalfindTypeError(
+                    "instrument_names_arr nested elements have type="
+                    f"{type(instrument_names_arr[0]).__name__}; must be "
+                    "'str', 'list' or 'numpy.ndarray'."
+                )
         else:
-            raise (Exception())
-        assert len(instrument_names_arr) == len(surveys)
+            raise GalfindTypeError(
+                "instrument_names_arr has type="
+                f"{type(instrument_names_arr).__name__}; must be 'str', "
+                "'list' or 'numpy.ndarray'."
+            )
+        if len(instrument_names_arr) != len(surveys):
+            raise LengthMismatchError(
+                f"len(instrument_names_arr)={len(instrument_names_arr)} "
+                f"!= len(surveys)={len(surveys)}."
+            )
 
         if isinstance(excl_bands_arr, str):
             excl_bands_arr = [[excl_bands_arr] for i in range(len(surveys))]
@@ -104,10 +126,22 @@ class Multiple_Data:
                 # already formatted correctly
                 pass
             else:
-                raise (Exception())
+                raise GalfindTypeError(
+                    "excl_bands_arr nested elements have type="
+                    f"{type(excl_bands_arr[0]).__name__}; must be 'str', "
+                    "'list' or 'numpy.ndarray'."
+                )
         else:
-            raise (Exception())
-        assert len(excl_bands_arr) == len(surveys)
+            raise GalfindTypeError(
+                "excl_bands_arr has type="
+                f"{type(excl_bands_arr).__name__}; must be 'str', 'list' "
+                "or 'numpy.ndarray'."
+            )
+        if len(excl_bands_arr) != len(surveys):
+            raise LengthMismatchError(
+                f"len(excl_bands_arr)={len(excl_bands_arr)} != "
+                f"len(surveys)={len(surveys)}."
+            )
 
         print(versions, excl_bands_arr)
         data_arr = []

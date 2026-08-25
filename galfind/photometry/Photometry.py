@@ -30,6 +30,14 @@ except ImportError:
 from .. import galfind_logger
 from ..imaging.Filter import Filter, Multiple_Filter
 from ..utils import useful_funcs_austind as funcs
+from ..utils.exceptions import (
+    GalfindTypeError,
+    IncompatibleKwargsError,
+    InvalidUnitError,
+    LengthMismatchError,
+    MissingKeyError,
+    RangeError,
+)
 
 
 class Photometry:
@@ -71,11 +79,14 @@ class Photometry:
 
     Raises
     ------
-    AssertionError
+    MissingKeyError
         If `depths` is a `dict` missing one of the filter names in
-        `filterset`, if `depths` is not in ABmag units, or if `flux`,
-        `flux_errs` and `depths` do not all have the same length as
-        `filterset` (where not `None`).
+        `filterset`.
+    InvalidUnitError
+        If `depths` is not in ABmag units.
+    LengthMismatchError
+        If `flux`, `flux_errs` and `depths` do not all have the same
+        length as `filterset` (where not `None`).
     """
 
     def __init__(
@@ -89,34 +100,41 @@ class Photometry:
         self.flux = flux
         self.flux_errs = flux_errs
         if isinstance(depths, dict):
-            assert all(
+            if not all(
                 filt_name in depths.keys()
                 for filt_name in filterset.filt_names
-            ), galfind_logger.critical(
-                f"not all {filterset.filt_names} in {depths.keys()=}"
-            )
+            ):
+                raise MissingKeyError(
+                    f"depths dict missing keys={depths.keys()!r}; "
+                    f"expected an entry for every filter in "
+                    f"filterset.filt_names={filterset.filt_names!r}."
+                )
 
             depths = [depths[filt.filt_name] for filt in filterset]
-            assert all(
-                depth.unit == u.ABmag for depth in depths
-            ), galfind_logger.critical(
-                f"not all depths are in ABmag: {depths=}"
-            )
+            if not all(depth.unit == u.ABmag for depth in depths):
+                raise InvalidUnitError(
+                    f"depths={depths!r} has entries not in ABmag "
+                    "units; all depths must be in ABmag."
+                )
             depths = np.array([depth.value for depth in depths]) * u.ABmag
 
         self.depths = depths
         if self.depths is not None:
-            assert self.depths.unit == u.ABmag, galfind_logger.critical(
-                f"{depths.unit=} != 'ABmag'"
-            )
-        assert all(
+            if self.depths.unit != u.ABmag:
+                raise InvalidUnitError(
+                    f"depths.unit={self.depths.unit!s} != 'ABmag'; "
+                    "depths must be in ABmag units."
+                )
+        if not all(
             len(self.filterset) == len(getattr(self, name))
             for name in ["flux", "flux_errs", "depths"]
             if getattr(self, name) is not None
-        ), galfind_logger.critical(
-            "Not all ['flux', 'flux_errs', 'depths'] are "
-            f"{len(self.filterset)=} or None!"
-        )
+        ):
+            raise LengthMismatchError(
+                "Not all of ['flux', 'flux_errs', 'depths'] have "
+                f"length matching len(filterset)={len(self.filterset)} "
+                "(or are None)."
+            )
 
     def __repr__(self) -> str:
         """Return the official string representation of the Photometry
@@ -160,9 +178,10 @@ class Photometry:
                 )
             )
         else:
-            raise TypeError(
-                f"{i=} in {__class__.__name__}.__getitem__ has invalid "
-                f"{type(i)=}"
+            raise GalfindTypeError(
+                f"i={i!r} in {__class__.__name__}.__getitem__ has "
+                f"invalid type {type(i).__name__}; must be one of "
+                "int, np.ndarray, slice, list, str."
             )
         copy = deepcopy(self)
         copy.filterset = copy.filterset[indices]
@@ -468,16 +487,20 @@ class Photometry:
 
         Raises
         ------
-        AssertionError
+        IncompatibleKwargsError
             If `log_scale` is `True` and `mag_units` is
-            `astropy.units.ABmag`, or if the fixed upper-limit arrow
-            size (in sigma) is not smaller than `uplim_sigma`.
+            `astropy.units.ABmag`.
+        RangeError
+            If the fixed upper-limit arrow size (in sigma) is not
+            smaller than `uplim_sigma`.
         """
         # breakpoint()
         if log_scale:
-            assert mag_units != u.ABmag, galfind_logger.critical(
-                f"Cannot log scale {mag_units=} == 'ABmag'"
-            )
+            if mag_units == u.ABmag:
+                raise IncompatibleKwargsError(
+                    f"Cannot log_scale=True with mag_units={mag_units!r} "
+                    "== 'ABmag'."
+                )
         # if not isinstance(self.flux.value, Masked):
         #     breakpoint()
         wavs_to_plot = funcs.convert_wav_units(self.wav, wav_units).value
@@ -511,10 +534,11 @@ class Photometry:
                     "ABmag/spectral flux density": 1.5,
                     "spectral flux density": 1.5,
                 }[str(u.get_physical_type(mag_units))]
-            assert uplim_sigma_arrow < uplim_sigma, galfind_logger.critical(
-                f"uplim_sigma_arrow = {uplim_sigma_arrow} < uplim_sigma = "
-                f"{uplim_sigma}"
-            )
+            if not uplim_sigma_arrow < uplim_sigma:
+                raise RangeError(
+                    f"uplim_sigma_arrow={uplim_sigma_arrow} must be "
+                    f"< uplim_sigma={uplim_sigma}."
+                )
             # calculate upper limits based on depths
             galfind_logger.warning(
                 f"This will not work if {self.__class__.__name__ =} != "
@@ -714,12 +738,14 @@ class Photometry:
 
         Raises
         ------
-        AssertionError
+        InvalidUnitError
             If `flux` is in ABmag units.
         """
-        assert self.flux.unit != u.ABmag, galfind_logger.critical(
-            f"{self.flux.unit=} == 'ABmag'"
-        )
+        if self.flux.unit == u.ABmag:
+            raise InvalidUnitError(
+                f"flux.unit={self.flux.unit!s} == 'ABmag'; "
+                "scatter_fluxes requires flux in a non-ABmag unit."
+            )
         galfind_logger.debug("Finished assertion")
         scattered_fluxes = (
             np.array(
@@ -786,9 +812,11 @@ class Photometry:
         # calculate 1σ depths and convert to Jy
         one_sig_depths_Jy = self.depths.to(u.Jy) / 5
 
-        assert min_flux_pc_err >= 0.0, galfind_logger.critical(
-            f"Negative {min_flux_pc_err=}<0"
-        )
+        if min_flux_pc_err < 0.0:
+            raise RangeError(
+                f"min_flux_pc_err={min_flux_pc_err} < 0.0; must be "
+                "non-negative."
+            )
         # apply min_flux_pc_err criteria
         # TODO: Retain the flux mask in flux errors if there is one
         self.flux_errs = (
@@ -902,7 +930,7 @@ class Mock_Photometry(Photometry):
 
     Raises
     ------
-    AssertionError
+    LengthMismatchError
         If `flux` and `depths` do not have the same length.
     """
 
@@ -913,7 +941,11 @@ class Mock_Photometry(Photometry):
         depths: Union[List[float], NDArray[float], u.Magnitude],
         min_flux_pc_err: Optional[float],
     ):  # these depths should be 5σ and in units of ABmag
-        assert len(flux) == len(depths)
+        if len(flux) != len(depths):
+            raise LengthMismatchError(
+                f"len(flux)={len(flux)} != len(depths)={len(depths)}; "
+                "flux and depths must have the same length."
+            )
         # add astropy units of ABmag if depths are not already
         try:
             assert depths.unit == u.ABmag

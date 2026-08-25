@@ -48,6 +48,13 @@ except ImportError:
 
 from .. import config, galfind_logger
 from ..utils import useful_funcs_austind as funcs
+from ..utils.exceptions import (
+    GalfindTypeError,
+    InvalidOptionError,
+    LengthMismatchError,
+    MissingKeyError,
+    RangeError,
+)
 
 fwhm_nircam = {
     "F090W": 33.0 * u.marcsec,
@@ -356,6 +363,12 @@ class Galfit_Result(Morphology_Result):
             Whether to save the figure. Default is `True`.
         show : `bool`, optional
             Whether to display the figure. Default is `False`.
+
+        Raises
+        ------
+        MissingKeyError
+            If a name in `annotate_properties` is not a key of
+            `self.properties`.
         """
         if fig is None:
             fig, axs = plt.subplots(1, 3, figsize=(10, 4))
@@ -536,9 +549,13 @@ class Galfit_Result(Morphology_Result):
         x0, y0, dy = 0.05, 0.95, -0.05
         for name in annotate_properties:
             name = name.lower()
-            assert name in self.properties.keys(), galfind_logger.error(
-                f"{name=} not in {self.properties.keys()=}"
-            )
+            if name not in self.properties.keys():
+                raise MissingKeyError(
+                    f"annotate_properties name={name!r} not found in "
+                    f"self.properties.keys()="
+                    f"{list(self.properties.keys())!r} for "
+                    f"{type(self).__name__}."
+                )
             val = self.properties[name].value
             if name in self.property_errs.keys():
                 err = self.property_errs[name][0].value
@@ -594,12 +611,18 @@ class Morphology_Fitter(ABC):
     ) -> None:
         self.psf = psf
         self.model = model.lower()
-        assert all(
-            model_ in self._available_models
+        invalid_models = [
+            model_
             for model_ in self.model.split("+")
-        ), galfind_logger.critical(
-            f"Not all {self.model.split('+')} in {self._available_models=}"
-        )
+            if model_ not in self._available_models
+        ]
+        if invalid_models:
+            raise InvalidOptionError(
+                f"model={model!r} contains invalid component(s) "
+                f"{invalid_models!r} for {type(self).__name__}; each "
+                f"'+'-separated component must be one of "
+                f"{self._available_models!r}."
+            )
 
     @property
     def name(self: Self) -> str:
@@ -638,7 +661,11 @@ class Morphology_Fitter(ABC):
             raise NotImplementedError(err_message)
             # result = self._fit_gal(object, *args, **kwargs)
         else:
-            raise TypeError(f"{type(object)=} invalid!")
+            raise GalfindTypeError(
+                f"object={object!r} has type {type(object).__name__}; "
+                f"{type(self).__name__}.__call__() expects a "
+                "Catalogue_Base subclass or Galaxy instance."
+            )
         return result
 
     @abstractmethod
@@ -984,62 +1011,74 @@ class Galfit_Fitter(Morphology_Fitter):
                 continue
             if constraints is not None:
                 for model, params in constraints.items():
-                    assert (
-                        model in self._available_models
-                    ), galfind_logger.critical(
-                        f"{model=} not in {self._available_models=}"
-                    )
+                    if model not in self._available_models:
+                        raise InvalidOptionError(
+                            f"model={model!r} in {name} constraints is not "
+                            f"valid for {type(self).__name__}; must be one "
+                            f"of {self._available_models!r}."
+                        )
                     self.fixed_params[model] = {}
                     for param_key, param_val in params.items():
-                        assert (
-                            param_key in self.property_units.keys()
-                            or param_key in ["x", "y"]
-                        ), galfind_logger.critical(
-                            f"{param_key=} not in "
-                            f"{self.property_units.keys()=} or "
-                            "['x', 'y']!"
-                        )
+                        if (
+                            param_key not in self.property_units.keys()
+                            and param_key not in ["x", "y"]
+                        ):
+                            raise InvalidOptionError(
+                                f"param_key={param_key!r} in {model} "
+                                f"{name} constraints is not valid; must "
+                                f"be one of "
+                                f"{list(self.property_units.keys())!r} "
+                                "or ['x', 'y']."
+                            )
                         if isinstance(param_val, list):
-                            assert (
-                                len(param_val) == 2
-                            ), galfind_logger.critical(
-                                f"{param_key} constraints must be "
-                                f"a list of length 2! Got "
-                                f"{param_val=}"
-                            )
-                            assert (
-                                param_val[0] < param_val[1]
-                            ), galfind_logger.critical(
-                                f"{param_key} constraints must be "
-                                "in the form [lower, upper] with "
-                                f"lower < upper! Got {param_val=}"
-                            )
+                            if len(param_val) != 2:
+                                raise LengthMismatchError(
+                                    f"{param_key} constraint in {model} "
+                                    f"{name} constraints must be a list "
+                                    f"of length 2; got param_val="
+                                    f"{param_val!r} with length "
+                                    f"{len(param_val)}."
+                                )
+                            if not param_val[0] < param_val[1]:
+                                raise RangeError(
+                                    f"{param_key} constraint in {model} "
+                                    f"{name} constraints must be in the "
+                                    "form [lower, upper] with lower < "
+                                    f"upper; got param_val={param_val!r}."
+                                )
                         elif isinstance(param_val, (int, float)):
                             self.fixed_params[model][param_key] = param_val
                         else:
-                            err_message = (
+                            raise GalfindTypeError(
                                 f"Invalid constraint value for "
                                 f"{param_key} in {model} {name} "
-                                "constraints! "
-                                + "Must be either a list of length 2 "
-                                f"or a single int/float. Got "
-                                f"{param_val=}"
+                                "constraints; must be either a list of "
+                                f"length 2 or a single int/float. Got "
+                                f"param_val={param_val!r} with type "
+                                f"{type(param_val).__name__}."
                             )
-                            galfind_logger.critical(err_message)
-                            raise TypeError(err_message)
 
     def _assert_fid_params(self: Self) -> None:
         for model, params in self.fid_params.items():
-            assert model in self._available_models, galfind_logger.critical(
-                f"{model=} not in {self._available_models=}"
-            )
-            if model == "sersic":
-                assert all(
-                    param in params.keys() for param in ["n", "axr", "pa"]
-                ), galfind_logger.critical(
-                    "Fiducial parameters for sersic model must include "
-                    + f"'n', 'axr', and 'pa'! Got {params.keys()=}"
+            if model not in self._available_models:
+                raise InvalidOptionError(
+                    f"model={model!r} in fid_params is not valid for "
+                    f"{type(self).__name__}; must be one of "
+                    f"{self._available_models!r}."
                 )
+            if model == "sersic":
+                missing_keys = [
+                    param
+                    for param in ["n", "axr", "pa"]
+                    if param not in params.keys()
+                ]
+                if missing_keys:
+                    raise MissingKeyError(
+                        f"fid_params['sersic'] is missing required "
+                        f"key(s) {missing_keys!r}; must include 'n', "
+                        f"'axr', and 'pa'. Got params.keys()="
+                        f"{list(params.keys())!r}."
+                    )
         # update fiducial parameters with fixed values if applicable
         for model, fixed_params in self.fixed_params.items():
             for param_key, param_val in fixed_params.items():
@@ -1539,10 +1578,23 @@ class Galfit_Fitter(Morphology_Fitter):
         fid_re_pix: float,
     ) -> List[str]:
         params = ["mag", "r_e", "n", "axr", "pa"]
+        # NOTE: fixed_params["sersic"] may legitimately contain "x"/"y"
+        # keys (position, fixed via `primary_constraints`) even though
+        # this method only handles the sersic *shape* parameters listed
+        # above -- position is written separately via `xy_pos`. So a key
+        # here that isn't in `params` is not necessarily invalid input;
+        # it was already validated against the real allow-list
+        # (`property_units.keys()` or `["x", "y"]`) when
+        # `primary_constraints`/`neighbour_constraints` were parsed in
+        # `__init__`. Left as a diagnostic log rather than a raise to
+        # avoid rejecting legitimate fixed "x"/"y" constraints here.
         if any(
             param not in params for param in self.fixed_params["sersic"].keys()
         ):
-            galfind_logger.critical(f">=1 fixed parameter not in {params=}")
+            galfind_logger.debug(
+                f"fixed_params['sersic'] contains keys outside "
+                f"{params} (e.g. 'x'/'y', handled via xy_pos, not here)."
+            )
         fixed_params_ = {}
         for name in params:
             if name in self.fixed_params["sersic"].keys():
@@ -1762,18 +1814,20 @@ class Galfit_Fitter(Morphology_Fitter):
             out_property_errs = np.full(len(property_names), np.nan)
             chi_sq = np.nan
             Ndof = np.nan
-        assert len(out_properties) == len(
-            property_names
-        ), galfind_logger.critical(
-            f"{len(out_properties)=}!={len(property_names)=}; "
-            + f"{out_properties=}, {property_names=}"
-        )
-        assert len(out_property_errs) == len(
-            property_names
-        ), galfind_logger.critical(
-            f"{len(out_property_errs)=}!={len(property_names)=}; "
-            + f"{out_property_errs=}, {property_names=}"
-        )
+        if len(out_properties) != len(property_names):
+            raise LengthMismatchError(
+                f"len(out_properties)={len(out_properties)} != "
+                f"len(property_names)={len(property_names)}; "
+                f"out_properties={out_properties!r}, "
+                f"property_names={property_names!r}."
+            )
+        if len(out_property_errs) != len(property_names):
+            raise LengthMismatchError(
+                f"len(out_property_errs)={len(out_property_errs)} != "
+                f"len(property_names)={len(property_names)}; "
+                f"out_property_errs={out_property_errs!r}, "
+                f"property_names={property_names!r}."
+            )
         return property_names, out_properties, out_property_errs, chi_sq, Ndof
 
     def _extract_sersic_results(
@@ -1839,18 +1893,20 @@ class Galfit_Fitter(Morphology_Fitter):
             out_property_errs = np.full(len(property_names), np.nan)
             chi_sq = np.nan
             Ndof = np.nan
-        assert len(out_properties) == len(
-            property_names
-        ), galfind_logger.critical(
-            f"{len(out_properties)=}!={len(property_names)=}; "
-            + f"{out_properties=}, {property_names=}"
-        )
-        assert len(out_property_errs) == len(
-            property_names
-        ), galfind_logger.critical(
-            f"{len(out_property_errs)=}!={len(property_names)=}; "
-            + f"{out_property_errs=}, {property_names=}"
-        )
+        if len(out_properties) != len(property_names):
+            raise LengthMismatchError(
+                f"len(out_properties)={len(out_properties)} != "
+                f"len(property_names)={len(property_names)}; "
+                f"out_properties={out_properties!r}, "
+                f"property_names={property_names!r}."
+            )
+        if len(out_property_errs) != len(property_names):
+            raise LengthMismatchError(
+                f"len(out_property_errs)={len(out_property_errs)} != "
+                f"len(property_names)={len(property_names)}; "
+                f"out_property_errs={out_property_errs!r}, "
+                f"property_names={property_names!r}."
+            )
         return property_names, out_properties, out_property_errs, chi_sq, Ndof
 
     def _calc_RFF(

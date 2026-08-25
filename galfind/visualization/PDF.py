@@ -22,6 +22,14 @@ except ImportError:
 
 from .. import galfind_logger
 from ..utils import useful_funcs_austind as funcs
+from ..utils.exceptions import (
+    GalfindError,
+    GalfindTypeError,
+    InvalidOptionError,
+    LengthMismatchError,
+    MissingDataError,
+    RangeError,
+)
 
 
 class PDF:
@@ -81,8 +89,10 @@ class PDF:
         normed: bool = False,
     ):
         if not isinstance(x, tuple([u.Quantity, u.Magnitude, u.Dex])):
-            breakpoint()
-        # assert type(x) in [u.Quantity, u.Magnitude, u.Dex]
+            raise GalfindTypeError(
+                f"x={x!r} has type {type(x).__name__}; must be one of "
+                "u.Quantity, u.Magnitude, u.Dex."
+            )
         self.property_name = property_name
         self.x = x
         self.kwargs = kwargs
@@ -146,14 +156,16 @@ class PDF:
             new_kwargs = {**self.kwargs, **add_kwargs}
         else:  # PDF
             # for extending length of PDF
-            assert isinstance(self, type(other)), galfind_logger.critical(
-                f"{type(self)=}!={type(other)=}"
-            )
-            assert (
-                self.property_name == other.property_name
-            ), galfind_logger.critical(
-                f"{self.property_name=}!={other.property_name=}"
-            )
+            if not isinstance(self, type(other)):
+                raise GalfindTypeError(
+                    f"type(self)={type(self)!r} != type(other)="
+                    f"{type(other)!r}."
+                )
+            if self.property_name != other.property_name:
+                raise LengthMismatchError(
+                    f"self.property_name={self.property_name!r} != "
+                    f"other.property_name={other.property_name!r}."
+                )
             # update kwargs
             new_kwargs = {**self.kwargs, **other.kwargs, **add_kwargs}
             if hasattr(self, "input_arr"):
@@ -169,9 +181,11 @@ class PDF:
         if name_ext is None:
             new_property_name = self.property_name
         else:  # type(name_ext) == str
-            assert isinstance(name_ext, str), galfind_logger.critical(
-                f"{name_ext=} with {type(name_ext)=} not in [str]!"
-            )
+            if not isinstance(name_ext, str):
+                raise GalfindTypeError(
+                    f"name_ext={name_ext!r} has type "
+                    f"{type(name_ext).__name__}; must be str."
+                )
             if name_ext[0] != "_":
                 name_ext = f"_{name_ext}"
             new_property_name = f"{self.property_name}{name_ext}"
@@ -192,11 +206,10 @@ class PDF:
                 new_input_arr, self.SED_fit_params, kwargs=new_kwargs
             )
         else:
-            galfind_logger.critical(
-                f"{self.__class__.__name__=} not in "
-                + "[PDF, SED_fit_PDF, Redshift_PDF]!"
+            raise InvalidOptionError(
+                f"self.__class__.__name__={self.__class__.__name__!r} not "
+                "in ['PDF', 'SED_fit_PDF', 'Redshift_PDF']."
             )
-            breakpoint()
         # if chosen to save and it has a different name, save the PDF
         if (
             save
@@ -233,9 +246,11 @@ class PDF:
         if name_ext is None:
             new_property_name = self.property_name
         else:  # type(name_ext) == str
-            assert isinstance(name_ext, str), galfind_logger.critical(
-                f"{name_ext=} with {type(name_ext)=} not in [str]!"
-            )
+            if not isinstance(name_ext, str):
+                raise GalfindTypeError(
+                    f"name_ext={name_ext!r} has type "
+                    f"{type(name_ext).__name__}; must be str."
+                )
             if name_ext[0] != "_":
                 name_ext = f"_{name_ext}"
             new_property_name = f"{self.property_name}{name_ext}"
@@ -256,11 +271,10 @@ class PDF:
                 new_input_arr, self.SED_fit_params, kwargs=new_kwargs
             )
         else:
-            galfind_logger.critical(
-                f"{self.__class__.__name__=} not in "
-                + "[PDF, SED_fit_PDF, Redshift_PDF]!"
+            raise InvalidOptionError(
+                f"self.__class__.__name__={self.__class__.__name__!r} not "
+                "in ['PDF', 'SED_fit_PDF', 'Redshift_PDF']."
             )
-            breakpoint()
         # if chosen to save and it has a different name, save the PDF
         if (
             save
@@ -366,30 +380,38 @@ class PDF:
 
         Raises
         ------
-        AssertionError
+        GalfindTypeError
             If `arr` is not a `astropy.units.Quantity`,
-            `astropy.units.Magnitude`, or `astropy.units.Dex`, or if
-            no finite values remain after NaN-filtering.
+            `astropy.units.Magnitude`, or `astropy.units.Dex`.
+        RangeError
+            If no finite values remain after NaN-filtering.
+        GalfindError
+            If `numpy.histogram` fails on the (NaN-filtered) array.
         """
-        assert isinstance(
-            arr, (u.Quantity, u.Magnitude, u.Dex)
-        ), galfind_logger.critical(
-            f"{property_name=} 1D {arr=} with {type(arr)=}"
-            + " not in [u.Quantity, u.Magnitude, u.Dex]"
-        )
+        if not isinstance(arr, (u.Quantity, u.Magnitude, u.Dex)):
+            raise GalfindTypeError(
+                f"property_name={property_name!r} 1D arr={arr!r} has type "
+                f"{type(arr).__name__}; must be one of u.Quantity, "
+                "u.Magnitude, u.Dex."
+            )
         if ignore_nans:
             arr_ = arr[np.isfinite(arr)]
         else:
             arr_ = arr
-        assert len(arr_) > 0, galfind_logger.critical(
-            f"{property_name=} 1D {arr_=} with {len(arr_)=} == 0"
-        )
+        if len(arr_) == 0:
+            raise RangeError(
+                f"property_name={property_name!r} 1D arr_ has "
+                f"len(arr_)={len(arr_)} == 0 after NaN-filtering."
+            )
         try:
             p_x, x_bin_edges = np.histogram(
                 arr_.value.astype(np.float64), bins=Nbins, density=True
             )
-        except Exception:
-            breakpoint()
+        except Exception as e:
+            raise GalfindError(
+                f"np.histogram failed for property_name={property_name!r} "
+                f"arr_={arr_!r}: {e}"
+            ) from e
         x = 0.5 * (x_bin_edges[1:] + x_bin_edges[:-1]) * arr_.unit
         PDF_obj = cls(property_name, x, p_x, kwargs, normed)
         if len(arr.shape) != 1:
@@ -577,12 +599,14 @@ class PDF:
 
         Raises
         ------
-        AssertionError
+        GalfindTypeError
             If `percentile` is not a `float`.
         """
-        assert isinstance(percentile, float), galfind_logger.critical(
-            f"{percentile=} with {type(percentile)=} != float"
-        )
+        if not isinstance(percentile, float):
+            raise GalfindTypeError(
+                f"percentile={percentile!r} has type "
+                f"{type(percentile).__name__}; must be float."
+            )
         try:
             perc = self.percentiles[f"{percentile:.1f}"]
         except (AttributeError, KeyError) as e:
@@ -650,7 +674,7 @@ class PDF:
 
         Raises
         ------
-        AssertionError
+        LengthMismatchError
             If the drawn/taken sample does not have length `size`.
         """
         if hasattr(self, "input_arr"):
@@ -658,9 +682,11 @@ class PDF:
             sample = self.input_arr[-size:]
         else:
             sample = self.draw_sample(size)
-        assert (
-            len(sample) == size
-        )  # ensures size > len(sample) throws an error
+        if len(sample) != size:
+            # ensures size > len(sample) raises an error
+            raise LengthMismatchError(
+                f"len(sample)={len(sample)} != size={size}."
+            )
         updated_sample = update_func(
             sample, **kwargs
         )  # [update_func(val, **kwargs) for val in sample]
@@ -1069,16 +1095,22 @@ class SED_fit_PDF(PDF):
 
         Raises
         ------
-        AssertionError
-            If `nth_peak` is not an `int`, or is not `0`.
+        GalfindTypeError
+            If `nth_peak` is not an `int`.
+        InvalidOptionError
+            If `nth_peak` is not `0`.
         """
-        assert isinstance(nth_peak, int), galfind_logger.critical(
-            f"nth_peak with type = {type(nth_peak)} must be of type 'int'"
-        )
-        assert nth_peak == 0, galfind_logger.critical(
-            "SED_fit_PDF.load_peaks_from_SED_result only loads the "
-            + f"0th peak, not the {funcs.ordinal(nth_peak)}"
-        )
+        if not isinstance(nth_peak, int):
+            raise GalfindTypeError(
+                f"nth_peak={nth_peak!r} has type "
+                f"{type(nth_peak).__name__}; must be int."
+            )
+        if nth_peak != 0:
+            raise InvalidOptionError(
+                "SED_fit_PDF.load_peaks_from_SED_result only loads the "
+                f"0th peak, not the {funcs.ordinal(nth_peak)} "
+                f"(nth_peak={nth_peak!r})."
+            )
         # TODO: Implement _dicts_equal from funcs
         # if isinstance(self.SED_fit_params, dict):
         #     # ensure all keys in self.SED_fit_params are in
@@ -1264,9 +1296,9 @@ class Redshift_PDF(SED_fit_PDF):
         elif isinstance(zbest, (int, float)):  # correct format
             pass
         else:
-            galfind_logger.critical(
-                f"zbest = {zbest} with type = {type(zbest)} is "
-                + "not in [int, float, None]!"
+            raise GalfindTypeError(
+                f"zbest={zbest!r} has type {type(zbest).__name__}; must "
+                "be int, float, or None."
             )
         # calculate redshift limits
         lower_z_lim = np.clip(zbest * (1 - delta_z_over_z), z_min, z_max)
@@ -1299,16 +1331,22 @@ class PDF_nD:
     def __init__(self, ordered_PDFs):
         # ensure all PDFs have input arr of values, all of which
         # are the same length
-        try:
-            assert all(
-                hasattr(PDF_obj, "input_arr") for PDF_obj in ordered_PDFs
+        if not all(hasattr(PDF_obj, "input_arr") for PDF_obj in ordered_PDFs):
+            raise MissingDataError(
+                "All PDF objects in ordered_PDFs must have an input_arr "
+                "attribute set (e.g. via draw_sample/from_1D_arr) before "
+                "constructing a PDF_nD."
             )
-        except Exception:
-            breakpoint()
-        assert all(
+        if not all(
             len(PDF_obj.input_arr) == len(ordered_PDFs[0].input_arr)
             for PDF_obj in ordered_PDFs
-        )
+        ):
+            raise LengthMismatchError(
+                "All PDF objects in ordered_PDFs must have input_arr of "
+                "the same length as "
+                f"len(ordered_PDFs[0].input_arr)="
+                f"{len(ordered_PDFs[0].input_arr)}."
+            )
         self.dimensions = len(ordered_PDFs)
         self.PDFs = ordered_PDFs
 
@@ -1331,10 +1369,15 @@ class PDF_nD:
 
         Raises
         ------
-        AssertionError
+        LengthMismatchError
             If `len(property_names)` does not match `matrix.shape[0]`.
         """
-        assert len(property_names) == matrix.shape[0]  # 0 or 1 here, not sure
+        # 0 or 1 here, not sure
+        if len(property_names) != matrix.shape[0]:
+            raise LengthMismatchError(
+                f"len(property_names)={len(property_names)} != "
+                f"matrix.shape[0]={matrix.shape[0]}."
+            )
         ordered_PDFs = [
             PDF.from_1D_arr(property_name, row)
             for property_name, row in zip(property_names, matrix)
@@ -1356,16 +1399,26 @@ class PDF_nD:
                 ).T
             ]
         )
-        assert chains.shape == (len(self), len(independent_var))
+        expected_shape = (len(self), len(independent_var))
+        if chains.shape != expected_shape:
+            raise LengthMismatchError(
+                f"chains.shape={chains.shape} != expected_shape="
+                f"{expected_shape}."
+            )
         if size is None:
             pass
         elif isinstance(size, int):
             chains = chains[-size:]
         else:
-            galfind_logger.critical(
-                f"{type(size)=} not in [None, int, np.int]!"
+            raise GalfindTypeError(
+                f"size={size!r} has type {type(size).__name__}; must be "
+                "None or int."
             )
-        assert output_type in ["chains", "percentiles"]
+        allowed_output_types = ["chains", "percentiles"]
+        if output_type not in allowed_output_types:
+            raise InvalidOptionError(
+                f"output_type={output_type!r} not in {allowed_output_types}."
+            )
         if output_type == "chains":
             return chains
         elif output_type == "percentiles":

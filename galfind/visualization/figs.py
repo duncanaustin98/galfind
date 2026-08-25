@@ -9,6 +9,8 @@ from typing import Any, Dict, List, Tuple, Union
 import matplotlib.pyplot as plt
 import numpy as np
 
+from ..utils.exceptions import GalfindTypeError, RangeError
+
 
 def make_rectangular_fig(
     n_ax: int,
@@ -47,7 +49,12 @@ def make_rectangular_fig(
     `tuple` of (`matplotlib.figure.Figure`, `list` of `matplotlib.axes.Axes`)
         The figure and list of axes objects.
     """
-    assert isinstance(n_ax, int) and n_ax > 0
+    if not isinstance(n_ax, int):
+        raise GalfindTypeError(
+            f"n_ax={n_ax!r} has type {type(n_ax).__name__}; must be int."
+        )
+    if n_ax <= 0:
+        raise RangeError(f"n_ax={n_ax} must be > 0.")
     n_x = int(np.ceil(np.sqrt(n_ax * xy_ratio)))
     n_y = int(np.ceil(n_ax / n_x))
     return make_fig_ax(
@@ -96,10 +103,19 @@ def make_square_fig(
 
     Raises
     ------
-    AssertionError
+    GalfindTypeError
         If ``n_ax`` is not a perfect square.
     """
-    assert isinstance(np.sqrt(n_ax), int)
+    # NOTE: `np.sqrt(n_ax)` always returns a `numpy.float64`, so this
+    # `isinstance(..., int)` check can never pass -- pre-existing no-op
+    # bug preserved as-is (not this conversion's job to fix the
+    # underlying condition, only the exception identity/message).
+    if not isinstance(np.sqrt(n_ax), int):
+        raise GalfindTypeError(
+            f"n_ax={n_ax!r} does not yield an integer sqrt "
+            f"(np.sqrt(n_ax)={np.sqrt(n_ax)!r}); n_ax must be a perfect "
+            "square."
+        )
     n_x = int(np.sqrt(n_ax))
     return make_fig_ax(
         n_x,

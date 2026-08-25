@@ -1,6 +1,38 @@
+import threading
+from copy import deepcopy
+
 import pytest
 
 from galfind.catalogues import Catalogue
+from galfind.sed_fitting.Brown_Dwarf_Fitter import Template_Fitter
+from galfind.sed_fitting.EAZY import EAZY
+from galfind.utils.exceptions import GalfindError, MissingKeyError
+
+SED_FIT_PARAMS = {"templates": "fsps_larson", "lowz_zmax": None}
+
+
+def test_missing_required_sed_fit_param_raises_missing_key_error():
+    with pytest.raises(MissingKeyError, match="templates"):
+        EAZY({"lowz_zmax": None})
+
+
+def test_excl_bands_label_missing_key_raises_missing_key_error():
+    eazy = EAZY({**SED_FIT_PARAMS, "excl_bands": [["F444W"]]})
+    with pytest.raises(MissingKeyError, match="excl_bands_label"):
+        eazy.excl_bands_label
+
+
+def test_deepcopy_failure_raises_galfind_error():
+    eazy = EAZY(SED_FIT_PARAMS)
+    eazy.unpicklable_attr = threading.Lock()
+    with pytest.raises(GalfindError, match="deepcopy"):
+        deepcopy(eazy)
+
+
+def test_template_fitter_missing_required_key_raises_missing_key_error():
+    with pytest.raises(MissingKeyError, match="templates"):
+        Template_Fitter({})
+
 
 # def test_sed_fitter_init(sed_fitter):
 #     assert isinstance(sed_fitter, SED_code)

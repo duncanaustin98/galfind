@@ -37,6 +37,12 @@ except ImportError:
 
 from .. import config, galfind_logger
 from ..utils import useful_funcs_austind as funcs
+from ..utils.exceptions import (
+    IncompatibleKwargsError,
+    InvalidOptionError,
+    LengthMismatchError,
+    MissingKeyError,
+)
 
 
 def get_code() -> str:
@@ -174,13 +180,17 @@ def segment(
 
     Raises
     ------
-    AssertionError
-        If `segment_type` is not in ["bkg", "rms"] or required parameters
-        are missing.
+    InvalidOptionError
+        If `segment_type` is not in ["bkg", "rms"].
+    MissingKeyError
+        If `segment_type="bkg"` and `bkg_kwargs` is missing "box_size" or
+        "thresh_mult".
     """
-    assert segment_type in ["bkg", "rms"], galfind_logger.critical(
-        f"{segment_type=} not in ['bkg', 'rms']"
-    )
+    if segment_type not in ["bkg", "rms"]:
+        raise InvalidOptionError(
+            f"segment_type={segment_type!r} is not valid; must be one of "
+            "['bkg', 'rms']."
+        )
 
     from stwcs.wcsutil import HSTWCS
 
@@ -196,11 +206,14 @@ def segment(
         data, hdr, hdul = self.load_im(return_hdul=True, mode="update")
         if segment_type == "bkg":
             req_bkg_kwargs = ["box_size", "thresh_mult"]
-            assert all(
-                name in bkg_kwargs.keys() for name in req_bkg_kwargs
-            ), galfind_logger.critical(
-                f"One of {req_bkg_kwargs=} not in {bkg_kwargs.keys()=}"
-            )
+            missing_bkg_kwargs = [
+                name for name in req_bkg_kwargs if name not in bkg_kwargs
+            ]
+            if missing_bkg_kwargs:
+                raise MissingKeyError(
+                    f"bkg_kwargs={bkg_kwargs!r} is missing required "
+                    f"key(s) {missing_bkg_kwargs!r}."
+                )
             bkg_kwargs_ = deepcopy(bkg_kwargs)
             box_size = bkg_kwargs_.pop("box_size")
             thresh_mult = bkg_kwargs_.pop("thresh_mult")
@@ -293,14 +306,30 @@ def perform_forced_phot(
     -------
     `NoReturn`
         (Returns forced photometry path via side effect).
+
+    Raises
+    ------
+    IncompatibleKwargsError
+        If `self` and `forced_phot_band` have different `survey`/`version`.
+    LengthMismatchError
+        If the aperture-photometry table doesn't have one row per detected
+        source.
     """
 
     forced_phot_path = get_forced_phot_path(
         self, segment_type, forced_phot_band
     )
     if not Path(forced_phot_path).is_file() or overwrite:
-        assert self.survey == forced_phot_band.survey
-        assert self.version == forced_phot_band.version
+        if self.survey != forced_phot_band.survey:
+            raise IncompatibleKwargsError(
+                f"self.survey={self.survey!r} does not match "
+                f"forced_phot_band.survey={forced_phot_band.survey!r}."
+            )
+        if self.version != forced_phot_band.version:
+            raise IncompatibleKwargsError(
+                f"self.version={self.version!r} does not match "
+                f"forced_phot_band.version={forced_phot_band.version!r}."
+            )
 
         # Load/calculate forced photometry positions
         if hasattr(forced_phot_band, "forced_phot_path"):
@@ -326,7 +355,12 @@ def perform_forced_phot(
         phot_table = aperture_photometry(
             self.load_im()[0], apertures, wcs=self.load_wcs()
         )
-        assert len(phot_table) == len(sky_coords)
+        if len(phot_table) != len(sky_coords):
+            raise LengthMismatchError(
+                f"phot_table has {len(phot_table)} rows but there are "
+                f"{len(sky_coords)} sky_coords; aperture photometry must "
+                "produce one row per source."
+            )
         phot_table.rename_column("id", "NUMBER")
 
         # Add sky coordinates to catalogue

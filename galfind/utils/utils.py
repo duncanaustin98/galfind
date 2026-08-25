@@ -13,6 +13,7 @@ import numpy as np
 from astropy import units as u
 
 from ..utils import useful_funcs_austind as funcs
+from .exceptions import InvalidOptionError
 
 # from .Data import morgan_version_to_dir_dict
 
@@ -60,15 +61,21 @@ def get_data_dir(
             for cls in funcs.all_subclasses(Instrument)
             if cls.__name__ == instrument_name
         ]
-        assert len(instr) == 1, f"Instrument {instrument_name} not recognised"
+        if len(instr) != 1:
+            raise InvalidOptionError(
+                f"instrument_name={instrument_name!r} not recognised; "
+                f"matched {len(instr)} Instrument subclasses."
+            )
         instr = instr[0]()
         facility_name = instr.facility.SVO_name.lower()
         if version_to_dir_dict is None:
             version_ = version
         else:
-            assert (
-                version in version_to_dir_dict
-            ), f"Version {version} not recognised"
+            if version not in version_to_dir_dict:
+                raise InvalidOptionError(
+                    f"version={version!r} not recognised; must be one of "
+                    f"{list(version_to_dir_dict.keys())!r}."
+                )
             version_ = version_to_dir_dict[version]
         out_dirs.append(
             f"{galfind_data_dir}/{facility_name}/{survey}/{instrument_name}/"
@@ -263,7 +270,7 @@ def find_target_dir(galfind_dir, survey, version, instrument_names, keyword):
 
     Raises
     ------
-    ValueError
+    InvalidOptionError
         If `keyword` is not one of the recognised values.
     """
     if keyword == "Data":
@@ -283,7 +290,11 @@ def find_target_dir(galfind_dir, survey, version, instrument_names, keyword):
             galfind_dir, survey, version, instrument_names
         )
     else:
-        raise ValueError(f"Keyword {keyword} not recognised")
+        raise InvalidOptionError(
+            f"keyword={keyword!r} not recognised; must be one of "
+            "'Data', 'Catalogues', 'Depths', 'EAZY', 'Masks', "
+            "'SExtractor', 'Stacked_Images'."
+        )
 
 
 def symlink(

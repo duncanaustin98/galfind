@@ -28,6 +28,14 @@ except ImportError:
 
 from .. import galfind_logger
 from ..utils import useful_funcs_austind as funcs
+from .exceptions import (
+    ExternalToolError,
+    GalfindError,
+    InvalidOptionError,
+    LengthMismatchError,
+    MissingKeyError,
+    RangeError,
+)
 
 
 class Prior(ABC):
@@ -84,14 +92,20 @@ class Prior(ABC):
 
     def __add__(self: Self, other: Union[Type[Self], Type[Priors]]) -> Self:
         if isinstance(other, tuple(Prior.__subclasses__())):
-            assert self.name != other.name, galfind_logger.critical(
-                "Prior names must be unique"
-            )
+            if self.name == other.name:
+                raise GalfindError(
+                    f"Cannot add Prior name={self.name!r} to another "
+                    f"Prior with the same name={other.name!r}; prior "
+                    "names must be unique."
+                )
             prior_arr = [self, other]
         else:
-            assert self.name not in other.names, galfind_logger.critical(
-                "Prior names must be unique"
-            )
+            if self.name in other.names:
+                raise GalfindError(
+                    f"Cannot add Prior name={self.name!r} to Priors "
+                    f"already containing that name (names={other.names!r}); "
+                    "prior names must be unique."
+                )
             prior_arr = [self] + other.prior_arr
         return Priors(prior_arr)
 
@@ -121,6 +135,13 @@ class Flat_Prior(Prior):
         limits of the flat prior.
     fiducial : `float`
         Fiducial/reference value of the parameter.
+
+    Raises
+    ------
+    LengthMismatchError
+        If `prior_lims` does not have exactly two elements.
+    RangeError
+        If `prior_lims[0]` is not less than `prior_lims[1]`.
     """
 
     def __init__(
@@ -129,12 +150,17 @@ class Flat_Prior(Prior):
         prior_lims: List[float],
         fiducial: float,
     ):
-        assert len(prior_lims) == 2, galfind_logger.critical(
-            "Flat priors must have two limits"
-        )
-        assert prior_lims[0] < prior_lims[1], galfind_logger.critical(
-            "Flat prior limits must be in ascending order"
-        )
+        if len(prior_lims) != 2:
+            raise LengthMismatchError(
+                f"prior_lims={prior_lims!r} has length "
+                f"{len(prior_lims)}; Flat_Prior requires exactly two "
+                "limits [lower_lim, upper_lim]."
+            )
+        if not prior_lims[0] < prior_lims[1]:
+            raise RangeError(
+                f"prior_lims={prior_lims!r} must be in ascending order "
+                "(prior_lims[0] < prior_lims[1])."
+            )
         prior_params = {"lower_lim": prior_lims[0], "upper_lim": prior_lims[1]}
         super().__init__(name, prior_params, fiducial)
 
@@ -186,6 +212,14 @@ class Gaussian_Prior(Prior):
         standard deviation of the Gaussian prior.
     fiducial : `float`
         Fiducial/reference value of the parameter.
+
+    Raises
+    ------
+    LengthMismatchError
+        If `prior_lims` does not have exactly two elements.
+    MissingKeyError
+        If `prior_lims` does not contain both ``"mu"`` and ``"sigma"``
+        keys.
     """
 
     def __init__(
@@ -194,14 +228,18 @@ class Gaussian_Prior(Prior):
         prior_lims: Dict[str, float],
         fiducial: float,
     ):
-        assert len(prior_lims) == 2, galfind_logger.critical(
-            "Flat priors must have two limits"
-        )
-        assert all(
-            key in prior_lims.keys() for key in ["mu", "sigma"]
-        ), galfind_logger.critical(
-            f"{prior_lims.keys()=} does not contain 'mu' and 'sigma' keys!"
-        )
+        if len(prior_lims) != 2:
+            raise LengthMismatchError(
+                f"prior_lims={prior_lims!r} has length "
+                f"{len(prior_lims)}; Gaussian_Prior requires exactly "
+                "two parameters ('mu' and 'sigma')."
+            )
+        if not all(key in prior_lims.keys() for key in ["mu", "sigma"]):
+            raise MissingKeyError(
+                f"prior_lims={prior_lims!r} with keys "
+                f"{list(prior_lims.keys())} does not contain the "
+                "required 'mu' and 'sigma' keys."
+            )
         prior_params = prior_lims
         super().__init__(name, prior_params, fiducial)
 
@@ -262,9 +300,12 @@ class Priors:
 
     def __add__(self: Self, other: Union[Self, Type[Prior]]) -> Self:
         if isinstance(other, tuple(Prior.__subclasses__())):
-            assert other.name not in self.names, galfind_logger.critical(
-                "Prior names must be unique"
-            )
+            if other.name in self.names:
+                raise GalfindError(
+                    f"Cannot add Prior name={other.name!r} to Priors "
+                    f"already containing that name (names={self.names!r}); "
+                    "prior names must be unique."
+                )
             self.prior_arr = self.prior_arr + [other]
         else:
             self.prior_arr = self.prior_arr + other.prior_arr
@@ -274,7 +315,10 @@ class Priors:
         for prior in self.prior_arr:
             if prior.name == name:
                 return prior
-        galfind_logger.critical(f"{name=} not found in {self.names=}")
+        raise MissingKeyError(
+            f"name={name!r} not found in this Priors collection "
+            f"(names={self.names!r})."
+        )
 
     def __len__(self: Self) -> int:
         return len(self.prior_arr)
@@ -348,6 +392,13 @@ class Base_MCMC_Fitter(ABC):
         Initial walker positions used to start/resume the sampler.
     fixed_params : `dict` of `str`: `float`
         Parameters that are held fixed (not fit for) at the given values.
+
+    Raises
+    ------
+    ExternalToolError
+        If `backend_filename` points to an existing HDF5 file that cannot
+        be loaded as an `emcee.backends.HDFBackend` compatible with
+        `nwalkers`/`ndim` (e.g. a corrupted or incompatible file).
     """
 
     def __init__(
@@ -383,12 +434,12 @@ class Base_MCMC_Fitter(ABC):
                     print(list(f.keys()))
                     for k in f["mcmc"]:
                         print(k, f["mcmc"][k].shape)
-                err_message = (
-                    f"{e}: Could not load {backend_filename=}! "
+                raise ExternalToolError(
+                    f"Could not load backend_filename={backend_filename!r} "
+                    f"as an emcee.backends.HDFBackend compatible with "
+                    f"nwalkers={self.nwalkers} and ndim={self.ndim}: {e}. "
                     "Delete the file or choose a different name."
-                )
-                galfind_logger.critical(err_message)
-                raise Exception(err_message)
+                ) from e
         else:
             self.sampler = emcee.EnsembleSampler(
                 self.nwalkers, self.ndim, self.log_likelihood
@@ -895,6 +946,12 @@ class Base_MCMC_Fitter(ABC):
         -------
         `plt.Figure`
             The `corner` plot figure.
+
+        Raises
+        ------
+        LengthMismatchError
+            If `range` is given and its length does not match the number
+            of parameter labels.
         """
 
         autocorr_time = self.get_autocorr_time()
@@ -914,12 +971,13 @@ class Base_MCMC_Fitter(ABC):
         if "labels" not in plot_kwargs.keys():
             plot_kwargs["labels"] = [prior.name for prior in self.priors]
         if range is not None:
-            assert len(range) == len(
-                plot_kwargs["labels"]
-            ), galfind_logger.critical(
-                f"{len(range)=} must be equal to "
-                f"{len(plot_kwargs['labels'])=}"
-            )
+            if len(range) != len(plot_kwargs["labels"]):
+                raise LengthMismatchError(
+                    f"range={range!r} has length {len(range)}, which must "
+                    f"equal the number of parameter labels "
+                    f"({len(plot_kwargs['labels'])}: "
+                    f"{plot_kwargs['labels']!r})."
+                )
 
         if fig is None:
             fig_corner = plt.figure()
@@ -1224,6 +1282,14 @@ class MCMC_Fitter(Base_MCMC_Fitter):
             tuple interpolated onto `x_arr`; otherwise a two-element
             ``[negative, positive]`` scatter list, or `None` if
             `scatter_type` is not recognised.
+
+        Raises
+        ------
+        InvalidOptionError
+            If `scatter_type` is one of ``"scatter_y"``, ``"scatter_xy"``
+            or ``"exp_scatter_y"`` at the outer check but does not match
+            any of those three specific values in the internal branch
+            (defensive; should not occur in practice).
         """
         if self.scatter_type == "asymmetric":
             residuals = self.get_residuals(self.get_params_med(), **kwargs)
@@ -1300,8 +1366,10 @@ class MCMC_Fitter(Base_MCMC_Fitter):
                     )
                 )
             else:
-                raise ValueError(
-                    f"Unknown scatter type {self.scatter_type=}, cannot plot!"
+                raise InvalidOptionError(
+                    f"scatter_type={self.scatter_type!r} is not one of "
+                    "the recognised values ['scatter_y', 'scatter_xy', "
+                    "'exp_scatter_y']; cannot plot."
                 )
             window_above = len(y_above_sigma)
             window_below = len(y_below_sigma)
@@ -1724,6 +1792,17 @@ class Schechter_Lum_Fitter(MCMC_Fitter):
         Fixed values for ``L_star`` and/or ``alpha``. Must, together with
         `priors`, contain exactly ``L_star``, ``alpha`` and
         ``log10_phi_star``.
+
+    Raises
+    ------
+    InvalidOptionError
+        If `fixed_params` contains any key other than ``"L_star"`` or
+        ``"alpha"``.
+    LengthMismatchError
+        If the combined number of `fixed_params` and `priors` is not 3.
+    MissingKeyError
+        If ``"L_star"``, ``"alpha"`` or ``"log10_phi_star"`` is not
+        present in either `fixed_params` or `priors.names`.
     """
 
     def __init__(
@@ -1736,23 +1815,27 @@ class Schechter_Lum_Fitter(MCMC_Fitter):
         backend_filename: Optional[str],
         fixed_params: Dict[str, float],
     ):
-        assert all(
-            [key in ["L_star", "alpha"] for key in fixed_params.keys()]
-        ), galfind_logger.critical(
-            f"{fixed_params=} must be L_star and/or alpha or empty"
-        )
-        assert len(fixed_params) + len(priors) == 3, galfind_logger.critical(
-            "Must have exactly 3 parameters"
-        )
-        assert all(
-            [
-                key in fixed_params.keys() or key in priors.names
-                for key in ["L_star", "alpha", "log10_phi_star"]
-            ]
-        ), galfind_logger.critical(
-            f"{repr(priors)=} or {fixed_params=} must contain "
-            "L_star, alpha, and log10_phi_star"
-        )
+        if not all(key in ["L_star", "alpha"] for key in fixed_params.keys()):
+            raise InvalidOptionError(
+                f"fixed_params={fixed_params!r} has keys "
+                f"{list(fixed_params.keys())}; must be 'L_star' and/or "
+                "'alpha', or empty."
+            )
+        if len(fixed_params) + len(priors) != 3:
+            raise LengthMismatchError(
+                f"len(fixed_params)={len(fixed_params)} + "
+                f"len(priors)={len(priors)} = "
+                f"{len(fixed_params) + len(priors)}; Schechter_Lum_Fitter "
+                "must have exactly 3 parameters."
+            )
+        if not all(
+            key in fixed_params.keys() or key in priors.names
+            for key in ["L_star", "alpha", "log10_phi_star"]
+        ):
+            raise MissingKeyError(
+                f"priors={priors!r} or fixed_params={fixed_params!r} must "
+                "together contain 'L_star', 'alpha', and 'log10_phi_star'."
+            )
         super().__init__(
             priors,
             x_data,
@@ -1822,6 +1905,17 @@ class Schechter_Mag_Fitter(MCMC_Fitter):
         Fixed values for ``M_star`` and/or ``alpha``. Must, together with
         `priors`, contain exactly ``M_star``, ``alpha`` and
         ``log10_phi_star``.
+
+    Raises
+    ------
+    InvalidOptionError
+        If `fixed_params` contains any key other than ``"M_star"`` or
+        ``"alpha"``.
+    LengthMismatchError
+        If the combined number of `fixed_params` and `priors` is not 3.
+    MissingKeyError
+        If ``"M_star"``, ``"alpha"`` or ``"log10_phi_star"`` is not
+        present in either `fixed_params` or `priors.names`.
     """
 
     def __init__(
@@ -1834,23 +1928,27 @@ class Schechter_Mag_Fitter(MCMC_Fitter):
         backend_filename: Optional[str],
         fixed_params: Dict[str, float],
     ):
-        assert all(
-            [key in ["M_star", "alpha"] for key in fixed_params.keys()]
-        ), galfind_logger.critical(
-            f"{fixed_params=} must be M_star and/or alpha or empty"
-        )
-        assert len(fixed_params) + len(priors) == 3, galfind_logger.critical(
-            "Must have exactly 3 parameters"
-        )
-        assert all(
-            [
-                key in fixed_params.keys() or key in priors.names
-                for key in ["M_star", "alpha", "log10_phi_star"]
-            ]
-        ), galfind_logger.critical(
-            f"{repr(priors)=} or {fixed_params=} must contain "
-            "M_star, alpha, and log10_phi_star"
-        )
+        if not all(key in ["M_star", "alpha"] for key in fixed_params.keys()):
+            raise InvalidOptionError(
+                f"fixed_params={fixed_params!r} has keys "
+                f"{list(fixed_params.keys())}; must be 'M_star' and/or "
+                "'alpha', or empty."
+            )
+        if len(fixed_params) + len(priors) != 3:
+            raise LengthMismatchError(
+                f"len(fixed_params)={len(fixed_params)} + "
+                f"len(priors)={len(priors)} = "
+                f"{len(fixed_params) + len(priors)}; Schechter_Mag_Fitter "
+                "must have exactly 3 parameters."
+            )
+        if not all(
+            key in fixed_params.keys() or key in priors.names
+            for key in ["M_star", "alpha", "log10_phi_star"]
+        ):
+            raise MissingKeyError(
+                f"priors={priors!r} or fixed_params={fixed_params!r} must "
+                "together contain 'M_star', 'alpha', and 'log10_phi_star'."
+            )
         super().__init__(
             priors,
             x_data,
@@ -1923,6 +2021,17 @@ class DPL_Lum_Fitter(MCMC_Fitter):
         Fixed values for ``L_star``, ``alpha`` and/or ``beta``. Must,
         together with `priors`, contain exactly ``L_star``, ``alpha``,
         ``beta`` and ``log10_phi_star``.
+
+    Raises
+    ------
+    InvalidOptionError
+        If `fixed_params` contains any key other than ``"L_star"``,
+        ``"alpha"`` or ``"beta"``.
+    LengthMismatchError
+        If the combined number of `fixed_params` and `priors` is not 4.
+    MissingKeyError
+        If ``"L_star"``, ``"alpha"``, ``"beta"`` or ``"log10_phi_star"``
+        is not present in either `fixed_params` or `priors.names`.
     """
 
     def __init__(
@@ -1935,23 +2044,30 @@ class DPL_Lum_Fitter(MCMC_Fitter):
         backend_filename: Optional[str],
         fixed_params: Dict[str, float],
     ):
-        assert all(
-            [key in ["L_star", "alpha", "beta"] for key in fixed_params.keys()]
-        ), galfind_logger.critical(
-            f"{fixed_params=} must be L_star, alpha and/or beta, or empty"
-        )
-        assert len(fixed_params) + len(priors) == 4, galfind_logger.critical(
-            "Must have exactly 4 parameters"
-        )
-        assert all(
-            [
-                key in fixed_params.keys() or key in priors.names
-                for key in ["L_star", "alpha", "beta", "log10_phi_star"]
-            ]
-        ), galfind_logger.critical(
-            f"{repr(priors)=} or {fixed_params=} must contain "
-            "L_star, alpha, beta, and log10_phi_star"
-        )
+        if not all(
+            key in ["L_star", "alpha", "beta"] for key in fixed_params.keys()
+        ):
+            raise InvalidOptionError(
+                f"fixed_params={fixed_params!r} has keys "
+                f"{list(fixed_params.keys())}; must be 'L_star', 'alpha' "
+                "and/or 'beta', or empty."
+            )
+        if len(fixed_params) + len(priors) != 4:
+            raise LengthMismatchError(
+                f"len(fixed_params)={len(fixed_params)} + "
+                f"len(priors)={len(priors)} = "
+                f"{len(fixed_params) + len(priors)}; DPL_Lum_Fitter must "
+                "have exactly 4 parameters."
+            )
+        if not all(
+            key in fixed_params.keys() or key in priors.names
+            for key in ["L_star", "alpha", "beta", "log10_phi_star"]
+        ):
+            raise MissingKeyError(
+                f"priors={priors!r} or fixed_params={fixed_params!r} must "
+                "together contain 'L_star', 'alpha', 'beta', and "
+                "'log10_phi_star'."
+            )
         super().__init__(
             priors,
             x_data,
@@ -2023,6 +2139,17 @@ class DPL_Mag_Fitter(MCMC_Fitter):
         Fixed values for ``M_star``, ``alpha`` and/or ``beta``. Must,
         together with `priors`, contain exactly ``M_star``, ``alpha``,
         ``beta`` and ``log10_phi_star``.
+
+    Raises
+    ------
+    InvalidOptionError
+        If `fixed_params` contains any key other than ``"M_star"``,
+        ``"alpha"`` or ``"beta"``.
+    LengthMismatchError
+        If the combined number of `fixed_params` and `priors` is not 4.
+    MissingKeyError
+        If ``"M_star"``, ``"alpha"``, ``"beta"`` or ``"log10_phi_star"``
+        is not present in either `fixed_params` or `priors.names`.
     """
 
     def __init__(
@@ -2035,23 +2162,30 @@ class DPL_Mag_Fitter(MCMC_Fitter):
         backend_filename: Optional[str],
         fixed_params: Dict[str, float],
     ):
-        assert all(
-            [key in ["M_star", "alpha", "beta"] for key in fixed_params.keys()]
-        ), galfind_logger.critical(
-            f"{fixed_params=} must be M_star, alpha and/or beta, or empty"
-        )
-        assert len(fixed_params) + len(priors) == 4, galfind_logger.critical(
-            "Must have exactly 4 parameters"
-        )
-        assert all(
-            [
-                key in fixed_params.keys() or key in priors.names
-                for key in ["M_star", "alpha", "beta", "log10_phi_star"]
-            ]
-        ), galfind_logger.critical(
-            f"{repr(priors)=} or {fixed_params=} must contain "
-            "M_star, alpha, beta, and log10_phi_star"
-        )
+        if not all(
+            key in ["M_star", "alpha", "beta"] for key in fixed_params.keys()
+        ):
+            raise InvalidOptionError(
+                f"fixed_params={fixed_params!r} has keys "
+                f"{list(fixed_params.keys())}; must be 'M_star', 'alpha' "
+                "and/or 'beta', or empty."
+            )
+        if len(fixed_params) + len(priors) != 4:
+            raise LengthMismatchError(
+                f"len(fixed_params)={len(fixed_params)} + "
+                f"len(priors)={len(priors)} = "
+                f"{len(fixed_params) + len(priors)}; DPL_Mag_Fitter must "
+                "have exactly 4 parameters."
+            )
+        if not all(
+            key in fixed_params.keys() or key in priors.names
+            for key in ["M_star", "alpha", "beta", "log10_phi_star"]
+        ):
+            raise MissingKeyError(
+                f"priors={priors!r} or fixed_params={fixed_params!r} must "
+                "together contain 'M_star', 'alpha', 'beta', and "
+                "'log10_phi_star'."
+            )
         super().__init__(
             priors,
             x_data,
@@ -2138,6 +2272,28 @@ class Linear_Fitter(MCMC_Fitter):
     scatter_type : `str` or `None`
         The inferred type of intrinsic scatter model being fit, or `None`
         if no scatter parameters were provided.
+
+    Raises
+    ------
+    InvalidOptionError
+        If `fixed_params` contains a key that is not one of ``"m"``,
+        ``"c"`` or a recognised scatter parameter name; if exactly one
+        scatter parameter name is given and it is not ``"scatter"``; if
+        exactly two scatter parameter names are given and they do not
+        match one of the recognised pairs (``"scatter_up"``/
+        ``"scatter_lo"``, ``"scatter_y_a"``/``"scatter_y_b"``,
+        ``"exp_scatter_y_a"``/``"exp_scatter_y_b"``); or if exactly three
+        scatter parameter names are given and they are not exactly
+        ``"scatter_c"``, ``"scatter_x"`` and ``"scatter_y"``.
+    MissingKeyError
+        If ``"m"`` or ``"c"`` is not present in either `fixed_params` or
+        `priors.names`.
+    RangeError
+        If more than three scatter parameter names are given.
+    LengthMismatchError
+        If the combined number of `fixed_params` and `priors` does not
+        equal the number of required parameters (``m``, ``c``, and any
+        inferred scatter parameters).
     """
 
     # Power Law in linear space
@@ -2167,20 +2323,21 @@ class Linear_Fitter(MCMC_Fitter):
             "scatter_y",
         ]
 
-        assert all(
-            [key in params + scatter_params for key in fixed_params.keys()]
-        ), galfind_logger.critical(
-            f"{fixed_params=} must be in {','.join(params + scatter_params)}"
-        )
-        assert all(
-            [
-                key in fixed_params.keys() or key in priors.names
-                for key in params
-            ]
-        ), galfind_logger.critical(
-            f"{repr(priors)=} or {fixed_params=} must contain "
-            f"{','.join(params)}"
-        )
+        if not all(
+            key in params + scatter_params for key in fixed_params.keys()
+        ):
+            raise InvalidOptionError(
+                f"fixed_params={fixed_params!r} has keys "
+                f"{list(fixed_params.keys())}; must be in "
+                f"{params + scatter_params}."
+            )
+        if not all(
+            key in fixed_params.keys() or key in priors.names for key in params
+        ):
+            raise MissingKeyError(
+                f"priors={priors!r} or fixed_params={fixed_params!r} must "
+                f"together contain {params}."
+            )
         input_scatter_names = [
             name
             for name in list(priors.names) + list(fixed_params.keys())
@@ -2190,10 +2347,11 @@ class Linear_Fitter(MCMC_Fitter):
             scatter_type = None
         elif len(input_scatter_names) == 1:
             scatter_type = input_scatter_names[0]
-            assert scatter_type in ["scatter"], galfind_logger.critical(
-                "Only 'scatter' are supported as scatter parameters, "
-                f"got {scatter_type}"
-            )
+            if scatter_type not in ["scatter"]:
+                raise InvalidOptionError(
+                    "Only 'scatter' is supported as a single scatter "
+                    f"parameter name, got scatter_type={scatter_type!r}."
+                )
         elif len(input_scatter_names) == 2:
             if all(
                 [
@@ -2218,40 +2376,47 @@ class Linear_Fitter(MCMC_Fitter):
             ):
                 scatter_type = "exp_scatter_y"
             else:
-                galfind_logger.critical(
-                    "Must have both 'scatter_up' and 'scatter_lo' "
-                    + "if using asymmetric scatter, "
-                    + " both 'scatter_y_a' and 'scatter_y_b', or both "
-                    + "'exp_scatter_y_a' and 'exp_scatter_y_b'"
-                    + "if using asymmetric scatter, "
-                    + f"got {input_scatter_names}"
+                raise InvalidOptionError(
+                    "Must have both 'scatter_up' and 'scatter_lo' if "
+                    "using asymmetric scatter, both 'scatter_y_a' and "
+                    "'scatter_y_b', or both 'exp_scatter_y_a' and "
+                    f"'exp_scatter_y_b'; got input_scatter_names="
+                    f"{input_scatter_names!r}."
                 )
         elif len(input_scatter_names) == 3:
-            assert all(
+            if not all(
                 [
                     name in input_scatter_names
                     for name in ["scatter_c", "scatter_x", "scatter_y"]
                 ]
-            ), galfind_logger.critical(
-                "Must have 'scatter_c', 'scatter_x', and 'scatter_y' "
-                + "if using scatter in linear space, "
-                + f"got {input_scatter_names}"
-            )
+            ):
+                raise InvalidOptionError(
+                    "Must have 'scatter_c', 'scatter_x', and 'scatter_y' "
+                    "if using scatter in linear space; got "
+                    f"input_scatter_names={input_scatter_names!r}."
+                )
             scatter_type = "scatter_xy"
         else:
-            galfind_logger.critical(
+            raise RangeError(
                 f"Too many scatter parameters provided: "
-                f"{input_scatter_names}, "
-                + f"{len(input_scatter_names)} > 2, only 'scatter' or "
-                + "'scatter_up' and 'scatter_lo' are supported!"
+                f"input_scatter_names={input_scatter_names!r}, "
+                f"{len(input_scatter_names)} > 3; only 'scatter', "
+                "'scatter_up'/'scatter_lo', 'scatter_y_a'/'scatter_y_b', "
+                "'exp_scatter_y_a'/'exp_scatter_y_b', or "
+                "'scatter_c'/'scatter_x'/'scatter_y' are supported."
             )
-        assert len(fixed_params) + len(priors) == len(params) + len(
+        if len(fixed_params) + len(priors) != len(params) + len(
             input_scatter_names
-        ), galfind_logger.critical(
-            f"{len(fixed_params) + len(priors)}!="
-            f"{len(params) + len(input_scatter_names)} "
-            f"required for {scatter_type=}!"
-        )
+        ):
+            raise LengthMismatchError(
+                f"len(fixed_params)={len(fixed_params)} + "
+                f"len(priors)={len(priors)} = "
+                f"{len(fixed_params) + len(priors)} != "
+                f"len(params)={len(params)} + "
+                f"len(input_scatter_names)={len(input_scatter_names)} = "
+                f"{len(params) + len(input_scatter_names)} required for "
+                f"scatter_type={scatter_type!r}."
+            )
         self.scatter_type = scatter_type
         super().__init__(
             priors,
@@ -2530,6 +2695,18 @@ class Power_Law_Fitter(MCMC_Fitter):
     ----------
     incl_logf : `bool`
         Whether the ``logf`` variance-inflation parameter is included.
+
+    Raises
+    ------
+    InvalidOptionError
+        If `fixed_params` contains any key other than ``"A"``,
+        ``"slope"`` or (if `incl_logf` is `True`) ``"logf"``.
+    LengthMismatchError
+        If the combined number of `fixed_params` and `priors` does not
+        equal the number of required parameters.
+    MissingKeyError
+        If ``"A"``, ``"slope"`` or (if `incl_logf` is `True`) ``"logf"``
+        is not present in either `fixed_params` or `priors.names`.
     """
 
     # Linear in log-log space
@@ -2549,26 +2726,26 @@ class Power_Law_Fitter(MCMC_Fitter):
         if incl_logf:
             params.append("logf")
         # TODO: Whack these assertions in parent class
-        assert all(
-            [key in params for key in fixed_params.keys()]
-        ), galfind_logger.critical(
-            f"{fixed_params=} must be A and/or slope or empty"
-        )
-        assert len(fixed_params) + len(priors) == len(
-            params
-        ), galfind_logger.critical(
-            f"Must have exactly {len(params)} parameters if "
-            + f"{'not' if not incl_logf else ''} including logf"
-        )
-        assert all(
-            [
-                key in fixed_params.keys() or key in priors.names
-                for key in params
-            ]
-        ), galfind_logger.critical(
-            f"{repr(priors)=} or {fixed_params=} must contain "
-            f"{',' + ' '.join(params)}"
-        )
+        if not all(key in params for key in fixed_params.keys()):
+            raise InvalidOptionError(
+                f"fixed_params={fixed_params!r} has keys "
+                f"{list(fixed_params.keys())}; must be in {params}."
+            )
+        if len(fixed_params) + len(priors) != len(params):
+            raise LengthMismatchError(
+                f"len(fixed_params)={len(fixed_params)} + "
+                f"len(priors)={len(priors)} = "
+                f"{len(fixed_params) + len(priors)}; must have exactly "
+                f"{len(params)} parameters "
+                f"{'excluding' if not incl_logf else 'including'} logf."
+            )
+        if not all(
+            key in fixed_params.keys() or key in priors.names for key in params
+        ):
+            raise MissingKeyError(
+                f"priors={priors!r} or fixed_params={fixed_params!r} must "
+                f"together contain {params}."
+            )
         super().__init__(
             priors,
             x_data,
@@ -2641,6 +2818,12 @@ def get_gal_bias_fitter(
     """
     A factory function to create a Galaxy Bias Fitter class based on
     the provided fitter class.
+
+    Raises
+    ------
+    InvalidOptionError
+        If `fitter` is not one of `Schechter_Lum_Fitter`,
+        `Schechter_Mag_Fitter`, `DPL_Lum_Fitter` or `DPL_Mag_Fitter`.
     """
 
     # ensure fitter class is of required type
@@ -2650,9 +2833,10 @@ def get_gal_bias_fitter(
         DPL_Lum_Fitter,
         DPL_Mag_Fitter,
     ]
-    assert fitter.__name__ in [
-        subcls.__name__ for subcls in fitter_classes
-    ], galfind_logger.critical(f"{repr(fitter)=} not in {fitter_classes=}")
+    if fitter.__name__ not in [subcls.__name__ for subcls in fitter_classes]:
+        raise InvalidOptionError(
+            f"fitter={fitter!r} not in fitter_classes={fitter_classes!r}."
+        )
 
     class Galaxy_Bias_Fitter(fitter):
         """MCMC fitter for galaxy bias across multiple surveys.
@@ -2668,6 +2852,16 @@ def get_gal_bias_fitter(
         **kwargs
             Additional keyword arguments passed to base MCMC fitter,
             including 'priors' which must include a 'b_gal' prior.
+
+        Raises
+        ------
+        MissingKeyError
+            If `kwargs` does not contain a ``"priors"`` key, if
+            ``kwargs["priors"].names`` does not include ``"b_gal"``, or if
+            any survey in `surveys_arr` is not a key of `sigma_dm_dict`.
+        LengthMismatchError
+            If `surveys_arr`, `x_data`, `y_data` and the second dimension
+            of `y_data_errs` do not all have the same length.
         """
 
         def __init__(
@@ -2675,12 +2869,15 @@ def get_gal_bias_fitter(
             surveys_arr: List[str],
             **kwargs,
         ):
-            assert "priors" in kwargs.keys(), galfind_logger.critical(
-                "Must provide priors!"
-            )
-            assert "b_gal" in kwargs["priors"].names, galfind_logger.critical(
-                f"{kwargs['priors'].names} must include b_gal!"
-            )
+            if "priors" not in kwargs.keys():
+                raise MissingKeyError(
+                    f"kwargs={kwargs!r} is missing the required 'priors' key."
+                )
+            if "b_gal" not in kwargs["priors"].names:
+                raise MissingKeyError(
+                    f"kwargs['priors'].names={kwargs['priors'].names!r} "
+                    "must include 'b_gal'."
+                )
             # gal_bias_prior = kwargs["priors"]["b_gal"]
             # remove b_gal from priors
             # kwargs["priors"] = Priors([prior for prior in
@@ -2691,26 +2888,29 @@ def get_gal_bias_fitter(
             # self.priors += gal_bias_prior
 
             self.surveys_arr = surveys_arr
-            assert (
+            if not (
                 len(self.surveys_arr)
                 == len(self.x_data)
                 == len(self.y_data)
                 == self.y_data_errs.shape[1]
-            ), galfind_logger.critical(
-                f"{len(self.surveys_arr)=}, {len(self.x_data)=}, "
-                f"{len(self.y_data)=}, {self.y_data_errs.shape[1]=}, "
-                "must all be equal!"
-            )
+            ):
+                raise LengthMismatchError(
+                    f"len(surveys_arr)={len(self.surveys_arr)}, "
+                    f"len(x_data)={len(self.x_data)}, "
+                    f"len(y_data)={len(self.y_data)}, "
+                    f"y_data_errs.shape[1]={self.y_data_errs.shape[1]} "
+                    "must all be equal."
+                )
             self.sigma_dm_dict = sigma_dm_dict
-            assert all(
-                [
-                    survey in self.sigma_dm_dict.keys()
-                    for survey in self.surveys_arr
-                ]
-            ), galfind_logger.critical(
-                f"All surveys in {self.surveys_arr=} must be in "
-                f"{self.sigma_dm_dict.keys()=}"
-            )
+            if not all(
+                survey in self.sigma_dm_dict.keys()
+                for survey in self.surveys_arr
+            ):
+                raise MissingKeyError(
+                    f"All surveys in surveys_arr={self.surveys_arr!r} "
+                    "must be keys of "
+                    f"sigma_dm_dict={list(self.sigma_dm_dict.keys())!r}."
+                )
 
         def _get_sigma_sq(
             self: Self,

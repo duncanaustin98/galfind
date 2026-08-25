@@ -39,6 +39,12 @@ from ..sed_fitting.SED_result import (
     SED_result,
 )
 from ..utils import useful_funcs_austind as funcs
+from ..utils.exceptions import (
+    GalfindError,
+    GalfindTypeError,
+    LengthMismatchError,
+    MissingKeyError,
+)
 from .Photometry import Photometry
 
 
@@ -215,11 +221,11 @@ class Photometry_obs(Photometry):
         for key, value in self.__dict__.items():
             try:
                 setattr(result, key, value)
-            except Exception:
-                galfind_logger.critical(
-                    f"copy({self.__class__.__name__}) {key}: {value} FAIL!"
-                )
-                breakpoint()
+            except Exception as e:
+                raise GalfindError(
+                    f"copy({self.__class__.__name__}) failed to set "
+                    f"attribute {key!r}={value!r}: {e}"
+                ) from e
         return result
 
     def __deepcopy__(self, memo):
@@ -229,11 +235,11 @@ class Photometry_obs(Photometry):
         for key, value in self.__dict__.items():
             try:
                 setattr(result, key, deepcopy(value, memo))
-            except Exception:
-                galfind_logger.critical(
-                    f"deepcopy({self.__class__.__name__}) {key}: {value} FAIL!"
-                )
-                breakpoint()
+            except Exception as e:
+                raise GalfindError(
+                    f"deepcopy({self.__class__.__name__}) failed to set "
+                    f"attribute {key!r}={value!r}: {e}"
+                ) from e
         return result
 
     @property
@@ -435,26 +441,42 @@ class Photometry_obs(Photometry):
             breakpoint()
 
     def _assert_psfs(self):
+        """Validate that `self.psfs` is either `None` or matches `filterset`.
+
+        Raises
+        ------
+        LengthMismatchError
+            If `self.psfs` is a `list`/`numpy.ndarray` whose length does
+            not match `len(self.filterset)`.
+        MissingKeyError
+            If `self.psfs` is a `dict` missing an entry for one of the
+            filters in `self.filterset`.
+        GalfindTypeError
+            If `self.psfs` is neither `None`, a `list`/`numpy.ndarray`,
+            nor a `dict`.
+        """
         if self.psfs is not None:
             if isinstance(self.psfs, (list, np.ndarray)):
-                assert len(self.psfs) == len(
-                    self.filterset
-                ), galfind_logger.critical(
-                    f"{len(self.psfs)=} != {len(self.filterset)=}!"
-                )
+                if len(self.psfs) != len(self.filterset):
+                    raise LengthMismatchError(
+                        f"len(psfs)={len(self.psfs)} != "
+                        f"len(filterset)={len(self.filterset)}."
+                    )
             elif isinstance(self.psfs, dict):
-                assert all(
+                if not all(
                     filt.filt_name in self.psfs.keys()
                     for filt in self.filterset
-                ), galfind_logger.critical(
-                    f"Some of "
-                    f"{[filt.filt_name for filt in self.filterset]} "
-                    f"not in {self.psfs.keys()=}"
-                )
+                ):
+                    filt_names = [filt.filt_name for filt in self.filterset]
+                    raise MissingKeyError(
+                        f"psfs dict missing keys={self.psfs.keys()!r}; "
+                        "expected an entry for every filter in "
+                        f"filterset={filt_names!r}."
+                    )
             else:
-                galfind_logger.critical(
-                    f"{type(self.psfs)=} not in "
-                    f"[list, np.ndarray, dict] and is not None!"
+                raise GalfindTypeError(
+                    f"psfs has type {type(self.psfs).__name__}; must be "
+                    "one of [list, np.ndarray, dict] or None."
                 )
 
         else:
@@ -936,11 +958,11 @@ class Photometry_obs(Photometry):
                 aper_corrs[filt_name]
                 for filt_name in self.filterset.filt_names
             ]
-            assert len(aper_corrs) == len(
-                self.filterset
-            ), galfind_logger.critical(
-                f"{len(aper_corrs)=} != {len(self.filterset)=}!"
-            )
+            if len(aper_corrs) != len(self.filterset):
+                raise LengthMismatchError(
+                    f"len(aper_corrs)={len(aper_corrs)} != "
+                    f"len(filterset)={len(self.filterset)}."
+                )
 
         try:
             ext_src_corrs = {

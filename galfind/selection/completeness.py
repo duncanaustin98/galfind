@@ -18,6 +18,7 @@ except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
 from ..catalogues.Catalogue_Base import Catalogue_Base
+from ..utils.exceptions import LengthMismatchError
 from .grid import Grid_2D
 
 
@@ -191,13 +192,19 @@ class Completeness:
 
         Raises
         ------
-        AssertionError
+        LengthMismatchError
             If the simulated catalogue and `"SELECTION"` HDU do not
             have the same number of rows.
         """
         tab = Table.read(cat_path)
         select_tab = Table.read(cat_path, hdu="SELECTION")
-        assert len(tab) == len(select_tab)
+        if len(tab) != len(select_tab):
+            raise LengthMismatchError(
+                f"len(tab)={len(tab)} != len(select_tab)="
+                f"{len(select_tab)} for cat_path={cat_path!r}; the "
+                "simulated catalogue and its 'SELECTION' HDU must have "
+                "the same number of rows."
+            )
 
         z = tab[z_colname]
         x = tab[x_colname]

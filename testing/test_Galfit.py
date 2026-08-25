@@ -15,6 +15,12 @@ import astropy.units as u
 import pytest
 
 from galfind.properties.Morphology import Galfit_Fitter
+from galfind.utils.exceptions import (
+    InvalidOptionError,
+    LengthMismatchError,
+    MissingKeyError,
+    RangeError,
+)
 
 GALFIT_AVAILABLE = shutil.which("galfit") is not None
 
@@ -44,7 +50,7 @@ class TestLoadConstraints:
         assert fitter.fixed_params["sersic"]["n"] == 1.0
 
     def test_bad_bound_order_raises(self):
-        with pytest.raises(AssertionError):
+        with pytest.raises(RangeError, match="n"):
             _make_fitter(
                 primary_constraints={
                     "sersic": {"x": [-2, 2], "y": [-2, 2], "n": [10, 1]}
@@ -52,7 +58,7 @@ class TestLoadConstraints:
             )
 
     def test_bad_bound_length_raises(self):
-        with pytest.raises(AssertionError):
+        with pytest.raises(LengthMismatchError, match="n"):
             _make_fitter(
                 primary_constraints={
                     "sersic": {"x": [-2, 2], "y": [-2, 2], "n": [1, 2, 3]},
@@ -60,13 +66,13 @@ class TestLoadConstraints:
             )
 
     def test_unknown_param_raises(self):
-        with pytest.raises(AssertionError):
+        with pytest.raises(InvalidOptionError, match="not_a_param"):
             _make_fitter(
                 primary_constraints={"sersic": {"not_a_param": 1.0}},
             )
 
     def test_unknown_model_raises(self):
-        with pytest.raises(AssertionError):
+        with pytest.raises(InvalidOptionError, match="not_a_model"):
             _make_fitter(primary_constraints={"not_a_model": {"n": 1.0}})
 
     def test_fixed_param_overrides_fid_params(self):
@@ -79,7 +85,7 @@ class TestLoadConstraints:
         assert fitter.fid_params["sersic"]["n"] == 2.0
 
     def test_fid_params_missing_required_key_raises(self):
-        with pytest.raises(AssertionError):
+        with pytest.raises(MissingKeyError, match="axr"):
             _make_fitter(fid_params={"sersic": {"n": 1}})  # missing axr, pa
 
     def test_combined_model_string_splits_on_plus(self):
@@ -88,6 +94,14 @@ class TestLoadConstraints:
         # convention pysersic's "sersic_pointsource" name maps onto.
         fitter = _make_fitter(model="sersic+psf")
         assert fitter.model == "sersic+psf"
+
+    def test_unknown_model_component_raises(self):
+        # Morphology_Fitter.__init__'s own model validation (distinct
+        # from Galfit_Fitter._load_constraints' per-model constraint
+        # keys checked above) -- previously an assert/critical with no
+        # exception message at all.
+        with pytest.raises(InvalidOptionError, match="not_a_model"):
+            _make_fitter(model="sersic+not_a_model")
 
 
 @pytest.mark.requires_data

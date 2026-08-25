@@ -22,6 +22,7 @@ from scipy import optimize
 
 from .. import config
 from ..utils import useful_funcs_austind as funcs
+from ..utils.exceptions import MissingKeyError
 
 
 def log_transform(im):
@@ -82,7 +83,7 @@ def open_PSF_model(
 
     Raises
     ------
-    Exception
+    MissingKeyError
         If the FITS header does not contain a ``PIXELSCL`` keyword.
     """
     # load PSF .fits image
@@ -100,8 +101,10 @@ def open_PSF_model(
     # pixel_scale = PSFheader["PIXELSCL"] * u.arcsec
     try:
         pixel_scale = PSFheader["PIXELSCL"] * u.arcsec
-    except Exception:
-        raise (Exception("No PIXELSCL in header"))
+    except KeyError as e:
+        raise MissingKeyError(
+            f"PIXELSCL not found in PSF header for PSF_path={PSF_path!r}."
+        ) from e
         # pixel_scale = log.pix_to_as
     # print("pixel scale =", pixel_scale)
     return PSFdata, pixel_scale

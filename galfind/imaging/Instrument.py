@@ -32,6 +32,11 @@ except ImportError:
 
 from .. import config, galfind_logger
 from ..utils import useful_funcs_austind as funcs
+from ..utils.exceptions import (
+    InvalidOptionError,
+    MissingFileError,
+    MissingKeyError,
+)
 from .PSF import PSF_Cutout
 
 
@@ -293,14 +298,15 @@ class Instrument(ABC):
 
         Raises
         ------
-        AssertionError
+        InvalidOptionError
             If `method` is not one of ``'default'``, ``'empirical'``, or
             ``'EPOCHS'``.
         """
         method_types = ["default", "empirical", "EPOCHS"]
-        assert method in method_types, galfind_logger.critical(
-            f"{method=} not in {method_types}!"
-        )
+        if method not in method_types:
+            raise InvalidOptionError(
+                f"method={method!r} not in {method_types}."
+            )
         if method == "default":
             return self.make_model_psf(
                 band_data,
@@ -592,7 +598,7 @@ class NIRCam(Instrument, funcs.Singleton):
 
         Raises
         ------
-        AssertionError
+        MissingFileError
             If the normalization file returned by `get_psf_norm_path`
             does not exist.
         """
@@ -600,9 +606,11 @@ class NIRCam(Instrument, funcs.Singleton):
         if norm_path is None:
             return None
         else:
-            assert Path(norm_path).is_file(), galfind_logger.critical(
-                f"PSF normalization file {norm_path} not found!"
-            )
+            if not Path(norm_path).is_file():
+                raise MissingFileError(
+                    f"PSF normalization file norm_path={norm_path!r} "
+                    "not found!"
+                )
             energy_table = ascii.read(norm_path)
             row = np.argmin(
                 abs(
@@ -780,13 +788,13 @@ class ACS_SBC(Instrument, funcs.Singleton):
                 "used here!"
             )
         else:
-            err_message = (
-                f"{self.__class__.__name__} data for {band_data.filt_name}"
-                " must contain either 'ZEROPNT' or 'PHOTFLAM' and "
-                "'PHOTPLAM' in its header to calculate its ZP!"
+            raise MissingKeyError(
+                f"{self.__class__.__name__} data for "
+                f"band_data.filt_name={band_data.filt_name!r} must "
+                "contain either 'ZEROPNT' or 'PHOTFLAM' and 'PHOTPLAM' "
+                f"in its header to calculate its ZP; available keys="
+                f"{list(im_header.keys())!r}."
             )  # or 'BUNIT'=MJy/sr
-            galfind_logger.critical(err_message)
-            raise (Exception(err_message))
         return ZP
 
     def make_model_psf(
@@ -888,7 +896,7 @@ class ACS_WFC(Instrument, funcs.Singleton):
 
         Raises
         ------
-        Exception
+        MissingKeyError
             If neither ('PHOTFLAM' and 'PHOTPLAM') nor 'ZEROPNT' are
             present in the image header.
         """
@@ -915,13 +923,12 @@ class ACS_WFC(Instrument, funcs.Singleton):
         #         (band_data.pix_scale.to(u.rad).value ** 2) * u.MJy.to(u.Jy)
         #     ) + u.Jy.to(u.ABmag)
         else:
-            err_message = (
-                f"ACS_WFC data for {band_data.filt_name} "
-                + "must contain either 'PHOTFLAM' and 'PHOTPLAM' or 'ZEROPNT'"
-                + "in its header to calculate its ZP!"
+            raise MissingKeyError(
+                f"ACS_WFC data for band_data.filt_name="
+                f"{band_data.filt_name!r} must contain either 'PHOTFLAM' "
+                "and 'PHOTPLAM' or 'ZEROPNT' in its header to calculate "
+                f"its ZP; available keys={list(im_header.keys())!r}."
             )  # or 'BUNIT'=MJy/sr
-            galfind_logger.critical(err_message)
-            raise (Exception(err_message))
         return ZP
 
     def get_psf_norm_path(
@@ -1018,22 +1025,42 @@ class ACS_WFC(Instrument, funcs.Singleton):
         self: Self,
         band_data: Band_Data,
     ) -> None:
+        """Create the encircled energy curve (EEC) HDF5 file for a band,
+        if it does not already exist.
+
+        Parameters
+        ----------
+        band_data : `Band_Data`
+            Band data for which to create the EEC file.
+
+        Raises
+        ------
+        MissingFileError
+            If the encircled energy text file returned by
+            `get_psf_norm_path` does not exist.
+        InvalidOptionError
+            If the encircled energy text file does not contain exactly
+            one row for `band_data.filt.filt_name`.
+        """
         eec_path = self.get_eec_path(band_data)
         if not Path(eec_path).is_file():
             galfind_logger.info(
                 f"Creating EEC data for {repr(band_data.filt)} at {eec_path}"
             )
             txt_filepath = self.get_psf_norm_path(band_data=band_data)
-            assert Path(txt_filepath).is_file(), galfind_logger.critical(
-                f"EE data for {self.__class__.__name__} not found in "
-                f"{txt_filepath}!"
-            )
+            if not Path(txt_filepath).is_file():
+                raise MissingFileError(
+                    f"EE data for {self.__class__.__name__} not found in "
+                    f"txt_filepath={txt_filepath!r}."
+                )
             eec_tab = Table.read(txt_filepath, format="ascii.commented_header")
             eec_tab = eec_tab[eec_tab["band"] == band_data.filt.filt_name]
-            assert len(eec_tab) == 1, galfind_logger.critical(
-                f"EE data for {repr(band_data.filt)} not found in "
-                f"{txt_filepath}!"
-            )
+            if len(eec_tab) != 1:
+                raise InvalidOptionError(
+                    f"EE data for {repr(band_data.filt)} not found in "
+                    f"txt_filepath={txt_filepath!r}; matched "
+                    f"{len(eec_tab)} rows, expected exactly 1."
+                )
             radii = np.zeros(len(eec_tab.colnames) - 1)  # * u.arcsec
             eec = np.zeros(len(eec_tab.colnames) - 1)
             for i, col in enumerate(eec_tab.colnames):
@@ -1147,16 +1174,19 @@ class WFC3_IR(Instrument, funcs.Singleton):
     ) -> Type[PSF_Base]:
         """Construct a model PSF for WFC3-IR.
 
-        Not yet implemented; the current implementation simply invokes
-        `breakpoint()`, dropping into an interactive debugger rather
-        than returning a PSF.
-
         Parameters
         ----------
         band_data : `Band_Data`
             Band data for which to construct the model PSF.
+
+        Raises
+        ------
+        NotImplementedError
+            Model PSF construction is not yet implemented for WFC3-IR.
         """
-        breakpoint()
+        raise NotImplementedError(
+            "Model PSF construction not yet implemented for WFC3-IR!"
+        )
 
 
 class VISTA(Instrument, funcs.Singleton):
@@ -1227,16 +1257,19 @@ class VISTA(Instrument, funcs.Singleton):
     ) -> Type[PSF_Base]:
         """Construct a model PSF for VISTA.
 
-        Not yet implemented; the current implementation simply invokes
-        `breakpoint()`, dropping into an interactive debugger rather
-        than returning a PSF.
-
         Parameters
         ----------
         band_data : `Band_Data`
             Band data for which to construct the model PSF.
+
+        Raises
+        ------
+        NotImplementedError
+            Model PSF construction is not yet implemented for VISTA.
         """
-        breakpoint()
+        raise NotImplementedError(
+            "Model PSF construction not yet implemented for VISTA!"
+        )
 
 
 class MegaCam(Instrument, funcs.Singleton):
@@ -1302,16 +1335,19 @@ class MegaCam(Instrument, funcs.Singleton):
     ) -> Type[PSF_Base]:
         """Construct a model PSF for MegaCam.
 
-        Not yet implemented; the current implementation simply invokes
-        `breakpoint()`, dropping into an interactive debugger rather
-        than returning a PSF.
-
         Parameters
         ----------
         band_data : `Band_Data`
             Band data for which to construct the model PSF.
+
+        Raises
+        ------
+        NotImplementedError
+            Model PSF construction is not yet implemented for MegaCam.
         """
-        breakpoint()
+        raise NotImplementedError(
+            "Model PSF construction not yet implemented for MegaCam!"
+        )
 
 
 class HSC(Instrument, funcs.Singleton):
@@ -1388,16 +1424,19 @@ class HSC(Instrument, funcs.Singleton):
     ) -> Type[PSF_Base]:
         """Construct a model PSF for HSC.
 
-        Not yet implemented; the current implementation simply invokes
-        `breakpoint()`, dropping into an interactive debugger rather
-        than returning a PSF.
-
         Parameters
         ----------
         band_data : `Band_Data`
             Band data for which to construct the model PSF.
+
+        Raises
+        ------
+        NotImplementedError
+            Model PSF construction is not yet implemented for HSC.
         """
-        breakpoint()
+        raise NotImplementedError(
+            "Model PSF construction not yet implemented for HSC!"
+        )
 
 
 class VIS(Instrument, funcs.Singleton):
@@ -1450,16 +1489,19 @@ class VIS(Instrument, funcs.Singleton):
     ) -> Type[PSF_Base]:
         """Construct a model PSF for VIS.
 
-        Not yet implemented; the current implementation simply invokes
-        `breakpoint()`, dropping into an interactive debugger rather
-        than returning a PSF.
-
         Parameters
         ----------
         band_data : `Band_Data`
             Band data for which to construct the model PSF.
+
+        Raises
+        ------
+        NotImplementedError
+            Model PSF construction is not yet implemented for VIS.
         """
-        breakpoint()
+        raise NotImplementedError(
+            "Model PSF construction not yet implemented for VIS!"
+        )
 
 
 class NISP(Instrument, funcs.Singleton):
@@ -1516,16 +1558,19 @@ class NISP(Instrument, funcs.Singleton):
     ) -> Type[PSF_Base]:
         """Construct a model PSF for NISP.
 
-        Not yet implemented; the current implementation simply invokes
-        `breakpoint()`, dropping into an interactive debugger rather
-        than returning a PSF.
-
         Parameters
         ----------
         band_data : `Band_Data`
             Band data for which to construct the model PSF.
+
+        Raises
+        ------
+        NotImplementedError
+            Model PSF construction is not yet implemented for NISP.
         """
-        breakpoint()
+        raise NotImplementedError(
+            "Model PSF construction not yet implemented for NISP!"
+        )
 
 
 class IRAC(Instrument, funcs.Singleton):
@@ -1584,16 +1629,19 @@ class IRAC(Instrument, funcs.Singleton):
     ) -> Type[PSF_Base]:
         """Construct a model PSF for IRAC.
 
-        Not yet implemented; the current implementation simply invokes
-        `breakpoint()`, dropping into an interactive debugger rather
-        than returning a PSF.
-
         Parameters
         ----------
         band_data : `Band_Data`
             Band data for which to construct the model PSF.
+
+        Raises
+        ------
+        NotImplementedError
+            Model PSF construction is not yet implemented for IRAC.
         """
-        breakpoint()
+        raise NotImplementedError(
+            "Model PSF construction not yet implemented for IRAC!"
+        )
 
 
 # Instrument attributes

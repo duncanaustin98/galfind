@@ -56,6 +56,16 @@ except ImportError:
 from .. import config, galfind_logger
 from . import Masking
 from . import useful_funcs_austind as funcs
+from .exceptions import (
+    GalfindError,
+    GalfindTypeError,
+    InvalidOptionError,
+    InvalidUnitError,
+    LengthMismatchError,
+    MissingDataError,
+    MissingFileError,
+    RangeError,
+)
 
 
 def do_photometry(image, xy_coords, radius_pixels):
@@ -510,10 +520,12 @@ def calc_depths(
     if wht_data is not None and split_depths:
         if provide_labels is None:
             print("Obtaining labels...")
-            assert np.shape(wht_data) == np.shape(img_data), (
-                "The weight map must have the same shape as the "
-                f"image {np.shape(wht_data)} != {np.shape(img_data)}"
-            )
+            if np.shape(wht_data) != np.shape(img_data):
+                raise LengthMismatchError(
+                    "The weight map must have the same shape as the "
+                    f"image: wht_data.shape={np.shape(wht_data)} != "
+                    f"img_data.shape={np.shape(img_data)}."
+                )
             labels_final, weight_map_smoothed = cluster_wht_map(
                 wht_data,
                 num_regions=n_split,
@@ -548,13 +560,20 @@ def calc_depths(
             )
             cat_x, cat_y = ra_pix, dec_pix
             if wht_data is not None:
-                assert np.shape(wht_data) == np.shape(img_data)
+                if np.shape(wht_data) != np.shape(img_data):
+                    raise LengthMismatchError(
+                        "The weight map must have the same shape as the "
+                        f"image: wht_data.shape={np.shape(wht_data)} != "
+                        f"img_data.shape={np.shape(img_data)}."
+                    )
 
         elif coord_type == "pixel":
             cat_x_col, cat_y_col = "X_IMAGE", "Y_IMAGE"
             cat_x, cat_y = catalogue[cat_x_col], catalogue[cat_y_col]
         else:
-            raise ValueError('coord_type must be either "sky" or "pixel"')
+            raise InvalidOptionError(
+                f"coord_type={coord_type!r} must be either 'sky' or 'pixel'."
+            )
 
     x_max, y_max = np.max(x), np.max(y)
     x_label, y_label = x.astype(int), y.astype(int)
@@ -1187,7 +1206,7 @@ def get_depth_dir(
 
     Raises
     ------
-    ValueError
+    GalfindTypeError
         If `self` is not a `Band_Data`, `Stacked_Band_Data` or `Data`
         instance.
     """
@@ -1196,7 +1215,10 @@ def get_depth_dir(
     elif self.__class__.__name__ == "Data":
         instr_name = self.filterset.instrument_name
     else:
-        raise ValueError(f"Class {self.__class__.__name__}")
+        raise GalfindTypeError(
+            f"self has type {self.__class__.__name__}; must be a "
+            "Band_Data, Stacked_Band_Data or Data instance."
+        )
     depth_dir = (
         f"{config['Depths']['DEPTH_DIR']}/"
         + f"{instr_name}/{self.version}/{self.survey}/"
@@ -1265,14 +1287,16 @@ def get_grid_depth_path(
 
     Raises
     ------
-    AssertionError
+    MissingDataError
         If `self` has not had forced photometry run (no
         `forced_phot_args` attribute).
     """
     depth_dir = get_depth_dir(self, aper_diam, mode)
-    assert hasattr(self, "forced_phot_args"), galfind_logger.critical(
-        f"Forced photometry not run for {repr(self)}, cannot run depths!"
-    )
+    if not hasattr(self, "forced_phot_args"):
+        raise MissingDataError(
+            f"Forced photometry not run for {repr(self)}, cannot run "
+            "depths! Run forced photometry first."
+        )
     subdir = get_forced_phot_subdir(self.aper_diams, self.forced_phot_args)
     depth_path = f"{depth_dir}/{subdir}/{self.filt_name}.h5"
     funcs.make_dirs(depth_path)
@@ -1347,7 +1371,12 @@ def calc_band_depth(params: Tuple[Any]) -> NoReturn:
             else:
                 n_split = "auto"
         else:
-            assert isinstance(n_split, int) or n_split == "auto"
+            if not (isinstance(n_split, int) or n_split == "auto"):
+                raise InvalidOptionError(
+                    f"n_split={n_split!r} has type "
+                    f"{type(n_split).__name__}; must be an int or the "
+                    "string 'auto'."
+                )
 
         region_path = (
             f"{get_depth_dir(self, aper_diam, mode)}/"
@@ -1483,7 +1512,11 @@ def calc_band_depth(params: Tuple[Any]) -> NoReturn:
             n_retry_box,
             grid_offset_times,
         ]
-        assert len(hf_save_names) == len(hf_save_data)
+        if len(hf_save_names) != len(hf_save_data):
+            raise LengthMismatchError(
+                f"len(hf_save_names)={len(hf_save_names)} != "
+                f"len(hf_save_data)={len(hf_save_data)}."
+            )
 
         hf = h5py.File(grid_depth_path, "w")
         for name_i, data_i in zip(hf_save_names, hf_save_data):
@@ -1960,7 +1993,12 @@ def calc_band_data_area_depth(
         corresponding cumulative unmasked area at each depth, and the
         total unmasked area.
     """
-    assert aper_diam in self.depth_args.keys()
+    if aper_diam not in self.depth_args.keys():
+        raise MissingDataError(
+            f"aper_diam={aper_diam!r} not in self.depth_args.keys()="
+            f"{list(self.depth_args.keys())!r} for {repr(self)}. Run "
+            "depth calculation for this aperture diameter first."
+        )
     # galfind_logger.info(f"Calculating area-depth for {repr(self)}
     # in sub-region {depth_subreg}")
     area_depth_save_path = get_area_depth_h5_path(
@@ -2344,9 +2382,11 @@ def plot_data_area_depth(
         zbins = mask_selector.extract_zbins(self)
         # select zbin which matches the redshift of the data
         zbin = [zbin_ for zbin_ in zbins if zbin_[0] <= kwargs["z"] < zbin_[1]]
-        assert len(zbin) == 1, galfind_logger.critical(
-            f"Multiple or no zbins found for z={kwargs['z']}!"
-        )
+        if len(zbin) != 1:
+            raise RangeError(
+                f"Multiple or no zbins found for z={kwargs['z']}: "
+                f"{zbin!r}; expected exactly 1."
+            )
         zbin = zbin[0]
     else:
         zbin = None
@@ -2513,16 +2553,15 @@ def get_hf_output(
 
     Raises
     ------
-    AssertionError
+    MissingFileError
         If the expected ``.h5`` file does not exist.
     """
     # open .h5
     h5_path = get_grid_depth_path(
         self, aper_diam, self.depth_args[aper_diam]["mode"]
     )
-    assert Path(h5_path).is_file(), galfind_logger.critical(
-        f"{h5_path} does not exist!"
-    )
+    if not Path(h5_path).is_file():
+        raise MissingFileError(f"{h5_path} does not exist!")
     hf = h5py.File(h5_path, "r")
     hf_output = {
         label: np.array(hf[label])
@@ -2615,13 +2654,12 @@ def plot_depth_diagnostic(
 
     Raises
     ------
-    AssertionError
+    MissingDataError
         If `self` does not have a `depth_path` attribute.
     """
     plt.style.use("default")
-    assert hasattr(self, "depth_path"), galfind_logger.critical(
-        f"{repr(self)} has no 'depth_path'"
-    )
+    if not hasattr(self, "depth_path"):
+        raise MissingDataError(f"{repr(self)} has no 'depth_path'.")
     hf_output = get_hf_output(self, aper_diam)
     cat_x, cat_y = get_cat_xy(self, master_cat_path)
     combined_mask = self._combine_seg_data_and_mask()
@@ -2803,7 +2841,7 @@ def _get_labels(
 
     Raises
     ------
-    Exception
+    RangeError
         If more than 2 unique regions are found (currently unsupported).
     """
     possible_labels = np.unique(hf_output["labels_grid"])
@@ -2835,9 +2873,10 @@ def _get_labels(
             labels_cmap(possible_labels[1]),
         ]
     else:
-        err_message = "Depth plotting fails with more than 2 regions!"
-        galfind_logger.critical(err_message)
-        raise Exception(err_message)
+        raise RangeError(
+            f"Depth plotting fails with more than 2 regions; found "
+            f"{len(av_depths)}."
+        )
     return labels_arr, possible_labels, colours, labels_cmap
 
 
@@ -3202,10 +3241,11 @@ def append_loc_depth_cols(
     ------
     NotImplementedError
         If `overwrite` is `True` (not yet implemented).
-    AssertionError
-        If aperture-corrected flux columns are missing, if `self` has no
-        `forced_phot_band`, or if aperture diameters differ between
-        bands.
+    MissingDataError
+        If aperture-corrected flux columns are missing, or if `self` has
+        no `forced_phot_band`.
+    InvalidUnitError
+        If aperture diameters differ between bands.
     """
     from ..catalogues.Catalogue import Catalogue
     from ..imaging.Data import Stacked_Band_Data
@@ -3217,9 +3257,9 @@ def append_loc_depth_cols(
         f"FLUX_APER_{band_data.filt_name}_aper_corr" in tab.colnames
         for band_data in self
     ):
-        galfind_logger.critical(
+        raise MissingDataError(
             "Must run aperture corrections before appending local "
-            + "depth columns!"
+            "depth columns!"
         )
     elif (
         not all(
@@ -3229,11 +3269,10 @@ def append_loc_depth_cols(
         or update
         or overwrite
     ):
-        assert hasattr(self, "forced_phot_band"), galfind_logger.critical(
-            f"{repr(self)} has no 'forced_phot_band'"
-        )
+        if not hasattr(self, "forced_phot_band"):
+            raise MissingDataError(f"{repr(self)} has no 'forced_phot_band'.")
         # ensure aperture diameters are the same for all bands
-        assert all(
+        if not all(
             all(
                 diam == diam_0
                 for diam, diam_0 in zip(
@@ -3241,10 +3280,11 @@ def append_loc_depth_cols(
                 )
             )
             for band_data in self
-        ), galfind_logger.critical(
-            "Aperture diameters are not the same for all bands in "
-            + f"{repr(self)}"
-        )
+        ):
+            raise InvalidUnitError(
+                "Aperture diameters are not the same for all bands in "
+                f"{repr(self)}."
+            )
         aper_diams = self[0].aper_diams.to(u.arcsec).value
         self_band_data_arr = deepcopy(self.band_data_arr)
         if (
@@ -3300,7 +3340,13 @@ def append_loc_depth_cols(
                     # make sure the same depth setup has been run in each band
                     if i == 0 and j == 0:
                         diagnostic_name = diagnostic_name_
-                    assert diagnostic_name_ == diagnostic_name
+                    if diagnostic_name_ != diagnostic_name:
+                        raise GalfindError(
+                            f"diagnostic_name_={diagnostic_name_!r} for "
+                            f"{repr(band_data)} does not match "
+                            f"diagnostic_name={diagnostic_name!r}; the "
+                            "same depth setup must be used for every band."
+                        )
                     hf.close()
                 else:
                     depths = np.full(len(tab), np.nan)

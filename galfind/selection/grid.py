@@ -29,6 +29,11 @@ from ..catalogues.Catalogue import (  # , scattered_phot_labels_inst
     scattered_phot_labels,
 )
 from ..utils import useful_funcs_austind as funcs
+from ..utils.exceptions import (
+    IncompatibleKwargsError,
+    LengthMismatchError,
+    RangeError,
+)
 
 
 class Grid:
@@ -224,9 +229,9 @@ class Grid:
 
         Raises
         ------
-        ValueError
-            If the selection table has a different number of rows than
-            the x or y table.
+        LengthMismatchError
+            If `select_colnames` is given and the selection table has a
+            different number of rows than the x or y table.
         """
         x_tab = Table.read(cat_path, hdu=x_hdu)
         y_tab = Table.read(cat_path, hdu=y_hdu)
@@ -236,7 +241,10 @@ class Grid:
             for colname in select_colnames:
                 select_mask &= select_tab[colname]
             if len(x_tab) != len(select_tab):
-                raise ValueError("Length of x_tab and select_tab do not match")
+                raise LengthMismatchError(
+                    f"len(x_tab)={len(x_tab)} != len(select_tab)="
+                    f"{len(select_tab)} for cat_path={cat_path!r}."
+                )
             else:
                 x_tab = x_tab[select_mask]
                 galfind_logger.debug(
@@ -244,7 +252,10 @@ class Grid:
                     + f"column(s) {select_colnames}"
                 )
             if len(y_tab) != len(select_tab):
-                raise ValueError("Length of y_tab and select_tab do not match")
+                raise LengthMismatchError(
+                    f"len(y_tab)={len(y_tab)} != len(select_tab)="
+                    f"{len(select_tab)} for cat_path={cat_path!r}."
+                )
             else:
                 y_tab = y_tab[select_mask]
                 galfind_logger.debug(
@@ -468,11 +479,21 @@ class Grid_2D:
 
         Raises
         ------
-        AssertionError
-            If `sim_cat.cat_creator.apply_gal_instr_mask` is `True`.
+        IncompatibleKwargsError
+            If `sim_cat.cat_creator.apply_gal_instr_mask` is `True`, if
+            `sim_cat` has an associated `Data` object and any of
+            `data_filterset`, `aper_diams`, `sim_filterset` are also
+            given, or if `sim_cat` has no associated `Data` object and
+            any of `data_filterset`, `aper_diams`, `sim_filterset` are
+            missing.
         """
         # assert sim_cat.cat_creator.load_mask_func is None
-        assert not sim_cat.cat_creator.apply_gal_instr_mask
+        if sim_cat.cat_creator.apply_gal_instr_mask:
+            raise IncompatibleKwargsError(
+                "sim_cat.cat_creator.apply_gal_instr_mask=True; "
+                "Grid_2D.from_sim_cat requires a sim_cat whose "
+                "cat_creator does not apply a galaxy/instrument mask."
+            )
 
         if hasattr(sim_cat, "data") and sim_cat.data is not None:
             if (
@@ -480,9 +501,13 @@ class Grid_2D:
                 or aper_diams is not None
                 or sim_filterset is not None
             ):
-                galfind_logger.critical(
-                    "Don't provide filterset and aper_diams if you "
-                    + "have a Data object"
+                raise IncompatibleKwargsError(
+                    "sim_cat has an associated Data object, but one or "
+                    f"more of data_filterset={data_filterset!r}, "
+                    f"aper_diams={aper_diams!r}, "
+                    f"sim_filterset={sim_filterset!r} was also given; "
+                    "don't provide filterset and aper_diams if sim_cat "
+                    "has a Data object."
                 )
             sim_filterset = sim_cat.data.filterset
             aper_diams = sim_cat.data.aper_diams
@@ -494,9 +519,13 @@ class Grid_2D:
                 or aper_diams is None
                 or sim_filterset is None
             ):
-                galfind_logger.critical(
-                    "filterset and aper_diams must be provided if "
-                    + "not in the Catalogue object"
+                raise IncompatibleKwargsError(
+                    "sim_cat has no associated Data object, but one or "
+                    f"more of data_filterset={data_filterset!r}, "
+                    f"aper_diams={aper_diams!r}, "
+                    f"sim_filterset={sim_filterset!r} is missing; all "
+                    "three must be provided if sim_cat has no Data "
+                    "object."
                 )
 
         # determine scattered catalogue path
@@ -817,12 +846,11 @@ class Grid_2D:
             y = np.array(y)
         interpolated = interpolator((x, y))
         if any(np.isnan(interpolated)):
-            err_message = (
-                f"{sum(np.isnan(interpolated))} interpolated "
-                + f"values are NaN for ({x=}, {y=})!"
+            raise RangeError(
+                f"{sum(np.isnan(interpolated))} interpolated values "
+                f"are NaN for (x={x!r}, y={y!r}); these lie outside "
+                "the completeness grid's populated bins."
             )
-            galfind_logger.critical(err_message)
-            raise ValueError(err_message)
         return interpolated
 
     def pcolormesh(

@@ -25,6 +25,12 @@ if TYPE_CHECKING:
 from .. import config, galfind_logger
 from ..utils import useful_funcs_austind as funcs
 from ..utils.decorators import run_in_dir
+from ..utils.exceptions import (
+    ExternalToolError,
+    GalfindError,
+    InvalidOptionError,
+    LengthMismatchError,
+)
 
 
 def get_code() -> str:
@@ -159,7 +165,7 @@ def get_err_map(
 
     Raises
     ------
-    Exception
+    InvalidOptionError
         If ``err_type`` is neither "rms_err" nor "wht".
     """
     if err_type == "rms_err":
@@ -168,23 +174,15 @@ def get_err_map(
         else:
             self._make_rms_err_from_wht()
         return self.rms_err_path, self.rms_err_ext, "MAP_RMS"
-        # raise (
-        #     Exception(
-        #         f"No rms_err map available for {self.filt.filt_name}"
-        #     )
-        # )
     elif err_type == "wht":
         if self.wht_path is not None and self.wht_ext is not None:
             pass
         else:
             self._make_wht_from_rms_err()
-            # raise (
-            #     Exception(f"No wht map available for {self.filt.filt_name}")
-            # )
         return self.wht_path, self.wht_ext, "MAP_WEIGHT"
     else:
-        raise (
-            Exception(f"err_type must be 'rms_err' or 'wht', not {err_type}")
+        raise InvalidOptionError(
+            f"err_type={err_type!r} must be 'rms_err' or 'wht'."
         )
 
 
@@ -306,11 +304,10 @@ def segment(
                     )
                     os.rename(temp_filepath, full_filepath)
                 else:
-                    err_message = (
-                        f"Expected temp file {temp_filepath} not found!"
+                    raise ExternalToolError(
+                        f"Expected temp file {temp_filepath} not found! "
+                        "SExtractor may have failed to produce output."
                     )
-                    galfind_logger.critical(err_message)
-                    raise Exception(err_message)
             funcs.change_file_permissions(full_filepath)
     return seg_path
 
@@ -409,21 +406,26 @@ def perform_forced_phot(
     select_band_err_map_path, select_band_map_ext, select_band_map_type = (
         get_err_map(forced_phot_band, err_type)
     )
-    assert err_map_type == select_band_map_type, galfind_logger.critical(
-        f"{err_map_type=}!={select_band_map_type=}"
-    )
+    if err_map_type != select_band_map_type:
+        raise GalfindError(
+            f"err_map_type={err_map_type!r} != "
+            f"select_band_map_type={select_band_map_type!r}; "
+            f"{repr(self)} and {repr(forced_phot_band)} must use the "
+            "same error map type."
+        )
     forced_phot_path = get_forced_phot_path(
         self, err_map_type, forced_phot_band
     )
     if not Path(forced_phot_path).is_file() or overwrite:
         # check whether images of forced phot band and
         # sextraction band have the same shape
-        assert (
-            self.data_shape == forced_phot_band.data_shape
-        ), galfind_logger.critical(
-            f"{self.data_shape=}!={forced_phot_band.data_shape=} "
-            + f"({repr(self)=}, {repr(forced_phot_band)=})"
-        )
+        if self.data_shape != forced_phot_band.data_shape:
+            raise LengthMismatchError(
+                f"self.data_shape={self.data_shape!r} != "
+                f"forced_phot_band.data_shape="
+                f"{forced_phot_band.data_shape!r} "
+                f"({repr(self)}, {repr(forced_phot_band)})."
+            )
         # update the SExtractor params file at runtime
         # to include the correct number of aperture diameters
         update_sex_params_aper_diam_len(len(self.aper_diams), params_path)

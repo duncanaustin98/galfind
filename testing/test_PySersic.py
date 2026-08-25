@@ -27,7 +27,14 @@ from _synthetic_morphology import (
     make_sersic_stamp as _make_sersic_image,
 )
 
-from galfind.properties.PySersic import PySersic_Fitter
+from galfind.properties.PySersic import PySersic_Fitter, PySersic_Result
+from galfind.utils.exceptions import (
+    GalfindTypeError,
+    IncompatibleKwargsError,
+    InvalidOptionError,
+    LengthMismatchError,
+    RangeError,
+)
 
 
 def _make_fitter(
@@ -60,34 +67,62 @@ class TestLoadPriors:
         assert bounded == {"r_eff": (0.5, 10.0)}
 
     def test_unknown_param_raises(self):
-        with pytest.raises(AssertionError):
+        with pytest.raises(InvalidOptionError, match="not_a_param"):
             PySersic_Fitter._load_priors(
                 {"sersic": {"not_a_param": 1.0}}, "sersic"
             )
 
     def test_unknown_model_raises(self):
-        with pytest.raises(AssertionError):
+        with pytest.raises(InvalidOptionError, match="not_a_model"):
             PySersic_Fitter._load_priors(
                 {"not_a_model": {"n": 1.0}}, "not_a_model"
             )
 
     def test_bad_bound_order_raises(self):
-        with pytest.raises(AssertionError):
+        with pytest.raises(RangeError, match="r_eff"):
             PySersic_Fitter._load_priors(
                 {"sersic": {"r_eff": [10.0, 0.5]}}, "sersic"
             )
 
     def test_bad_bound_length_raises(self):
-        with pytest.raises(AssertionError):
+        with pytest.raises(LengthMismatchError, match="r_eff"):
             PySersic_Fitter._load_priors(
                 {"sersic": {"r_eff": [0.5, 1.0, 2.0]}}, "sersic"
             )
 
     def test_bad_value_type_raises(self):
-        with pytest.raises(TypeError):
+        with pytest.raises(GalfindTypeError, match="n"):
             PySersic_Fitter._load_priors(
                 {"sersic": {"n": "not a number"}}, "sersic"
             )
+
+
+class _FakeCutout:
+    """Minimal stand-in for a `Band_Cutout_Base` exposing only the
+    `load()` interface `PySersic_Result.plot()` needs for its residual
+    plot branch."""
+
+    def load(self, key):
+        return None, np.zeros((5, 5))
+
+
+class TestPySersicResultPlotRequiresOutPath:
+    """`PySersic_Result.plot(save=True)` requires `out_path`
+    (`IncompatibleKwargsError`, converted from a bare `assert`)."""
+
+    def test_save_without_out_path_raises(self):
+        result = PySersic_Result(
+            fitter=None,
+            chi2=1.0,
+            Ndof=1,
+            properties={},
+            property_errs={},
+            property_pdfs={},
+            model_image=np.zeros((5, 5)),
+            cutout=_FakeCutout(),
+        )
+        with pytest.raises(IncompatibleKwargsError, match="out_path"):
+            result.plot(save=True, out_path=None)
 
 
 class TestFitArray:

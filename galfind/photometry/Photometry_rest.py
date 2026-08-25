@@ -24,8 +24,13 @@ try:
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from .. import galfind_logger
 from ..utils import useful_funcs_austind as funcs
+from ..utils.exceptions import (
+    GalfindError,
+    GalfindTypeError,
+    InvalidUnitError,
+    MissingKeyError,
+)
 from ..visualization.PDF import PDF
 from .Photometry import Photometry
 
@@ -446,10 +451,13 @@ class Photometry_rest(Photometry):
         """
         if hasattr(self, "UV_wav_range"):
             if self.UV_wav_range == self.rest_UV_wavs_name(rest_UV_wav_lims):
-                assert (
-                    u.get_physical_type(self.flux.unit)
-                    == "power density/spectral flux density wav"
-                )
+                physical_type = u.get_physical_type(self.flux.unit)
+                if physical_type != "power density/spectral flux density wav":
+                    raise InvalidUnitError(
+                        f"flux.unit={self.flux.unit!s} has physical type "
+                        f"{physical_type!r}; expected "
+                        "'power density/spectral flux density wav'."
+                    )
                 return True
         return False
 
@@ -475,7 +483,11 @@ class Photometry_rest(Photometry):
         save_path: Optional[str] = None,
         **kwargs,
     ):
-        assert type(iters) in [int]
+        if type(iters) is not int:
+            raise GalfindTypeError(
+                f"iters={iters!r} has type {type(iters).__name__}; "
+                "must be int."
+            )
         # Add iters to kwargs
         kwargs["iters"] = iters
         if not inspect.ismethod(SED_rest_property_function):
@@ -497,14 +509,16 @@ class Photometry_rest(Photometry):
                 else:
                     property_iters = 0
             property_iters_arr[i] = property_iters
-        assert all(
+        if not all(
             property_iters == property_iters_arr[0]
             for property_iters in property_iters_arr
-        ), (
-            f"All {property_names=} must have the same number of "
-            f"iterations to run!, "
-            f"{[(p, property_iters_arr[0]) for p in property_iters_arr]}"
-        )
+        ):
+            iters_per_property = list(zip(property_names, property_iters_arr))
+            raise GalfindError(
+                f"All property_names={property_names!r} must have the "
+                "same number of iterations to run! iters per "
+                f"property={iters_per_property!r}"
+            )
         # do nothing if PDFs of the required length have already been loaded
         if property_iters_arr[0] == 0:
             return self, property_names
@@ -522,11 +536,12 @@ class Photometry_rest(Photometry):
             if property is None:
                 self.property_PDFs[property_name] = None
             else:
-                if type(property) not in [dict]:
-                    galfind_logger.critical(
-                        f"{type(property)=} not in [dict]!"
+                if type(property) is not dict:
+                    raise GalfindTypeError(
+                        f"property={property!r} for property_name="
+                        f"{property_name!r} has type "
+                        f"{type(property).__name__}; must be dict."
                     )
-                    breakpoint()
                 # construct PDF from property output if required
                 if "PDF" in property.keys():
                     new_PDF = property["PDF"]
@@ -538,10 +553,10 @@ class Photometry_rest(Photometry):
                         property_name, property["vals"], property["PDF_kwargs"]
                     )
                 else:
-                    galfind_logger.critical(
-                        f"{property.keys()=} for {property_name} does "
-                        "not include either ['vals', 'PDF_kwargs'] or "
-                        "'PDF'!"
+                    raise MissingKeyError(
+                        f"property.keys()={list(property.keys())!r} for "
+                        f"property_name={property_name!r} does not "
+                        "include either ['vals', 'PDF_kwargs'] or 'PDF'."
                     )
                 if property_name in self.property_PDFs.keys():
                     old_PDF = self.property_PDFs[property_name]

@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from galfind.utils import decorators
+from galfind.utils.exceptions import GalfindError
 
 
 def test_run_in_dir_executes_inside_target_directory(tmp_path):
@@ -176,6 +177,6 @@ def test_email_update_sends_terminate_email_and_reraises_on_exception():
         def raises():
             raise ValueError("original error")
 
-        with pytest.raises(Exception):
+        with pytest.raises(GalfindError):
             raises()
         assert mock_smtp_instance.send.call_count == 2

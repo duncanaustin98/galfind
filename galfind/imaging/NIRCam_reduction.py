@@ -38,6 +38,12 @@ if TYPE_CHECKING:
 from .. import NIRCam, config, galfind_logger
 from ..utils import useful_funcs_austind as funcs
 from ..utils.decorators import log_time, run_in_self_dir
+from ..utils.exceptions import (
+    ExternalToolError,
+    GalfindError,
+    InvalidOptionError,
+    MissingFileError,
+)
 
 
 class Raw_JWST_Data:
@@ -79,7 +85,10 @@ class Raw_JWST_Data:
         instrument: Type[Instrument] = NIRCam,
     ):
         if instrument.__name__ != "NIRCam":
-            raise ValueError("Raw_Data only currently supports 'NIRCam'")
+            raise InvalidOptionError(
+                f"instrument={instrument.__name__!r} not supported; "
+                "Raw_JWST_Data currently only supports 'NIRCam'."
+            )
         self.instrument = instrument()
         self.survey = survey
         self.pid = pid
@@ -270,8 +279,9 @@ class Raw_JWST_Data:
             os.environ["CRDS_CONTEXT"] = crds_context
             galfind_logger.info(f"Set {crds_context=} for JWST data reduction")
         except crds.exceptions.CrdsError as e:
-            galfind_logger.critical(f"{crds_context=} failed certification.")
-            galfind_logger.critical("Error:", e)
+            raise ExternalToolError(
+                f"crds_context={crds_context!r} failed certification: {e}"
+            ) from e
         return crds_context
 
     @staticmethod
@@ -300,10 +310,11 @@ class Raw_JWST_Data:
         suffixes = np.unique(
             [file.split("_")[-1].replace(".fits", "") for file in filenames]
         )
-        assert len(suffixes) == 1, (
-            f"Expected all files to have the same suffix, but found "
-            f"{suffixes=}"
-        )
+        if len(suffixes) != 1:
+            raise GalfindError(
+                "Expected all files to have the same suffix, but found "
+                f"suffixes={suffixes!r}."
+            )
         suffix = suffixes[0]
         [
             crds.getreferences(
@@ -403,9 +414,9 @@ class Raw_JWST_Data:
                     f"sky<{match_radius.to(u.arcmin).value:.1f}arcmin"
                 )
             else:
-                err_message = f"{split_by=} not in ['sky']"
-                galfind_logger.critical(err_message)
-                raise ValueError(err_message)
+                raise InvalidOptionError(
+                    f"split_by={split_by!r} not in ['sky']."
+                )
         else:
             groups = {self.survey: cal_filenames}
 
@@ -610,9 +621,9 @@ class Raw_JWST_Data:
                 Image2PipelinePostDewisp as Image2PipelineDewisp,
             )
         else:
-            err_message = f"{wisp_when=} not in ['pre', 'post']"
-            galfind_logger.critical(err_message)
-            raise ValueError(err_message)
+            raise InvalidOptionError(
+                f"wisp_when={wisp_when!r} not in ['pre', 'post']."
+            )
         # ensure steps has a "wisps" entry
         if "wisps" not in steps.keys():
             steps["wisps"] = {}
@@ -765,9 +776,10 @@ class Raw_JWST_Data:
             # make stage 1 pipeline object
             if config_file is not None:
                 galfind_logger.info(f"Loading config file: {config_file}")
-                assert Path(config_file).is_file(), galfind_logger.critical(
-                    f"{config_file=} does not exist!"
-                )
+                if not Path(config_file).is_file():
+                    raise MissingFileError(
+                        f"config_file={config_file!r} does not exist."
+                    )
                 if steps != {}:
                     galfind_logger.warning(
                         f"{steps=} ignored when using a config file."

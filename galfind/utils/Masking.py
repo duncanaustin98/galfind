@@ -45,6 +45,15 @@ if TYPE_CHECKING:
 
 from .. import config, galfind_logger
 from ..utils import useful_funcs_austind as funcs
+from .exceptions import (
+    GalfindTypeError,
+    InvalidOptionError,
+    InvalidUnitError,
+    LengthMismatchError,
+    MissingDataError,
+    MissingFileError,
+    MissingKeyError,
+)
 
 # Manual masking
 
@@ -106,10 +115,11 @@ def get_mask_args(
         mask_hdr = fits.open(fits_mask_path, mode="readonly")[1].header
         if all(key in mask_hdr.keys() for key in auto_mask_keys):
             mask_method = str(mask_hdr["METHOD"]).lower()
-            assert mask_method.lower() == "auto", galfind_logger.critical(
-                f"Mask method in {fits_mask_path} is "
-                f"{mask_method.lower()} not 'auto'"
-            )
+            if mask_method.lower() != "auto":
+                raise InvalidOptionError(
+                    f"Mask method in {fits_mask_path} is "
+                    f"{mask_method.lower()!r}; must be 'auto'."
+                )
             # re-create star_mask_params dict
             star_mask_params = {
                 "central": {
@@ -185,7 +195,9 @@ def manually_mask(
 
     Raises
     ------
-    Exception
+    LengthMismatchError
+        If more than one candidate `.reg` region mask file is found.
+    MissingFileError
         If neither a FITS mask nor a `.reg` region mask file is found for
         this band.
     """
@@ -205,18 +217,19 @@ def manually_mask(
             reg_mask_paths.extend(
                 list(glob.glob(f"{reg_mask_dir}/*{filt_ext}*.reg"))
             )
-        assert len(reg_mask_paths) <= 1, galfind_logger.critical(
-            f"{len(reg_mask_paths)=} > 1"
-        )
+        if len(reg_mask_paths) > 1:
+            raise LengthMismatchError(
+                f"len(reg_mask_paths)={len(reg_mask_paths)} > 1 for "
+                f"{reg_mask_dir=}; expected at most one candidate "
+                ".reg mask file."
+            )
         if len(reg_mask_paths) == 1:
             reg_mask_path = reg_mask_paths[0]
         else:
-            raise (
-                Exception(
-                    f"Neither .fits at {fits_mask_path=} or"
-                    + f".reg mask path in {reg_mask_dir=} found "
-                    + f"for {self.survey} {self.version} {self.filt_name}"
-                )
+            raise MissingFileError(
+                f"Neither .fits at {fits_mask_path=} nor "
+                f".reg mask path in {reg_mask_dir=} found "
+                f"for {self.survey} {self.version} {self.filt_name}."
             )
         # clean region mask of any zero size regions
         # if not "clean" in the .reg filename
@@ -316,7 +329,7 @@ def convert_mask_to_fits(
 
     Raises
     ------
-    AssertionError
+    LengthMismatchError
         If no valid regions are found in the `.reg` file (likely because
         regions are in 'physical' coordinates instead of 'image').
     """
@@ -333,10 +346,11 @@ def convert_mask_to_fits(
         from regions import Regions
 
         mask_regions = Regions.read(mask_path)
-        assert len(mask_regions) > 0, galfind_logger.critical(
-            f"No regions found in {mask_path}! "
-            + ".reg likely in 'physical' co-ordinates!"
-        )
+        if not len(mask_regions) > 0:
+            raise LengthMismatchError(
+                f"No regions found in {mask_path}! "
+                ".reg likely in 'physical' co-ordinates!"
+            )
 
         wcs = self.load_wcs()
         pix_mask = np.zeros(im_data.shape, dtype=bool)
@@ -810,18 +824,17 @@ def auto_mask(
             for name in artefact_mask_dir_names
         }
 
-        assert not any(
-            key in ["MASK", "EDGE"] for key in artefact_mask_dir_names
-        ), galfind_logger.critical(
-            f"{artefact_mask_dir_names=} cannot contain any of "
-            + "['MASK', 'EDGE']"
-        )
-        if star_mask_params is None:
-            assert not any(
-                key in ["STELLAR"] for key in artefact_mask_dir_names
-            ), galfind_logger.critical(
-                f"{artefact_mask_dir_names=} cannot contain 'STELLAR'"
+        if any(key in ["MASK", "EDGE"] for key in artefact_mask_dir_names):
+            raise InvalidOptionError(
+                f"artefact_mask_dir_names={artefact_mask_dir_names!r} "
+                "cannot contain any of ['MASK', 'EDGE']."
             )
+        if star_mask_params is None:
+            if any(key in ["STELLAR"] for key in artefact_mask_dir_names):
+                raise InvalidOptionError(
+                    f"artefact_mask_dir_names={artefact_mask_dir_names!r} "
+                    "cannot contain 'STELLAR'."
+                )
         # make pixel masks from the paths
         artefact_pix_masks = {}
         for ext_name, mask_paths in artefact_mask_dict.items():
@@ -961,7 +974,7 @@ def make_edge_mask(
 
     Raises
     ------
-    ValueError
+    InvalidOptionError
         If `element` is not "RECT" or "ELLIPSE".
     """
     import cv2
@@ -989,7 +1002,9 @@ def make_edge_mask(
             cv2.MORPH_ELLIPSE, (edge_mask_distance, edge_mask_distance)
         )
     else:
-        raise ValueError(f"element = {element} must be 'RECT' or 'ELLIPSE'")
+        raise InvalidOptionError(
+            f"element={element!r} must be 'RECT' or 'ELLIPSE'."
+        )
 
     edge_mask = cv2.dilate(
         edges, kernel, iterations=1
@@ -1023,40 +1038,64 @@ def check_star_mask_params(
 
     Raises
     ------
-    AssertionError
-        If the structure or types do not match the expected format.
+    GalfindTypeError
+        If `star_mask_params`, `star_mask_params["central"]` or
+        `star_mask_params["spikes"]` is not a `dict`, or if any "a"/"b"
+        scale value is not a `float` or `int`.
+    MissingKeyError
+        If `star_mask_params` is missing the "central" or "spikes" key,
+        or if either of those is missing its "a" or "b" key.
     """
-    assert isinstance(star_mask_params, dict), galfind_logger.warning(
-        f"Mask overridden, but {type(star_mask_params)=} != dict"
-    )
-    assert (
+    if not isinstance(star_mask_params, dict):
+        raise GalfindTypeError(
+            f"star_mask_params has type {type(star_mask_params).__name__}; "
+            "must be a dict."
+        )
+    if not (
         "central" in star_mask_params.keys()
         and "spikes" in star_mask_params.keys()
-    )
-    assert isinstance(
-        star_mask_params["central"], dict
-    ), galfind_logger.warning(
-        "Mask overridden, but "
-        + f"{type(star_mask_params['central'])=} != dict"
-    )
-    assert (
+    ):
+        raise MissingKeyError(
+            f"star_mask_params={star_mask_params!r} missing required "
+            "keys 'central' and/or 'spikes'."
+        )
+    if not isinstance(star_mask_params["central"], dict):
+        raise GalfindTypeError(
+            "star_mask_params['central'] has type "
+            f"{type(star_mask_params['central']).__name__}; must be a dict."
+        )
+    if not (
         "a" in star_mask_params["central"].keys()
         and "b" in star_mask_params["central"].keys()
-    )
-    assert isinstance(
-        star_mask_params["spikes"], dict
-    ), galfind_logger.warning(
-        f"Mask overridden, but {type(star_mask_params['spikes'])=} != dict"
-    )
-    assert (
+    ):
+        raise MissingKeyError(
+            "star_mask_params['central']="
+            f"{star_mask_params['central']!r} missing required keys "
+            "'a' and/or 'b'."
+        )
+    if not isinstance(star_mask_params["spikes"], dict):
+        raise GalfindTypeError(
+            "star_mask_params['spikes'] has type "
+            f"{type(star_mask_params['spikes']).__name__}; must be a dict."
+        )
+    if not (
         "a" in star_mask_params["spikes"].keys()
         and "b" in star_mask_params["spikes"].keys()
-    )
-    assert all(
+    ):
+        raise MissingKeyError(
+            "star_mask_params['spikes']="
+            f"{star_mask_params['spikes']!r} missing required keys "
+            "'a' and/or 'b'."
+        )
+    if not all(
         type(scale) in [float, int]
         for mask_type in star_mask_params.values()
         for scale in mask_type.values()
-    )
+    ):
+        raise GalfindTypeError(
+            f"star_mask_params={star_mask_params!r} has 'a'/'b' scale "
+            "values that are not all float or int."
+        )
 
 
 def sort_band_dependent_star_mask_params(
@@ -1170,17 +1209,30 @@ def combine_masks(
 
     Raises
     ------
-    AssertionError
-        If bands have different pixel scales or image dimensions.
+    InvalidUnitError
+        If bands have different pixel scales.
+    LengthMismatchError
+        If bands have different image dimensions, or their masks have
+        inconsistent shapes.
+    MissingKeyError
+        If any band's mask is missing a 'MASK' extension.
     """
     out_path = get_combined_path_name(self)
     if not Path(out_path).is_file():
-        assert all(
+        if not all(
             band_data.pix_scale == self[0].pix_scale for band_data in self
-        ), galfind_logger.critical("All bands must have the same pixel scale")
-        assert all(
+        ):
+            raise InvalidUnitError(
+                "All bands must have the same pixel scale; got "
+                f"{[band_data.pix_scale for band_data in self]!r}."
+            )
+        if not all(
             band_data.data_shape == self[0].data_shape for band_data in self
-        ), galfind_logger.critical("All bands must have the same data shape")
+        ):
+            raise LengthMismatchError(
+                "All bands must have the same data shape; got "
+                f"{[band_data.data_shape for band_data in self]!r}."
+            )
         band_mask_exts = [band_data.load_mask()[0] for band_data in self]
         all_exts = list(
             np.unique(
@@ -1191,9 +1243,16 @@ def combine_masks(
                 ]
             )
         )
-        assert all(
+        if not all(
             "MASK" in band_mask_ext.keys() for band_mask_ext in band_mask_exts
-        ), galfind_logger.critical("All bands must have a 'MASK' extension")
+        ):
+            mask_exts_keys = [
+                list(band_mask_ext.keys()) for band_mask_ext in band_mask_exts
+            ]
+            raise MissingKeyError(
+                "All bands must have a 'MASK' extension; got "
+                f"{mask_exts_keys!r}."
+            )
         # load wcs from the reddest band
         hdr = self.band_data_arr[-1].load_mask()[1]["MASK"]
         for key in auto_mask_keys:
@@ -1235,9 +1294,14 @@ def combine_masks(
                     for band_mask_ext in band_mask_exts
                     if ext in band_mask_ext.keys()
                 ]
-            assert all(
+            if not all(
                 mask.shape == band_masks[0].shape for mask in band_masks
-            ), galfind_logger.critical("All masks must have the same shape")
+            ):
+                raise LengthMismatchError(
+                    "All masks must have the same shape; got "
+                    f"{[mask.shape for mask in band_masks]!r} for "
+                    f"extension {ext!r}."
+                )
             ext_mask = np.logical_or.reduce(tuple(band_masks))
             combined_mask_hdul.extend(
                 [
@@ -1449,9 +1513,10 @@ def make_area_mask_from_data(
         if isinstance(mask_selector, tuple(Mask_Selector.__subclasses__())):
             masks = [mask_selector.load_mask(self, invert=False, **kwargs)]
             pix_scales = [band_data.pix_scale for band_data in self]
-            assert all(
-                pix_scale == pix_scales[0] for pix_scale in pix_scales
-            ), galfind_logger.critical("All pixel scales must be the same!")
+            if not all(pix_scale == pix_scales[0] for pix_scale in pix_scales):
+                raise InvalidUnitError(
+                    f"All pixel scales must be the same; got {pix_scales!r}."
+                )
             pix_scale = pix_scales[0]
         else:
             masks = []
@@ -1462,12 +1527,13 @@ def make_area_mask_from_data(
                         for band_data in self
                         if band_data.instr_name == name
                     ]
-                    assert all(
+                    if not all(
                         pix_scale == pix_scales[0] for pix_scale in pix_scales
-                    ), galfind_logger.critical(
-                        "All pixel scales for bands in the same "
-                        + "instrument must be the same!"
-                    )
+                    ):
+                        raise InvalidUnitError(
+                            "All pixel scales for bands in the same "
+                            f"instrument must be the same; got {pix_scales!r}."
+                        )
                     pix_scale = pix_scales[0]
                     masks.extend(
                         [
@@ -1494,9 +1560,10 @@ def make_area_mask_from_data(
                         self.filterset.instrument_name.split("+")
                         + self.filterset.filt_names
                     )
-                    err_message = f"{name} not in {possible_names}"
-                    galfind_logger.critical(err_message)
-                    raise (Exception(err_message))
+                    raise InvalidOptionError(
+                        f"mask_selector name={name!r} not in "
+                        f"{possible_names!r}."
+                    )
 
         if region_selector is not None:
             masks.extend(
@@ -1506,8 +1573,8 @@ def make_area_mask_from_data(
                 ]
             )
         if len(masks) == 0:
-            galfind_logger.critical(
-                f"Could not find any masks for {mask_selector_name}"
+            raise MissingDataError(
+                f"Could not find any masks for {mask_selector_name}."
             )
         elif len(masks) == 1:
             mask = masks[0]
@@ -1530,9 +1597,10 @@ def make_area_mask_from_data(
         # TODO: Save pixel scale in mask header
         # masks = [mask_selector.load_mask(self, invert = False, **kwargs)]
         pix_scales = [band_data.pix_scale for band_data in self]
-        assert all(
-            pix_scale == pix_scales[0] for pix_scale in pix_scales
-        ), galfind_logger.critical("All pixel scales must be the same!")
+        if not all(pix_scale == pix_scales[0] for pix_scale in pix_scales):
+            raise InvalidUnitError(
+                f"All pixel scales must be the same; got {pix_scales!r}."
+            )
         pix_scale = pix_scales[0]
 
     if isinstance(mask_selector, list) and len(mask_selector) == 1:
@@ -1652,9 +1720,10 @@ def make_area_mask_from_band_data(
                         ]
                     )
                 else:
-                    err_message = f"{name} masking not valid for {repr(self)}"
-                    galfind_logger.critical(err_message)
-                    raise (Exception(err_message))
+                    raise InvalidOptionError(
+                        f"mask_selector name={name!r} masking not valid "
+                        f"for {repr(self)}."
+                    )
 
         if region_selector is not None:
             masks.extend(
@@ -1664,8 +1733,8 @@ def make_area_mask_from_band_data(
                 ]
             )
         if len(masks) == 0:
-            galfind_logger.critical(
-                f"Could not find any masks for {mask_selector_name}"
+            raise MissingDataError(
+                f"Could not find any masks for {mask_selector_name}."
             )
         elif len(masks) == 1:
             mask = masks[0]

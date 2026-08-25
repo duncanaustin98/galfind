@@ -53,6 +53,9 @@ from galfind.selection.Selector import (
     Min_Band_Selector,
     Min_Instrument_Unmasked_Band_Selector,
     Min_Unmasked_Band_Selector,
+    Multiple_Mask_Selector,
+    Multiple_Photometry_Selector,
+    Multiple_SED_fit_Selector,
     Re_Selector,
     Redshift_Bin_Selector,
     Redshift_Limit_Selector,
@@ -73,6 +76,15 @@ from galfind.selection.Selector import (
     Unmasked_Instrument_Selector,
     Unmasked_Redwards_Lya_Selector,
     zPDF_High_Tail_Selector,
+)
+from galfind.utils.exceptions import (
+    GalfindError,
+    GalfindTypeError,
+    IncompatibleKwargsError,
+    InvalidOptionError,
+    InvalidUnitError,
+    LengthMismatchError,
+    RangeError,
 )
 
 
@@ -165,10 +177,10 @@ def fail_ds9_region_selector(request):
                 "filt_name": test_forced_phot_band_[0],
                 "region_label": 0,
             },
-            # Depth_Region_Selector.__call__ asserts its target is a
-            # Catalogue (it needs cat.data to compute depth regions from),
-            # so calling it on a bare Galaxy always raises
-            {"cat": True, "gal": AssertionError},
+            # Depth_Region_Selector.__call__ raises GalfindTypeError if its
+            # target is not a Catalogue (it needs cat.data to compute depth
+            # regions from), so calling it on a bare Galaxy always raises
+            {"cat": True, "gal": GalfindTypeError},
         ),
         (
             {
@@ -176,7 +188,7 @@ def fail_ds9_region_selector(request):
                 "filt_name": test_forced_phot_band_[0],
                 "region_label": 0,
             },
-            {"cat": True, "gal": AssertionError},
+            {"cat": True, "gal": GalfindTypeError},
         ),
         (
             {
@@ -184,7 +196,7 @@ def fail_ds9_region_selector(request):
                 "filt_name": test_forced_phot_band_,
                 "region_label": 0,
             },
-            {"cat": True, "gal": AssertionError},
+            {"cat": True, "gal": GalfindTypeError},
         ),
     ],
 )
@@ -201,7 +213,11 @@ def call_depth_region_selector(request):
                 "filt_name": 0,
                 "region_label": 0,
             },
-            Exception,
+            # filt_name type check lives in Depth_Region_Selector._assertions,
+            # which -- like every *_Selector._assertions -- swallows its
+            # internal GalfindTypeError and returns False, surfacing here as
+            # the generic GalfindError raised by Selector.__init__
+            GalfindError,
         ),
         (
             {
@@ -209,7 +225,9 @@ def call_depth_region_selector(request):
                 "filt_name": test_forced_phot_band_[0],
                 "region_label": 0,
             },
-            Exception,
+            # aper_diam is checked directly in Depth_Region_Selector.__init__
+            # (before _assertions runs), so the specific exception propagates
+            GalfindTypeError,
         ),
     ],
 )
@@ -427,7 +445,7 @@ def call_redshift_bin_selector(request):
                 "SED_fitter": "eazy_fsps_larson_sed_fitter",
                 "z_bin": [1.0, 0.5],
             },
-            Exception,
+            RangeError,
         ),
         (
             {
@@ -435,7 +453,7 @@ def call_redshift_bin_selector(request):
                 "SED_fitter": "eazy_fsps_larson_sed_fitter",
                 "z_bin": [0.5, "1.0"],
             },
-            Exception,
+            GalfindTypeError,
         ),
         (
             {
@@ -443,7 +461,11 @@ def call_redshift_bin_selector(request):
                 "SED_fitter": "eazy_fsps_larson_sed_fitter",
                 "z_bin": 1.0,
             },
-            Exception,
+            # z_bin=1.0 is a scalar float: iterating over it in the
+            # `all(... for z_lim in z_bin)` check raises a plain builtin
+            # TypeError ('float' object is not iterable) rather than our
+            # GalfindTypeError
+            TypeError,
         ),
     ],
 )
@@ -486,17 +508,16 @@ def call_rest_frame_property_bin_selector(request):
                 "property_calculator": "uv_beta_calculator",
                 "property_bin": [-1.0, -3.0] * u.dimensionless_unscaled,
             },
-            Exception,
+            RangeError,
         ),
         (
             {
                 "aper_diam": test_aper_diams[0],
                 "SED_fitter": "eazy_fsps_larson_sed_fitter",
                 "property_calculator": "uv_beta_calculator",
-                "property_bin": [-3.0, -2.0, -1.0]
-                * u.dimensionless_unscaled,
+                "property_bin": [-3.0, -2.0, -1.0] * u.dimensionless_unscaled,
             },
-            Exception,
+            LengthMismatchError,
         ),
         (
             {
@@ -505,7 +526,7 @@ def call_rest_frame_property_bin_selector(request):
                 "property_calculator": "uv_beta_calculator",
                 "property_bin": [-3.0, -1.0],
             },
-            Exception,
+            GalfindTypeError,
         ),
     ],
 )
@@ -812,7 +833,9 @@ def call_min_instrument_unmasked_band_selector(request):
     params=[
         ({"min_bands": 2.0, "instrument": NIRCam()}, Exception),
         ({"min_bands": -1, "instrument": NIRCam()}, Exception),
-        ({"min_bands": 1, "instrument": "invalid"}, Exception),
+        # instrument name string is validated directly in __init__, before
+        # the wrapped _assertions() hook, so the specific exception propagates
+        ({"min_bands": 1, "instrument": "invalid"}, InvalidOptionError),
         ({"min_bands": 1, "instrument": JWST()}, Exception),
         ({"min_bands": 0.32 * u.arcsec, "instrument": NIRCam()}, Exception),
     ],
@@ -1616,9 +1639,7 @@ def fail_robust_zPDF_selector(request):
 def call_zpdf_high_tail_selector(request):
     inputs, outcome = request.param
     inputs_ = inputs.copy()
-    inputs_["SED_fit_label"] = request.getfixturevalue(
-        inputs["SED_fit_label"]
-    )
+    inputs_["SED_fit_label"] = request.getfixturevalue(inputs["SED_fit_label"])
     return zPDF_High_Tail_Selector, inputs_, outcome
 
 
@@ -1666,9 +1687,7 @@ def call_zpdf_high_tail_selector(request):
 def fail_zpdf_high_tail_selector(request):
     inputs, outcome = request.param
     inputs_ = inputs.copy()
-    inputs_["SED_fit_label"] = request.getfixturevalue(
-        inputs["SED_fit_label"]
-    )
+    inputs_["SED_fit_label"] = request.getfixturevalue(inputs["SED_fit_label"])
     return zPDF_High_Tail_Selector, inputs_, outcome
 
 
@@ -1840,7 +1859,7 @@ def call_unmasked_instrument_selector(request):
 @pytest.fixture(
     scope="module",
     params=[
-        ({"instrument": "invalid_instrument"}, Exception),
+        ({"instrument": "invalid_instrument"}, InvalidOptionError),
         # JWST is a facility, not an instrument
         ({"instrument": JWST()}, Exception),
     ],
@@ -1943,7 +1962,8 @@ def call_sextractor_instrument_radius_selector(request):
                 "gtr_or_less": "gtr",
                 "lim": 45.0 * u.marcsec,
             },
-            Exception,
+            # instrument name string is validated directly in __init__
+            InvalidOptionError,
         ),
         (
             {
@@ -1951,7 +1971,10 @@ def call_sextractor_instrument_radius_selector(request):
                 "gtr_or_less": "invalid",
                 "lim": 45.0 * u.marcsec,
             },
-            Exception,
+            # gtr_or_less is validated in each per-band sub-selector's
+            # wrapped _assertions(), surfacing as the generic GalfindError
+            # raised by that sub-selector's own Selector.__init__
+            GalfindError,
         ),
     ],
 )
@@ -2004,7 +2027,8 @@ def call_sextractor_instrument_radius_psf_fwhm_selector(request):
                 "gtr_or_less": "gtr",
                 "scaling": 1.0,
             },
-            Exception,
+            # instrument name string is validated directly in __init__
+            InvalidOptionError,
         ),
         (
             {
@@ -2012,7 +2036,9 @@ def call_sextractor_instrument_radius_psf_fwhm_selector(request):
                 "gtr_or_less": "gtr",
                 "scaling": 1.0,
             },
-            Exception,
+            # the NIRCam-only check is also direct, right after the
+            # instrument name is resolved
+            InvalidOptionError,
         ),
     ],
 )
@@ -2233,7 +2259,19 @@ def call_epochs_selector(request):
                 "aper_diam": 0.32,  # missing units
                 "SED_fitter": "eazy_fsps_larson_sed_fitter",
             },
-            Exception,
+            # aper_diam is checked directly (via SED_fit_Selector.__init__)
+            # while constructing EPOCHS_Selector's first sub-selector
+            GalfindTypeError,
+        ),
+        (
+            {
+                "aper_diam": test_aper_diams[0],
+                "SED_fitter": "eazy_fsps_larson_sed_fitter",
+                "sample": "invalid",
+            },
+            # sample is validated directly at the top of __init__, before
+            # any sub-selectors are constructed
+            InvalidOptionError,
         ),
     ],
 )
@@ -2288,9 +2326,7 @@ def fail_epochs_selector(request):
 def call_cosmos_web_selector(request):
     inputs, outcome = request.param
     inputs_ = inputs.copy()
-    inputs_["SED_fit_label"] = request.getfixturevalue(
-        inputs["SED_fit_label"]
-    )
+    inputs_["SED_fit_label"] = request.getfixturevalue(inputs["SED_fit_label"])
     return COSMOS_Web_Selector, inputs_, outcome
 
 
@@ -2310,9 +2346,7 @@ def call_cosmos_web_selector(request):
 def fail_cosmos_web_selector(request):
     inputs, outcome = request.param
     inputs_ = inputs.copy()
-    inputs_["SED_fit_label"] = request.getfixturevalue(
-        inputs["SED_fit_label"]
-    )
+    inputs_["SED_fit_label"] = request.getfixturevalue(inputs["SED_fit_label"])
     return COSMOS_Web_Selector, inputs_, outcome
 
 
@@ -2762,3 +2796,169 @@ class TestSyntheticCatalogue:
         )
         out = selector(gal_fixture)
         assert bool(out.selection_flags[selector.name]) == expected
+
+
+class TestExceptionHierarchyValidation:
+    """Targeted construction-time tests for the specific exception classes
+    raised by `galfind/selection/Selector.py`'s most user-facing
+    constructor/kwarg validation sites (see galfind/utils/exceptions.py).
+
+    Most `*_Selector._assertions()` hooks catch every internal exception
+    and return a plain `bool`, so a validation failure inside one of those
+    hooks surfaces to the caller only as the generic `GalfindError` raised
+    by `Selector.__init__` (message: "<class>._assertions() failed for
+    kwargs=..."), not the specific class raised internally -- this is a
+    pre-existing, deliberately-preserved control-flow pattern (see
+    `Selector.__init__` and every subclass `_assertions` method), not a
+    conversion bug. Checks made directly in `__init__` (outside any
+    `_assertions`-style hook) do propagate their specific exception class,
+    and are what most of the tests below exercise.
+    """
+
+    def test_selector_call_wrong_object_type(self):
+        # Min_Band_Selector is a plain Data_Selector with no
+        # _assert_SED_fitter/_assert_morph_fitter interception, so this
+        # exercises Selector.__call__'s own type check directly
+        selector = Min_Band_Selector(min_bands=2)
+        with pytest.raises(
+            GalfindTypeError, match="must be either a Galaxy or Catalogue"
+        ):
+            selector("not_a_galaxy_or_catalogue")
+
+    def test_photometry_selector_aper_diam_not_quantity(self):
+        with pytest.raises(GalfindTypeError, match="astropy.units.Quantity"):
+            Band_Mag_Selector(
+                0.32,  # missing units
+                band="F444W",
+                detect_or_non_detect="detect",
+                mag_lim=28.0,
+            )
+
+    def test_photometry_selector_aper_diam_wrong_unit(self):
+        with pytest.raises(InvalidUnitError, match="equivalent to"):
+            Band_Mag_Selector(
+                0.32 * u.kg,
+                band="F444W",
+                detect_or_non_detect="detect",
+                mag_lim=28.0,
+            )
+
+    def test_photometry_selector_aper_diam_negative(self):
+        with pytest.raises(RangeError, match="must be positive"):
+            Band_Mag_Selector(
+                -0.32 * u.arcsec,
+                band="F444W",
+                detect_or_non_detect="detect",
+                mag_lim=28.0,
+            )
+
+    def test_sed_fit_selector_sed_fitter_wrong_type(self):
+        with pytest.raises(GalfindTypeError, match="SED_code"):
+            Redshift_Limit_Selector(
+                test_aper_diams[0],
+                "not_an_SED_fitter",
+                z_lim=8.5,
+                gtr_or_less="gtr",
+            )
+
+    def test_morphology_selector_morph_fitter_wrong_type(self):
+        with pytest.raises(GalfindTypeError, match="Morphology_Fitter"):
+            Re_Selector(
+                morph_fitter="not_a_morph_fitter",
+                gtr_or_less="gtr",
+                lim=0.1 * u.arcsec,
+            )
+
+    def test_multiple_photometry_selector_aper_diam_mismatch(self):
+        matching = Colour_Selector(
+            test_aper_diams[0],
+            colour_bands=["F277W", "F444W"],
+            bluer_or_redder="bluer",
+            colour_val=0.5,
+        )
+        mismatched = Colour_Selector(
+            0.5 * u.arcsec,
+            colour_bands=["F277W", "F444W"],
+            bluer_or_redder="bluer",
+            colour_val=0.5,
+        )
+        assert matching.aper_diam != mismatched.aper_diam
+        with pytest.raises(IncompatibleKwargsError, match="aper_diam"):
+            Multiple_Photometry_Selector(
+                test_aper_diams[0], [matching, mismatched]
+            )
+
+    def test_multiple_sed_fit_selector_sed_fitter_mismatch(
+        self, eazy_fsps_larson_sed_fitter, eazy_sfhz_sed_fitter
+    ):
+        assert eazy_fsps_larson_sed_fitter.label != eazy_sfhz_sed_fitter.label
+        matching = Redshift_Limit_Selector(
+            test_aper_diams[0],
+            eazy_fsps_larson_sed_fitter,
+            z_lim=8.5,
+            gtr_or_less="gtr",
+        )
+        mismatched = Redshift_Limit_Selector(
+            test_aper_diams[0],
+            eazy_sfhz_sed_fitter,
+            z_lim=8.5,
+            gtr_or_less="gtr",
+        )
+        with pytest.raises(IncompatibleKwargsError, match="SED_fitter"):
+            Multiple_SED_fit_Selector(
+                test_aper_diams[0],
+                eazy_fsps_larson_sed_fitter,
+                [matching, mismatched],
+            )
+
+    def test_multiple_mask_selector_wrong_element_type(self):
+        with pytest.raises(GalfindTypeError, match="Mask_Selector"):
+            Multiple_Mask_Selector(["not_a_mask_selector"])
+
+    def test_ds9_region_selector_missing_file(self):
+        # region_path validation lives in Ds9_Region_Selector._assertions,
+        # which swallows the internal MissingFileError and returns False,
+        # surfacing here as the generic GalfindError from Selector.__init__
+        with pytest.raises(GalfindError, match="_assertions"):
+            Ds9_Region_Selector(region_path="/nonexistent/path/to/file.reg")
+
+    def test_epochs_selector_invalid_sample(self, eazy_fsps_larson_sed_fitter):
+        with pytest.raises(InvalidOptionError, match="good.*robust"):
+            EPOCHS_Selector(
+                test_aper_diams[0],
+                eazy_fsps_larson_sed_fitter,
+                sample="invalid",
+            )
+
+    def test_redshift_bin_selector_z_bin_wrong_order(
+        self, eazy_fsps_larson_sed_fitter
+    ):
+        with pytest.raises(RangeError, match=r"z_bin\[0\] < z_bin\[1\]"):
+            Redshift_Bin_Selector(
+                test_aper_diams[0],
+                eazy_fsps_larson_sed_fitter,
+                z_bin=[2.0, 1.0],
+            )
+
+    def test_rest_frame_property_bin_selector_length_mismatch(
+        self, eazy_fsps_larson_sed_fitter, uv_beta_calculator
+    ):
+        with pytest.raises(LengthMismatchError, match="length 2"):
+            Rest_Frame_Property_Bin_Selector(
+                test_aper_diams[0],
+                eazy_fsps_larson_sed_fitter,
+                uv_beta_calculator,
+                property_bin=[-3.0, -2.0, -1.0] * u.dimensionless_unscaled,
+            )
+
+    def test_min_instrument_unmasked_band_selector_invalid_instrument(self):
+        with pytest.raises(InvalidOptionError, match="valid instrument"):
+            Min_Instrument_Unmasked_Band_Selector(
+                min_bands=1, instrument="not_a_real_instrument"
+            )
+
+    def test_sextractor_instrument_radius_psf_fwhm_selector_not_nircam(self):
+        with pytest.raises(InvalidOptionError, match="NIRCam"):
+            Sextractor_Instrument_Radius_PSF_FWHM_Selector(
+                instrument="ACS_WFC", gtr_or_less="gtr", scaling=1.0
+            )

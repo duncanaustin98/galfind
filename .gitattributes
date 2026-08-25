@@ -1,0 +1,2 @@
+vendored/lephare/*.tar.gz filter=lfs diff=lfs merge=lfs -text
+galfind/Aperture_corrections/** filter=lfs diff=lfs merge=lfs -text

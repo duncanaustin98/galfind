@@ -49,6 +49,15 @@ except ImportError:
 from .. import config, galfind_logger
 from ..utils import useful_funcs_austind as funcs
 from ..utils.decorators import run_in_dir
+from ..utils.exceptions import (
+    AbstractMethodError,
+    ExternalToolError,
+    GalfindTypeError,
+    IncompatibleKwargsError,
+    InvalidOptionError,
+    LengthMismatchError,
+    MissingFileError,
+)
 from .SED_codes import SED_code
 
 
@@ -95,6 +104,11 @@ class LePhare(SED_code):
         QSO template library name override, if given.
     SED_fit_params : `dict`
         SED fitting parameters/options, set by `SED_code.__init__`.
+
+    Raises
+    ------
+    GalfindTypeError
+        If `filterset` is given and is not a `Multiple_Filter`.
     """
 
     ID_label = "IDENT"
@@ -111,11 +125,11 @@ class LePhare(SED_code):
         if filterset is not None:
             from ..imaging import Multiple_Filter
 
-            assert isinstance(
-                filterset, Multiple_Filter
-            ), galfind_logger.critical(
-                f"{repr(filterset)} is not a Multiple_Filter"
-            )
+            if not isinstance(filterset, Multiple_Filter):
+                raise GalfindTypeError(
+                    f"filterset={filterset!r} has type {type(filterset)}; "
+                    "must be a Multiple_Filter."
+                )
         self.filterset = filterset
         self.gal_lib_name = gal_lib_name
         self.star_lib_name = star_lib_name
@@ -133,10 +147,10 @@ class LePhare(SED_code):
 
         Raises
         ------
-        NotImplementedError
+        AbstractMethodError
             Always; this method is not yet implemented for `LePhare`.
         """
-        raise NotImplementedError
+        raise AbstractMethodError()
         # return super().from_label(label)
 
     # @property
@@ -272,7 +286,13 @@ class LePhare(SED_code):
                     if default_type is str:
                         self.SED_fit_params[default_str] = config_str
                     else:
-                        assert len(default_type) == 1
+                        if len(default_type) != 1:
+                            raise LengthMismatchError(
+                                f"default_type={default_type!r} for "
+                                f"default_str={default_str!r} has length "
+                                f"{len(default_type)}; list-type defaults "
+                                "must have exactly 1 element."
+                            )
                         params = [
                             default_type[0](i) for i in config_str.split(",")
                         ]
@@ -290,21 +310,38 @@ class LePhare(SED_code):
                         else:
                             self.SED_fit_params[default_str] = params
                 else:
-                    raise ValueError(f"Invalid default_type: {default_type}")
+                    raise InvalidOptionError(
+                        f"default_type={default_type!r} for "
+                        f"default_str={default_str!r} is not a recognised "
+                        "type spec; must be one of [bool, int, float, str] "
+                        "or a single-element list of one of those types."
+                    )
             elif default_str in names_dict.keys():
-                assert isinstance(self.SED_fit_params[default_str], list)
-                assert len(self.SED_fit_params[default_str]) == len(
+                if not isinstance(self.SED_fit_params[default_str], list):
+                    raise GalfindTypeError(
+                        f"SED_fit_params[{default_str!r}] has type "
+                        f"{type(self.SED_fit_params[default_str])}; "
+                        "must be a list."
+                    )
+                if len(self.SED_fit_params[default_str]) != len(
                     names_dict[default_str]
-                ), galfind_logger.critical(
-                    f"{default_str=} must have "
-                    + f"{len(names_dict[default_str])} elements"
-                )
-                assert all(
+                ):
+                    raise LengthMismatchError(
+                        f"SED_fit_params[{default_str!r}] has length "
+                        f"{len(self.SED_fit_params[default_str])}; must "
+                        f"have {len(names_dict[default_str])} elements "
+                        f"(one per name in {names_dict[default_str]!r})."
+                    )
+                if not all(
                     name not in self.SED_fit_params.keys()
                     for name in names_dict[default_str]
-                ), galfind_logger.critical(
-                    f"{names_dict[default_str]} already in SED_fit_params"
-                )
+                ):
+                    raise IncompatibleKwargsError(
+                        f"SED_fit_params={self.SED_fit_params!r} includes "
+                        f"both {default_str!r} and one or more of "
+                        f"{names_dict[default_str]!r}; these are "
+                        "co-dependent and must not both be given."
+                    )
                 for param, name in zip(
                     self.SED_fit_params[default_str], names_dict[default_str]
                 ):
@@ -472,16 +509,14 @@ class LePhare(SED_code):
 
         Raises
         ------
-        ValueError
+        IncompatibleKwargsError
             If `self.filterset` is `None`.
         """
         if self.filterset is None:
-            err_message = (
-                f"{repr(self)}.filterset is None, "
-                + "cannot compile without filterset!"
+            raise IncompatibleKwargsError(
+                f"{repr(self)}.filterset is None; cannot compile without "
+                "a filterset. Pass filterset to LePhare.__init__ first."
             )
-            galfind_logger.critical(err_message)
-            raise ValueError(err_message)
         self._compile_filters()
         for type in types:
             self._compile_binary(type)
@@ -489,15 +524,18 @@ class LePhare(SED_code):
 
     @run_in_dir(path=config["LePhare"]["LEPHARE_CONFIG_DIR"])
     def _compile_binary(self: Self, type: str) -> None:
-        assert type in ["STAR", "QSO", "GAL"], galfind_logger.critical(
-            f"{type=} not in ['STAR', 'QSO', 'GAL']"
-        )
+        if type not in ["STAR", "QSO", "GAL"]:
+            raise InvalidOptionError(
+                f"type={type!r} is not one of ['STAR', 'QSO', 'GAL']."
+            )
         save_dir = f"{config['LePhare']['LEPHARE_SED_DIR']}/{type}"
         save_name = self.SED_fit_params[f"{type}_TEMPLATES"]
         save_path = f"{save_dir}/{save_name}.list"
-        assert Path(save_path).is_file(), galfind_logger.critical(
-            f"{save_path=} not found"
-        )
+        if not Path(save_path).is_file():
+            raise MissingFileError(
+                f"LePhare {type} template list save_path={save_path!r} "
+                "not found."
+            )
         output_bin_name = self._get_bin_out_path(type)
         if not Path(output_bin_name).is_file():
             if type == "GAL":
@@ -632,21 +670,26 @@ class LePhare(SED_code):
         save_suffix: str = "",
         overwrite: bool = False,
     ) -> NoReturn:
-        assert type in ["STAR", "QSO", "GAL"], galfind_logger.critical(
-            f"{type=} not in ['STAR', 'QSO', 'GAL']"
-        )
+        if type not in ["STAR", "QSO", "GAL"]:
+            raise InvalidOptionError(
+                f"type={type!r} is not one of ['STAR', 'QSO', 'GAL']."
+            )
 
         # TODO: Neaten up path loading, although the below should still work
         temp_save_dir = f"{config['LePhare']['LEPHARE_SED_DIR']}/{type}"
         temp_save_name = self.SED_fit_params[f"{type}_TEMPLATES"]
         temp_save_path = f"{temp_save_dir}/{temp_save_name}.list"
-        assert Path(temp_save_path).is_file(), galfind_logger.critical(
-            f"TEMPLATES at {temp_save_path=} not found"
-        )
+        if not Path(temp_save_path).is_file():
+            raise MissingFileError(
+                f"LePhare {type} TEMPLATES list at "
+                f"temp_save_path={temp_save_path!r} not found."
+            )
         out_bin_path = self._get_bin_out_path(type)
-        assert Path(out_bin_path).is_file(), galfind_logger.critical(
-            f"BINARIES at {out_bin_path=} not found"
-        )
+        if not Path(out_bin_path).is_file():
+            raise MissingFileError(
+                f"LePhare {type} BINARIES at out_bin_path={out_bin_path!r} "
+                "not found; run _compile_binary() first."
+            )
 
         save_dir = f"{os.environ['LEPHAREWORK']}/lib_mag"
         filt_save_name = self._get_save_filterset_name().replace(".filt", "")
@@ -815,19 +858,6 @@ class LePhare(SED_code):
             run_dir = fits_out_path.replace(".fits", "_SEDs")
             funcs.make_dirs(f"{run_dir}/*")
 
-            # temp_save_dir = f"{config['LePhare']['LEPHARE_SED_DIR']}/{type}"
-            # temp_save_name = self.SED_fit_params[f"{type}_TEMPLATES"]
-            # temp_save_path = f"{temp_save_dir}/{temp_save_name}.list"
-            # assert Path(temp_save_path).is_file(), \
-            #     galfind_logger.critical(
-            #         f"TEMPLATES at {temp_save_path=} not found"
-            #     )
-            # out_bin_path = self._get_bin_out_path(type)
-            # assert Path(out_bin_path).is_file(), \
-            #     galfind_logger.critical(
-            #         f"BINARIES at {out_bin_path=} not found"
-            #     )
-
             process = subprocess.Popen(
                 [
                     f"{config['DEFAULT']['GALFIND_DIR']}/run_lephare.sh",
@@ -855,9 +885,11 @@ class LePhare(SED_code):
     ) -> None:
         save_name = self.get_lib_name(type, save_suffix=save_suffix)
         save_path = f"{os.environ['LEPHAREWORK']}/lib_mag/{save_name}.bin"
-        assert Path(save_path).is_file(), galfind_logger.critical(
-            f"LePhare {type} filterset binary at {save_path=} not found"
-        )
+        if not Path(save_path).is_file():
+            raise MissingFileError(
+                f"LePhare {type} filterset binary at save_path={save_path!r} "
+                "not found."
+            )
         # open file
         with open(save_path.replace(".bin", ".doc"), "r") as f:
             lines = f.readlines()
@@ -878,24 +910,26 @@ class LePhare(SED_code):
                 for filt_name in filter_names
             ]
         ):
-            err_message = (
-                f"LePhare {type} filterset binary at {save_path=} "
-                + "does not match provided filterset!"
+            raise ExternalToolError(
+                f"LePhare {type} filterset binary at save_path={save_path!r} "
+                f"has filters {filter_names!r}, which includes filters not "
+                f"in the provided filterset filt_names="
+                f"{self.filterset.filt_names!r}; the compiled binary does "
+                "not match the provided filterset."
             )
-            galfind_logger.critical(err_message)
-            raise ValueError(err_message)
         elif not all(
             [
                 filt_name in filter_names
                 for filt_name in self.filterset.filt_names
             ]
         ):
-            err_message = (
-                "Provided filterset does not match "
-                + f"LePhare {type} filterset binary at {save_path=}!"
+            raise ExternalToolError(
+                f"Provided filterset filt_names="
+                f"{self.filterset.filt_names!r} includes filters not in "
+                f"the LePhare {type} filterset binary at "
+                f"save_path={save_path!r}, which has filters "
+                f"{filter_names!r}."
             )
-            galfind_logger.critical(err_message)
-            raise ValueError(err_message)
         else:
             galfind_logger.debug(
                 f"LePhare {type} filterset binary at {save_path=} "
@@ -920,14 +954,26 @@ class LePhare(SED_code):
 
         Raises
         ------
-        AssertionError
+        LengthMismatchError
             If `label` does not split into exactly two ``"_"``-separated
-            parts, or if the parsed template name is not in
+            parts.
+        InvalidOptionError
+            If the parsed template name is not in
             `self.available_templates`.
         """
         label_arr = label.split("_")
-        assert len(label_arr) == 2
-        assert label_arr[1] in self.available_templates
+        if len(label_arr) != 2:
+            raise LengthMismatchError(
+                f"label={label!r} splits into {len(label_arr)} "
+                "'_'-separated parts; expected exactly 2, of the form "
+                "'<code>_<templates>'."
+            )
+        if label_arr[1] not in self.available_templates:
+            raise InvalidOptionError(
+                f"templates={label_arr[1]!r} parsed from label={label!r} "
+                f"is not one of self.available_templates="
+                f"{self.available_templates!r}."
+            )
         return {"code": self, "templates": label_arr[1]}
 
     def make_fits_from_out(
@@ -1267,12 +1313,13 @@ class LePhare(SED_code):
 
         Raises
         ------
-        AssertionError
+        InvalidOptionError
             If `type` is not one of ``"STAR"``, ``"QSO"``, ``"GAL"``.
         """
-        assert type in ["STAR", "QSO", "GAL"], galfind_logger.critical(
-            f"{type=} not in ['STAR', 'QSO', 'GAL']"
-        )
+        if type not in ["STAR", "QSO", "GAL"]:
+            raise InvalidOptionError(
+                f"type={type!r} is not one of ['STAR', 'QSO', 'GAL']."
+            )
         if hasattr(self, f"{type.lower()}_lib_name"):
             save_name = getattr(self, f"{type.lower()}_lib_name")
             if save_name is not None:
@@ -1318,7 +1365,7 @@ class LePhare(SED_code):
 
         Raises
         ------
-        AssertionError
+        LengthMismatchError
             If `IDs` and `SED_paths` have different lengths.
         """
         # TODO: Generalize. Currently a near-carbon copy of EAZY method
@@ -1328,9 +1375,11 @@ class LePhare(SED_code):
             IDs = np.array([int(IDs)])
         if isinstance(SED_paths, str):
             SED_paths = [SED_paths]
-        assert len(IDs) == len(SED_paths), galfind_logger.critical(
-            f"{len(IDs)=} != {len(SED_paths)=}"
-        )
+        if len(IDs) != len(SED_paths):
+            raise LengthMismatchError(
+                f"len(IDs)={len(IDs)} != len(SED_paths)={len(SED_paths)}; "
+                "IDs and SED_paths must have the same length."
+            )
         # extract redshift PDF for each ID
         SEDs = [
             self._extract_SED(SED_path, type="GAL")
@@ -1350,9 +1399,10 @@ class LePhare(SED_code):
     ) -> SED_obs:
         from ..spectra.SED import SED_obs
 
-        assert type in ["GAL", "STAR", "QSO"], galfind_logger.critical(
-            f"{type=} not in ['GAL', 'STAR', 'QSO']"
-        )
+        if type not in ["GAL", "STAR", "QSO"]:
+            raise InvalidOptionError(
+                f"type={type!r} is not one of ['GAL', 'STAR', 'QSO']."
+            )
         wav = []
         flux = []
         reached_pdf = False
@@ -1447,9 +1497,12 @@ class LePhare(SED_code):
 
         Raises
         ------
-        AssertionError
-            If `PDF_paths` or `IDs` is not a `list`/`numpy.ndarray`, or if
-            they differ in length, when `gal_property` is ``"z"``.
+        GalfindTypeError
+            If `PDF_paths` or `IDs` is not a `list`/`numpy.ndarray`, when
+            `gal_property` is ``"z"``.
+        LengthMismatchError
+            If `PDF_paths` and `IDs` differ in length, when `gal_property`
+            is ``"z"``.
         """
         # TODO: Generalize. Again the majority is carbon copy of eazy method
 
@@ -1464,21 +1517,23 @@ class LePhare(SED_code):
             return np.array(list(itertools.repeat(None, len(IDs))))
         else:
             # ensure the correct type
-            assert isinstance(
-                PDF_paths, (list, np.ndarray)
-            ), galfind_logger.critical(
-                f"type(data_paths) = {type(PDF_paths)} not in "
-                + "[list, np.array]!"
-            )
-            assert isinstance(
-                IDs, (list, np.ndarray)
-            ), galfind_logger.critical(
-                f"type(IDs) = {type(IDs)} not in [list, np.array]!"
-            )
+            if not isinstance(PDF_paths, (list, np.ndarray)):
+                raise GalfindTypeError(
+                    f"PDF_paths has type {type(PDF_paths)}; must be a "
+                    "list or numpy.ndarray."
+                )
+            if not isinstance(IDs, (list, np.ndarray)):
+                raise GalfindTypeError(
+                    f"IDs has type {type(IDs)}; must be a list or "
+                    "numpy.ndarray."
+                )
             # ensure the correct array size
-            assert len(IDs) == len(PDF_paths), galfind_logger.critical(
-                f"{len(IDs)=} != {len(PDF_paths)=}!"
-            )
+            if len(IDs) != len(PDF_paths):
+                raise LengthMismatchError(
+                    f"len(IDs)={len(IDs)} != len(PDF_paths)="
+                    f"{len(PDF_paths)}; IDs and PDF_paths must have the "
+                    "same length."
+                )
             # extract redshift PDF for each ID
             redshift_PDFs = [
                 self._extract_PDF(PDF_path)

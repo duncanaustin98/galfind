@@ -43,6 +43,17 @@ except ImportError:
 from .. import config, galfind_logger
 from ..sed_fitting.SED_codes import SED_code
 from ..utils import useful_funcs_austind as funcs
+from ..utils.exceptions import (
+    ExternalToolError,
+    GalfindError,
+    GalfindTypeError,
+    InvalidOptionError,
+    InvalidUnitError,
+    LengthMismatchError,
+    MissingDataError,
+    MissingKeyError,
+    RangeError,
+)
 from ..utils.MCMC import MCMC_Fitter, Priors
 
 
@@ -165,15 +176,31 @@ class Base_Number_Density_Function:
         -------
         `Base_Number_Density_Function` or `None`
             A number density function object, or `None` if not found.
+
+        Raises
+        ------
+        InvalidOptionError
+            If `obs_or_models` is not one of ``"obs"`` or
+            ``"models/binned"``.
+        ExternalToolError
+            If ``flags_data.distribution_functions`` cannot be imported,
+            or if the requested `x_name` has no matching entry in the
+            loaded dataset.
         """
-        assert obs_or_models in ["obs", "models/binned"]
+        if obs_or_models not in ["obs", "models/binned"]:
+            raise InvalidOptionError(
+                f"obs_or_models={obs_or_models!r} not recognised; must be "
+                "one of ['obs', 'models/binned']."
+            )
         sys.path.insert(1, config["NumberDensityFunctions"]["FLAGS_DATA_DIR"])
         try:
             from flags_data import distribution_functions
-        except Exception:
-            galfind_logger.critical(
-                "Could not import flags_data.distribution_functions"
-            )
+        except Exception as e:
+            raise ExternalToolError(
+                "Could not import flags_data.distribution_functions from "
+                f"config['NumberDensityFunctions']['FLAGS_DATA_DIR']="
+                f"{config['NumberDensityFunctions']['FLAGS_DATA_DIR']!r}: {e}"
+            ) from e
 
         flags_property_name_conv = {
             "M1500": "LUV",
@@ -229,8 +256,17 @@ class Base_Number_Density_Function:
                             x = ds.M[z]
                         else:
                             x = ds.log10X[z]
-                    except Exception:
-                        breakpoint()
+                    except Exception as e:
+                        attr_name = (
+                            "M"
+                            if flags_property_name_conv[x_name] == "LUV"
+                            else "log10X"
+                        )
+                        raise ExternalToolError(
+                            f"flags_data dataset {ds.name!r} has no "
+                            f"{attr_name} entry for z={z} (requested "
+                            f"x_name={x_name!r}): {e}"
+                        ) from e
 
                     if flags_property_name_conv[x_name] == "LUV":
                         if obs_or_models == "obs":
@@ -278,24 +314,31 @@ class Base_Number_Density_Function:
     ) -> Multiple_Number_Density_Function:
         base_ndf_subcls = tuple(Base_Number_Density_Function.__subclasses__())
         if isinstance(other, list):
-            assert all(isinstance(ndf, base_ndf_subcls) for ndf in other)
+            if not all(isinstance(ndf, base_ndf_subcls) for ndf in other):
+                raise GalfindTypeError(
+                    f"other={other!r} contains an element that is not an "
+                    f"instance of {base_ndf_subcls}."
+                )
             number_density_funcs = [self] + other
         elif isinstance(other, base_ndf_subcls):
             number_density_funcs = [self, other]
         elif isinstance(other, Multiple_Number_Density_Function):
-            assert all(
+            if not all(
                 isinstance(ndf, base_ndf_subcls)
                 for ndf in other.number_density_functions
-            )
+            ):
+                raise GalfindTypeError(
+                    f"other.number_density_functions="
+                    f"{other.number_density_functions!r} contains an "
+                    f"element that is not an instance of {base_ndf_subcls}."
+                )
             number_density_funcs = [self] + other.number_density_functions
         else:
-            err_message = (
-                f"{repr(other)=} not in [{base_ndf_subcls}, "
-                f"List[{base_ndf_subcls}], "
-                "Multiple_Number_Density_Function]!"
+            raise GalfindTypeError(
+                f"other={other!r} has type {type(other)}; must be one of "
+                f"{base_ndf_subcls}, List[{base_ndf_subcls}], or "
+                "Multiple_Number_Density_Function."
             )
-            galfind_logger.critical(err_message)
-            raise ValueError(err_message)
         # TODO: Ensure no duplicates
         multiple_ndf = Multiple_Number_Density_Function(number_density_funcs)
         return multiple_ndf
@@ -370,6 +413,11 @@ class Base_Number_Density_Function:
         -------
         `tuple` of (`matplotlib.figure.Figure`, `matplotlib.axes.Axes`)
             Figure and axes used for plotting.
+
+        Raises
+        ------
+        LengthMismatchError
+            If `x_lims` or `y_lims` is given and does not have length 2.
         """
 
         if all(i is None for i in [fig, ax]):
@@ -493,21 +541,21 @@ class Base_Number_Density_Function:
                     x_lims = self.x_name
                 ax_.set_xlim(*funcs.default_lims[x_lims])
             else:
-                assert len(x_lims) == 2
+                if len(x_lims) != 2:
+                    raise LengthMismatchError(
+                        f"x_lims={x_lims!r} has length {len(x_lims)}; must "
+                        "have length 2 ([x_min, x_max])."
+                    )
                 ax_.set_xlim(*x_lims)
         if y_lims is not None:
-            assert len(y_lims) == 2
+            if len(y_lims) != 2:
+                raise LengthMismatchError(
+                    f"y_lims={y_lims!r} has length {len(y_lims)}; must "
+                    "have length 2 ([y_min, y_max])."
+                )
             ax.set_ylim(*y_lims)
 
         if save:
-            # if self.__class__.__name__ != "Number_Density_Function":
-            #     raise NotImplementedError
-            #     # assert save_path is not None
-            #     # save_path = \
-            #     #     config['NumberDensityFunctions'] \
-            #     #     ['NUMBER_DENSITY_FUNC_DIR'] + \
-            #     #     f"/Plots/Literature/{save_name}"
-            # else:
             if save_path is None:
                 save_path = self.get_plot_path()
                 # if save_name is not None:
@@ -745,34 +793,88 @@ class Number_Density_Function(Base_Number_Density_Function):
         `Number_Density_Function` or `None`
             The computed number density function, or `None` if calculation
             fails.
+
+        Raises
+        ------
+        LengthMismatchError
+            If `z_bin` does not have length 2.
+        RangeError
+            If ``z_bin[0]`` is not less than ``z_bin[1]``, if `x_bin_edges`
+            has fewer than 2 elements, or if `x_bin_edges` is not sorted
+            in ascending order.
+        InvalidOptionError
+            If `cv_origin` is not ``"Driver2010"``, or if `x_origin` is
+            not one of ``"phot_rest"``/``"SED_result"``.
+        GalfindTypeError
+            If `SED_fit_code` is not an instance of a registered
+            `SED_code` subclass, or if `cat` is not a `Catalogue` or
+            `Combined_Catalogue`.
+        MissingDataError
+            If not every galaxy in `cat` has been fit with
+            `SED_fit_code`.
+        InvalidUnitError
+            If the extracted x values do not all share the same unit.
         """
         from ..catalogues.Multiple_Catalogue import Combined_Catalogue
 
         if isinstance(cat, Combined_Catalogue):
             plot = False
         # input assertions
-        assert len(z_bin) == 2
-        assert z_bin[0] < z_bin[1]
-        assert len(x_bin_edges) >= 2
+        if len(z_bin) != 2:
+            raise LengthMismatchError(
+                f"z_bin={z_bin!r} has length {len(z_bin)}; must have "
+                "length 2 ([z_min, z_max])."
+            )
+        if not z_bin[0] < z_bin[1]:
+            raise RangeError(
+                f"z_bin[0]={z_bin[0]} must be less than z_bin[1]={z_bin[1]}."
+            )
+        if len(x_bin_edges) < 2:
+            raise RangeError(
+                f"x_bin_edges={x_bin_edges!r} has length "
+                f"{len(x_bin_edges)}; must have at least 2 elements to "
+                "define at least one bin."
+            )
         # ensure x_bin_edges are sorted from lower to higher x
         # values in every z bin
-        assert all(
+        if not all(
             _x == _sorted_x
             for _x, _sorted_x in zip(
                 np.sort(np.array(x_bin_edges)), np.array(x_bin_edges)
             )
-        )
+        ):
+            raise RangeError(
+                f"x_bin_edges={x_bin_edges!r} must be sorted in "
+                "ascending order."
+            )
         # TODO: ensure x_bin_edges are evenly spaced?
 
-        assert cv_origin in ["Driver2010"]
+        if cv_origin not in ["Driver2010"]:
+            raise InvalidOptionError(
+                f"cv_origin={cv_origin!r} not recognised; must be "
+                "'Driver2010'."
+            )
         # SED fit label assertions
-        assert isinstance(SED_fit_code, tuple(SED_code.__subclasses__()))
-        assert all(
+        if not isinstance(SED_fit_code, tuple(SED_code.__subclasses__())):
+            raise GalfindTypeError(
+                f"SED_fit_code has type {type(SED_fit_code)}; must be an "
+                f"instance of one of {tuple(SED_code.__subclasses__())}."
+            )
+        if not all(
             SED_fit_code.label in gal.aper_phot[aper_diam].SED_results.keys()
             for gal in cat
-        )
+        ):
+            raise MissingDataError(
+                f"Not every galaxy in {cat!r} has SED_fit_code.label="
+                f"{SED_fit_code.label!r} in its aper_phot[{aper_diam!r}]"
+                ".SED_results; run this SED fit first."
+            )
         # x_origin assertions
-        assert x_origin in ["phot_rest", "SED_result"]
+        if x_origin not in ["phot_rest", "SED_result"]:
+            raise InvalidOptionError(
+                f"x_origin={x_origin!r} not recognised; must be one of "
+                "['phot_rest', 'SED_result']."
+            )
 
         # extract x values
         # TODO: Generalize this to exclude x_origin dependence
@@ -792,7 +894,11 @@ class Number_Density_Function(Base_Number_Density_Function):
             ]
         # remove nans
         x = [x_ for x_ in x if not np.isnan(x_)]
-        assert all(x_.unit == x[0].unit for x_ in x)
+        if not all(x_.unit == x[0].unit for x_ in x):
+            raise InvalidUnitError(
+                f"Not all extracted x values share the same unit; "
+                f"expected {x[0].unit!r} for every element of {x!r}."
+            )
         x = np.array([x_.value for x_ in x]) * x[0].unit
 
         # crop catalogue to this redshift bin
@@ -936,8 +1042,12 @@ class Number_Density_Function(Base_Number_Density_Function):
                         z_bin_x_bin_cat = deepcopy(z_bin_cat).crop(
                             x_bin_selector
                         )
-                    except Exception:
-                        breakpoint()
+                    except Exception as e:
+                        raise GalfindError(
+                            f"Failed to crop {z_bin_cat.crop_name!r} to "
+                            f"x_bin={x_bin!r} using "
+                            f"{x_bin_selector!r}: {e}"
+                        ) from e
                     Ngals[i] = len(z_bin_x_bin_cat)
 
                     # plot cutouts
@@ -1006,12 +1116,12 @@ class Number_Density_Function(Base_Number_Density_Function):
                     Vmax_reg_compl = []
                     for cat_ in cat_arr:
                         if completeness is not None:
-                            assert (
-                                cat_.data.survey in completeness.keys()
-                            ), galfind_logger.critical(
-                                f"{cat_.data.survey=} not in "
-                                f"{completeness.keys()=}"
-                            )
+                            if cat_.data.survey not in completeness.keys():
+                                raise MissingKeyError(
+                                    f"cat_.data.survey={cat_.data.survey!r} "
+                                    "not in completeness.keys()="
+                                    f"{list(completeness.keys())!r}."
+                                )
                         regions = np.unique(
                             [
                                 reg
@@ -1039,12 +1149,15 @@ class Number_Density_Function(Base_Number_Density_Function):
                             if completeness is None:
                                 compl_bin = np.ones(len(z_bin_x_bin_cat))
                             else:
-                                assert (
-                                    region in completeness[cat_.survey].keys()
-                                ), galfind_logger.critical(
-                                    f"{region=} not in "
-                                    f"{completeness[cat_.survey].keys()=}"
-                                )
+                                if (
+                                    region
+                                    not in completeness[cat_.survey].keys()
+                                ):
+                                    raise MissingKeyError(
+                                        f"region={region!r} not in "
+                                        "completeness[cat_.survey].keys()="
+                                        f"{list(completeness[cat_.survey].keys())!r}."
+                                    )
                                 redshifts = np.zeros(len(z_bin_x_bin_cat))
                                 xvals = np.zeros(len(z_bin_x_bin_cat))
                                 for k, gal in enumerate(z_bin_x_bin_cat):
@@ -1064,12 +1177,12 @@ class Number_Density_Function(Base_Number_Density_Function):
                                 compl_bin = completeness[cat_.survey][region](
                                     redshifts, xvals
                                 )
-                            assert len(compl_bin) == len(
-                                Vmax_
-                            ), galfind_logger.critical(
-                                f"{len(compl_bin)=} != {len(Vmax_)=} "
-                                f"for {z_bin_x_bin_cat.crop_name}"
-                            )
+                            if len(compl_bin) != len(Vmax_):
+                                raise LengthMismatchError(
+                                    f"len(compl_bin)={len(compl_bin)} != "
+                                    f"len(Vmax_)={len(Vmax_)} for "
+                                    f"{z_bin_x_bin_cat.crop_name}."
+                                )
                             # import matplotlib.pyplot as plt
                             # from scipy.interpolate import interp1d
                             # fig, ax = plt.subplots()
@@ -1133,11 +1246,13 @@ class Number_Density_Function(Base_Number_Density_Function):
                     elif isinstance(cat, Catalogue):
                         data_arr = [cat.data]
                     else:
-                        err_message = (
-                            f"{repr(cat)=} not in "
-                            f"{', '.join(Catalogue_Base.__subclasses__())}!"
+                        valid_names = ", ".join(
+                            c.__name__ for c in Catalogue_Base.__subclasses__()
                         )
-                        raise ValueError(err_message)
+                        raise GalfindTypeError(
+                            f"cat={cat!r} has type {type(cat)}; must be an "
+                            f"instance of one of {valid_names}."
+                        )
                     if cv_origin is None:
                         pass
                     elif cv_origin == "Driver2010":
@@ -1148,7 +1263,10 @@ class Number_Density_Function(Base_Number_Density_Function):
                             z=np.sum(z_bin) / 2.0,
                         )
                     else:
-                        raise NotImplementedError
+                        raise InvalidOptionError(
+                            f"cv_origin={cv_origin!r} not recognised; must "
+                            "be None or 'Driver2010'."
+                        )
             number_density_func = cls(
                 x_calculator.name,
                 x_bins,
@@ -1266,6 +1384,12 @@ class Number_Density_Function(Base_Number_Density_Function):
         -------
         `Self` or `None`
             Cropped NDF object, or None if no data in range.
+
+        Raises
+        ------
+        RangeError
+            If both `x_bin` bounds are finite and ``x_bin[0]`` is not
+            less than ``x_bin[1]``.
         """
         # check if x_bin is within self.x_bins
         if x_bin[0] < self.x_bins[0][0] and x_bin[1] > self.x_bins[-1][1]:
@@ -1285,9 +1409,11 @@ class Number_Density_Function(Base_Number_Density_Function):
         else:
             upper_mask = np.full(len(self.x_mid_bins), True)
         if np.isfinite(x_bin[0]) and np.isfinite(x_bin[1]):
-            assert x_bin[0] < x_bin[1], galfind_logger.critical(
-                f"{x_bin[0]=} must be less than {x_bin[1]=}!"
-            )
+            if not x_bin[0] < x_bin[1]:
+                raise RangeError(
+                    f"x_bin[0]={x_bin[0]} must be less than x_bin[1]="
+                    f"{x_bin[1]}."
+                )
             xbin_str = f"{x_bin[0].value:.1f}<=x<={x_bin[1].value:.1f}"
         elif np.isfinite(x_bin[0]) and not np.isfinite(x_bin[1]):
             xbin_str = f"x>={x_bin[0].value:.1f}"
@@ -1430,6 +1556,13 @@ class Number_Density_Function(Base_Number_Density_Function):
         ----------
         save_path : `str`, optional
             Path for saving the NDF data. Auto-generated if None.
+
+        Raises
+        ------
+        InvalidUnitError
+            If the lower or upper `x_bins` edges do not all share the
+            same unit, or if the lower and upper edge units differ from
+            each other.
         """
         if save_path is None:
             save_path = self.get_save_path(
@@ -1440,13 +1573,28 @@ class Number_Density_Function(Base_Number_Density_Function):
                 completeness=self.completeness,
                 Vmax_method=self.Vmax_method,
             )
-        assert all(
+        if not all(
             x_bin[0].unit == self.x_bins[0][0].unit for x_bin in self.x_bins
-        )
-        assert all(
+        ):
+            raise InvalidUnitError(
+                "Not all lower x_bins edges share the same unit; "
+                f"expected {self.x_bins[0][0].unit!r} for every element "
+                f"of {self.x_bins!r}."
+            )
+        if not all(
             x_bin[1].unit == self.x_bins[0][1].unit for x_bin in self.x_bins
-        )
-        assert self.x_bins[0][0].unit == self.x_bins[0][1].unit
+        ):
+            raise InvalidUnitError(
+                "Not all upper x_bins edges share the same unit; "
+                f"expected {self.x_bins[0][1].unit!r} for every element "
+                f"of {self.x_bins!r}."
+            )
+        if self.x_bins[0][0].unit != self.x_bins[0][1].unit:
+            raise InvalidUnitError(
+                f"self.x_bins[0][0].unit={self.x_bins[0][0].unit!r} != "
+                f"self.x_bins[0][1].unit={self.x_bins[0][1].unit!r}; "
+                "lower and upper x_bin edges must share the same unit."
+            )
         x_bins_low = (
             np.array([x_bin[0].value for x_bin in self.x_bins])
             * self.x_bins[0][0].unit
@@ -1733,33 +1881,44 @@ class Multiple_Number_Density_Function(Number_Density_Function):
             "cv_origin",
             # "completeness",
         ]
-        assert all(
+        if not all(
             np.array_equal(
                 getattr(ndf, attr_label),
                 getattr(number_density_functions[0], attr_label),
             )
             for ndf in number_density_functions
             for attr_label in same_attr_labels
-        ), galfind_logger.critical(
-            f"Not all {', '.join(same_attr_labels)} are the same "
-            "for all number density functions!"
-        )
-        assert all(
+        ):
+            raise GalfindError(
+                f"Not all of {', '.join(same_attr_labels)} are the same "
+                "for all number_density_functions="
+                f"{number_density_functions!r}; every element must share "
+                "these attributes to be combined."
+            )
+        if not all(
             getattr(ndf, "completeness") is None
             for ndf in number_density_functions
-        ), galfind_logger.critical(
-            "Not all completeness are None for all "
-            f"{number_density_functions}!"
-        )
+        ):
+            raise GalfindError(
+                "Not all completeness are None for all "
+                f"number_density_functions={number_density_functions!r}; "
+                "combining number density functions with completeness "
+                "corrections applied is not currently supported."
+            )
         # ensure all number density functions have different Ngals arrays
-        assert all(
+        if not all(
             np.unique(
                 [getattr(ndf, "phi") for ndf in number_density_functions],
                 axis=0,
                 return_counts=True,
             )[1]
             == 1
-        )
+        ):
+            raise GalfindError(
+                f"number_density_functions={number_density_functions!r} "
+                "contains duplicate 'phi' arrays; every element must "
+                "have a distinct phi array."
+            )
 
     def __iter__(self):
         self.iter = 0
@@ -1797,24 +1956,31 @@ class Multiple_Number_Density_Function(Number_Density_Function):
     ) -> Multiple_Number_Density_Function:
         base_ndf_subcls = tuple(Base_Number_Density_Function.__subclasses__())
         if isinstance(other, list):
-            assert all(isinstance(ndf, base_ndf_subcls) for ndf in other)
+            if not all(isinstance(ndf, base_ndf_subcls) for ndf in other):
+                raise GalfindTypeError(
+                    f"other={other!r} contains an element that is not an "
+                    f"instance of {base_ndf_subcls}."
+                )
             new_ndfs = other
         elif isinstance(other, base_ndf_subcls):
             new_ndfs = [other]
         elif isinstance(other, Multiple_Number_Density_Function):
-            assert all(
+            if not all(
                 isinstance(ndf, base_ndf_subcls)
                 for ndf in other.number_density_functions
-            )
+            ):
+                raise GalfindTypeError(
+                    f"other.number_density_functions="
+                    f"{other.number_density_functions!r} contains an "
+                    f"element that is not an instance of {base_ndf_subcls}."
+                )
             new_ndfs = other.number_density_functions
         else:
-            err_message = (
-                f"{repr(other)=} not in [{base_ndf_subcls}, "
-                f"List[{base_ndf_subcls}], "
-                "Multiple_Number_Density_Function]!"
+            raise GalfindTypeError(
+                f"other={other!r} has type {type(other)}; must be one of "
+                f"{base_ndf_subcls}, List[{base_ndf_subcls}], or "
+                "Multiple_Number_Density_Function."
             )
-            galfind_logger.critical(err_message)
-            raise ValueError(err_message)
         self._assertions(new_ndfs)
         self.number_density_functions += new_ndfs
         for hstack_label in ["Ngals", "phi", "cv_errs"]:

@@ -29,9 +29,15 @@ if TYPE_CHECKING:
         Selector,
     )
 
-from .. import galfind_logger
 from ..imaging.Filter import Multiple_Filter
 from ..utils import useful_funcs_austind as funcs
+from ..utils.exceptions import (
+    GalfindTypeError,
+    InvalidOptionError,
+    LengthMismatchError,
+    MissingDataError,
+    MissingKeyError,
+)
 from .Catalogue import open_galfind_cat
 from .Catalogue_Base import Catalogue_Base
 
@@ -217,20 +223,27 @@ class Combined_Catalogue(Catalogue_Base):
 
         Raises
         ------
-        AssertionError
-            If the input catalogues have different aperture diameters,
-            if `survey`/`version` cannot be resolved to strings, if the
-            catalogues lack a shared forced photometry band (when
-            `cat_path` is `None`), if any catalogue is missing an
-            'OBJECTS' HDU, if an ID column cannot be resolved for an HDU,
-            or if the input catalogues have different crops applied.
+        LengthMismatchError
+            If the input catalogues have different aperture diameters, if
+            the catalogues lack a shared forced photometry band (when
+            `cat_path` is `None`), if an ID column cannot be uniquely
+            resolved for an HDU, or if the input catalogues have
+            different crops applied.
+        GalfindTypeError
+            If `survey`/`version` cannot be resolved to strings.
+        MissingDataError
+            If any catalogue is missing an 'OBJECTS' HDU.
+        InvalidOptionError
+            If the first HDU processed is not 'OBJECTS'.
+        MissingKeyError
+            If the resolved ID column cannot be found in an HDU's table.
         """
         # ensure all catalogues have the same aperture diameters
-        assert all(
-            cat.aper_diams == cat_arr[0].aper_diams for cat in cat_arr
-        ), galfind_logger.critical(
-            "All catalogues must have the same aperture diameters"
-        )
+        if not all(cat.aper_diams == cat_arr[0].aper_diams for cat in cat_arr):
+            raise LengthMismatchError(
+                "All catalogues in cat_arr must have the same aper_diams; "
+                f"got aper_diams={[cat.aper_diams for cat in cat_arr]!r}."
+            )
 
         # determine survey and version if not provided
         if survey is None:
@@ -241,12 +254,12 @@ class Combined_Catalogue(Catalogue_Base):
             version = "+".join(
                 sorted(np.unique([cat.version for cat in cat_arr]))
             )
-        assert all(
-            isinstance(x, str) for x in [survey, version]
-        ), galfind_logger.critical(
-            f"Either {survey=} ({type(survey)=}) or "
-            f"{version=} ({type(survey)=}) != str"
-        )
+        if not all(isinstance(x, str) for x in [survey, version]):
+            raise GalfindTypeError(
+                f"Either survey={survey!r} (type={type(survey).__name__}) "
+                f"or version={version!r} (type={type(version).__name__}) "
+                "is not a str."
+            )
 
         # make filterset comprising all available bands
         filters = np.array(
@@ -269,14 +282,19 @@ class Combined_Catalogue(Catalogue_Base):
 
         # determine catalogue path
         if cat_path is None:
-            assert all(
+            if not all(
                 cat.data.forced_phot_band.filt_name
                 == cat_arr[0].data.forced_phot_band.filt_name
                 for cat in cat_arr
-            ), galfind_logger.critical(
-                "All catalogues must have the same forced phot band if "
-                "cat_path is not provided"
-            )
+            ):
+                filt_names = [
+                    cat.data.forced_phot_band.filt_name for cat in cat_arr
+                ]
+                raise LengthMismatchError(
+                    "All catalogues in cat_arr must have the same "
+                    "forced_phot_band if cat_path is not provided; got "
+                    f"forced_phot_band filt_names={filt_names!r}."
+                )
             # create the catalogue path by combining names of the other
             # catalogues
             cat_path = funcs.get_phot_cat_path(
@@ -310,9 +328,12 @@ class Combined_Catalogue(Catalogue_Base):
 
             full_tab_hdus = np.full(len(unique_hdu_names), None)
             # put flux table first
-            assert "OBJECTS" in unique_hdu_names, galfind_logger.critical(
-                "All catalogues must have an 'OBJECTS' HDU"
-            )
+            if "OBJECTS" not in unique_hdu_names:
+                raise MissingDataError(
+                    "All catalogues in cat_arr must have an 'OBJECTS' HDU "
+                    f"shared across every catalogue; got unique_hdu_names="
+                    f"{unique_hdu_names.tolist()!r}."
+                )
             unique_hdu_names = np.concatenate(
                 (["OBJECTS"], unique_hdu_names[unique_hdu_names != "OBJECTS"])
             )
@@ -327,9 +348,11 @@ class Combined_Catalogue(Catalogue_Base):
                         hdu=hdu, cropped=crop_fits
                     )  # usually False
                     if i == 0:
-                        assert hdu == "OBJECTS", galfind_logger.critical(
-                            "First HDU must be 'OBJECTS'"
-                        )
+                        if not hdu == "OBJECTS":
+                            raise InvalidOptionError(
+                                f"hdu={hdu!r} on the first iteration "
+                                "(i == 0); must be 'OBJECTS'."
+                            )
                         tab.rename_column(cat.ID_label, "SURVEY_ID")
                         uncropped_tab = cat.open_cat(hdu=hdu, cropped=False)
                         object_cat_lengths.append(len(uncropped_tab))
@@ -359,19 +382,21 @@ class Combined_Catalogue(Catalogue_Base):
                         ID_colname = [ID_colname[ID_colname_index]]
                     # ID_colname = np.unique(ID_colname)
                     if isinstance(ID_colname, list):
-                        assert len(ID_colname) == 1, galfind_logger.critical(
-                            f"Could not determine ID_colname for HDU {hdu}"
-                        )
+                        if not len(ID_colname) == 1:
+                            raise LengthMismatchError(
+                                f"Could not determine a unique ID_colname "
+                                f"for HDU {hdu!r}; candidates found="
+                                f"{ID_colname!r} (expected exactly 1)."
+                            )
                         ID_colname = ID_colname[0]
                     try:
                         tab[ID_colname]
                     except KeyError as e:
-                        galfind_logger.critical(
-                            f"Could not find ID column in HDU {hdu} for "
-                            f"catalogue {cat.survey} {cat.version}. "
-                            f"Error: {e}"
-                        )
-                        breakpoint()
+                        raise MissingKeyError(
+                            f"Could not find ID column {ID_colname!r} in "
+                            f"HDU {hdu!r} for catalogue {cat.survey} "
+                            f"{cat.version}. Error: {e}"
+                        ) from e
                     if j == 0:
                         cat_unique_ids = list(tab[ID_colname])
                     else:
@@ -402,10 +427,15 @@ class Combined_Catalogue(Catalogue_Base):
             # galfind_logger.info(f"Saved combined catalogue to {cat_path}")
 
         # ensure all crops are the same
-        assert all(
+        if not all(
             cat.cat_creator.crop_name == cat_arr[0].cat_creator.crop_name
             for cat in cat_arr
-        ), galfind_logger.critical("All catalogues must have the same crops")
+        ):
+            crop_names = [cat.cat_creator.crop_name for cat in cat_arr]
+            raise LengthMismatchError(
+                "All catalogues in cat_arr must have the same crops; got "
+                f"crop_name={crop_names!r}."
+            )
         # make combined cat creator
         combined_cat_creator = Combined_Catalogue_Creator(
             survey,
@@ -512,7 +542,7 @@ class Combined_Catalogue(Catalogue_Base):
 
         Raises
         ------
-        ValueError
+        MissingDataError
             If `ext_src_corrs` were not loaded into the `aper_phot`
             objects of the first galaxy for every aperture diameter.
         """
@@ -525,7 +555,12 @@ class Combined_Catalogue(Catalogue_Base):
             hasattr(self.gals[0].aper_phot[aper_diam], "ext_src_corrs")
             for aper_diam in self.aper_diams
         ):
-            raise ValueError("ext_src_corrs not loaded into Galaxy objects")
+            raise MissingDataError(
+                "ext_src_corrs not loaded into aper_phot objects of "
+                f"self.gals[0] for all aper_diams={self.aper_diams!r}; "
+                "run load_sextractor_ext_src_corrs on the constituent "
+                "catalogues first."
+            )
 
     def calc_Vmax(
         self: Self,

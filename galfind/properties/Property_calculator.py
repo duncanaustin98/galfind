@@ -54,6 +54,16 @@ from ..sed_fitting.SED_codes import SED_code
 from ..sed_fitting.SED_result import SED_result
 from ..spectra.SED import SED_obs
 from ..utils import useful_funcs_austind as funcs
+from ..utils.exceptions import (
+    AbstractMethodError,
+    GalfindTypeError,
+    InvalidOptionError,
+    InvalidUnitError,
+    LengthMismatchError,
+    MissingDataError,
+    MissingKeyError,
+    RangeError,
+)
 from ..visualization.PDF import PDF, SED_fit_PDF
 
 
@@ -704,10 +714,6 @@ class Photometry_Property_Loader(Photometry_Property_Calculator):
             val = self._call_cat(object)
         else:
             val = self._call_gal(object)
-            # breakpoint()
-            # err_message = f"{object=} with {type(object)=} != Catalogue"
-            # galfind_logger.critical(err_message)
-            # raise TypeError(err_message)
         return val
 
     def _call_cat(
@@ -789,9 +795,9 @@ class Photometry_Property_Loader(Photometry_Property_Calculator):
 
         Raises
         ------
-        AssertionError
+        InvalidUnitError
             If the per-galaxy property units are not all consistent.
-        TypeError
+        GalfindTypeError
             If `object` is not a `Catalogue_Base` subclass instance.
         """
         if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
@@ -800,11 +806,12 @@ class Photometry_Property_Loader(Photometry_Property_Calculator):
                 for gal in object
             ]
             if not all(isinstance(val, float) for val in cat_vals):
-                assert all(
-                    val.unit == cat_vals[0].unit for val in cat_vals
-                ), galfind_logger.critical(
-                    f"Units of {self.name} in {object} are not consistent"
-                )
+                if not all(val.unit == cat_vals[0].unit for val in cat_vals):
+                    raise InvalidUnitError(
+                        f"Units of {self.name!r} in {object!r} are not "
+                        f"consistent; got units "
+                        f"{sorted({str(val.unit) for val in cat_vals})}."
+                    )
                 cat_vals = (
                     np.array([val.value for val in cat_vals])
                     * cat_vals[0].unit
@@ -813,12 +820,11 @@ class Photometry_Property_Loader(Photometry_Property_Calculator):
                 cat_vals = np.array(cat_vals)
             return cat_vals
         else:
-            err_message = (
-                f"{object=} with {type(object)=} "
-                + "not in [Catalogue, Galaxy, SED_obs]"
+            raise GalfindTypeError(
+                f"extract_vals() received object={object!r} with "
+                f"type(object)={type(object).__name__}; expected a "
+                "Catalogue_Base subclass instance."
             )
-            galfind_logger.critical(err_message)
-            raise TypeError(err_message)
 
     # TODO: Propagate from parent class
     def extract_errs(
@@ -841,9 +847,9 @@ class Photometry_Property_Loader(Photometry_Property_Calculator):
 
         Raises
         ------
-        AssertionError
+        InvalidUnitError
             If the per-galaxy property error units are not all consistent.
-        NotImplementedError
+        GalfindTypeError
             If `object` is not a `Catalogue_Base` subclass instance.
         """
         if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
@@ -852,11 +858,12 @@ class Photometry_Property_Loader(Photometry_Property_Calculator):
                 for gal in object
             ]
             if not all(isinstance(val, float) for val in cat_errs):
-                assert all(
-                    val.unit == cat_errs[0].unit for val in cat_errs
-                ), galfind_logger.critical(
-                    f"Units of {self.name} in {object} are not consistent"
-                )
+                if not all(val.unit == cat_errs[0].unit for val in cat_errs):
+                    raise InvalidUnitError(
+                        f"Units of {self.name!r} in {object!r} are not "
+                        f"consistent; got units "
+                        f"{sorted({str(val.unit) for val in cat_errs})}."
+                    )
                 cat_errs = (
                     np.array([val.value for val in cat_errs])
                     * cat_errs[0].unit
@@ -864,7 +871,11 @@ class Photometry_Property_Loader(Photometry_Property_Calculator):
             else:
                 cat_errs = np.array(cat_errs)
             return cat_errs[:, :, 0]
-        raise NotImplementedError()
+        raise GalfindTypeError(
+            f"extract_errs() received object={object!r} with "
+            f"type(object)={type(object).__name__}; expected a "
+            "Catalogue_Base subclass instance."
+        )
 
     def extract_PDFs(
         self: Self,
@@ -886,7 +897,7 @@ class Photometry_Property_Loader(Photometry_Property_Calculator):
 
         Raises
         ------
-        TypeError
+        GalfindTypeError
             If `object` is not a `Catalogue_Base` subclass instance.
         """
         if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
@@ -895,9 +906,11 @@ class Photometry_Property_Loader(Photometry_Property_Calculator):
                 for gal in object
             ]
         else:
-            err_message = f"{object=} with {type(object)=} != Catalogue"
-            galfind_logger.critical(err_message)
-            raise TypeError(err_message)
+            raise GalfindTypeError(
+                f"extract_PDFs() received object={object!r} with "
+                f"type(object)={type(object).__name__}; expected a "
+                "Catalogue_Base subclass instance."
+            )
 
 
 class Band_SNR_Loader(Photometry_Property_Loader):
@@ -934,7 +947,11 @@ class Band_SNR_Loader(Photometry_Property_Loader):
     def _load_SNR(
         cat: Catalogue, aper_diam: u.Quantity, **kwargs
     ) -> Tuple[NDArray, NDArray]:
-        assert "filt_name" in kwargs.keys()
+        if "filt_name" not in kwargs.keys():
+            raise MissingKeyError(
+                f"Missing required key 'filt_name' in kwargs={kwargs!r} "
+                "passed to Band_SNR_Loader._load_SNR()."
+            )
         # determine relevant band indices
         IDs = np.array([f"{gal.ID}_{gal.survey}" for gal in cat])
         band_SNRs = np.array(
@@ -1103,12 +1120,12 @@ class Morphology_Property_Calculator(Property_Calculator_Base):
         elif isinstance(object, tuple(Band_Cutout_Base.__subclasses__())):
             val = self._call_sed_result(object)
         else:
-            err_message = (
-                f"{object=} with {type(object)=} "
-                + "not in [Catalogue, Galaxy, Band_Cutout_Base]"
+            raise GalfindTypeError(
+                f"__call__() received object={object!r} with "
+                f"type(object)={type(object).__name__}; expected a "
+                "Catalogue_Base subclass, Galaxy, or Band_Cutout_Base "
+                "subclass instance."
             )
-            galfind_logger.critical(err_message)
-            raise TypeError(err_message)
         return val
 
     def _call_cat(
@@ -1124,20 +1141,6 @@ class Morphology_Property_Calculator(Property_Calculator_Base):
         gal: Galaxy,
     ) -> Optional[Galaxy]:
         pass
-        # # update the relevant Photometry_rest object stored in the Galaxy
-        # assert self.aper_diam in gal.aper_phot.keys(), \
-        #     galfind_logger.critical(
-        #         f"{self.aper_diam=} not in {gal.aper_phot.keys()}"
-        #     )
-        # assert self.SED_fit_label in \
-        #     gal.aper_phot[self.aper_diam].SED_results.keys(), \
-        #     galfind_logger.critical(
-        #         f"{self.SED_fit_label=} not in " + \
-        #         gal.aper_phot[self.aper_diam].SED_results.keys()
-        #     )
-        # return self._call_cutout(
-        #     gal.aper_phot[self.aper_diam].SED_results[self.SED_fit_label]
-        # )
 
     def _call_cutout(
         self: Self,
@@ -1166,10 +1169,10 @@ class Morphology_Property_Calculator(Property_Calculator_Base):
 
         Raises
         ------
-        AssertionError
+        InvalidUnitError
             If the per-galaxy property units are not all consistent
             (catalogue case).
-        TypeError
+        GalfindTypeError
             If `object` is not a `Catalogue_Base`, `Galaxy`, or
             `Band_Cutout_Base` subclass instance.
         """
@@ -1186,11 +1189,12 @@ class Morphology_Property_Calculator(Property_Calculator_Base):
                 for gal in object
             ]
             if not all(isinstance(val, float) for val in cat_vals):
-                assert all(
-                    val.unit == cat_vals[0].unit for val in cat_vals
-                ), galfind_logger.critical(
-                    f"Units of {self.name} in {object} are not consistent"
-                )
+                if not all(val.unit == cat_vals[0].unit for val in cat_vals):
+                    raise InvalidUnitError(
+                        f"Units of {self.name!r} in {object!r} are not "
+                        f"consistent; got units "
+                        f"{sorted({str(val.unit) for val in cat_vals})}."
+                    )
                 cat_vals = (
                     np.array([val.value for val in cat_vals])
                     * cat_vals[0].unit
@@ -1208,12 +1212,12 @@ class Morphology_Property_Calculator(Property_Calculator_Base):
         elif isinstance(object, tuple(Band_Cutout_Base.__subclasses__())):
             return getattr(object, self.name)
         else:
-            err_message = (
-                f"{object=} with {type(object)=} "
-                + "not in [Catalogue, Galaxy, Band_Cutout_Base]"
+            raise GalfindTypeError(
+                f"extract_vals() received object={object!r} with "
+                f"type(object)={type(object).__name__}; expected a "
+                "Catalogue_Base subclass, Galaxy, or Band_Cutout_Base "
+                "subclass instance."
             )
-            galfind_logger.critical(err_message)
-            raise TypeError(err_message)
 
     def extract_PDFs(
         self: Self,
@@ -1234,7 +1238,7 @@ class Morphology_Property_Calculator(Property_Calculator_Base):
 
         Raises
         ------
-        TypeError
+        GalfindTypeError
             If `object` is not a `Catalogue_Base`, `Galaxy`, or
             `Band_Cutout_Base` subclass instance.
         """
@@ -1256,12 +1260,12 @@ class Morphology_Property_Calculator(Property_Calculator_Base):
         elif isinstance(object, tuple(Band_Cutout_Base.__subclasses__())):
             return object.property_pdfs[self.name]
         else:
-            err_message = (
-                f"{object=} with {type(object)=} "
-                + "not in [Catalogue, Galaxy, Band_Cutout_Base]"
+            raise GalfindTypeError(
+                f"extract_PDFs() received object={object!r} with "
+                f"type(object)={type(object).__name__}; expected a "
+                "Catalogue_Base subclass, Galaxy, or Band_Cutout_Base "
+                "subclass instance."
             )
-            galfind_logger.critical(err_message)
-            raise TypeError(err_message)
 
 
 class Custom_Morphology_Property_Extractor(
@@ -1405,12 +1409,11 @@ class SED_Property_Calculator(Property_Calculator):
         elif isinstance(object, SED_result):
             val = self._call_sed_result(object)
         else:
-            err_message = (
-                f"{object=} with {type(object)=} "
-                + "not in [Catalogue, Galaxy, SED_result]"
+            raise GalfindTypeError(
+                f"__call__() received object={object!r} with "
+                f"type(object)={type(object).__name__}; expected a "
+                "Catalogue_Base subclass, Galaxy, or SED_result instance."
             )
-            galfind_logger.critical(err_message)
-            raise TypeError(err_message)
         return val
 
     def _call_cat(
@@ -1463,10 +1466,11 @@ class SED_Property_Calculator(Property_Calculator):
 
         Raises
         ------
-        AssertionError
+        LengthMismatchError
             If the existing FITS table has a different number of rows than
-            `cat`, or if `SED_fit_label` is missing from any galaxy's SED
-            results.
+            `cat`.
+        MissingDataError
+            If `SED_fit_label` is missing from any galaxy's SED results.
         """
         # TODO: generalize this funciton further
         # determine appropriate hdu and name to save properties as
@@ -1485,18 +1489,30 @@ class SED_Property_Calculator(Property_Calculator):
             tab["ID"] = np.array([gal.ID for gal in cat])
         elif property_name not in tab.colnames:
             write = True
-            assert len(tab) == len(cat)
+            if len(tab) != len(cat):
+                raise LengthMismatchError(
+                    f"Existing {property_hdu!r} FITS table has "
+                    f"{len(tab)} rows, but cat={cat!r} has {len(cat)} "
+                    "galaxies; the two must have matching lengths."
+                )
         else:
             write = False
 
         if write:
-            assert all(
-                [
-                    self.SED_fit_label
-                    in gal.aper_phot[self.aper_diam].SED_results.keys()
-                    for gal in cat
-                ]
-            )
+            missing_gals = [
+                gal.ID
+                for gal in cat
+                if self.SED_fit_label
+                not in gal.aper_phot[self.aper_diam].SED_results.keys()
+            ]
+            if missing_gals:
+                raise MissingDataError(
+                    f"SED_fit_label={self.SED_fit_label!r} not found in "
+                    f"aper_phot[{self.aper_diam!r}].SED_results for "
+                    f"{len(missing_gals)} galaxies (IDs={missing_gals!r}) "
+                    f"in cat={cat!r}; run the {self.SED_fit_label!r} SED "
+                    "fit for these galaxies first."
+                )
             # if all([self.SED_fit_label in
             #     gal.aper_phot[self.aper_diam].SED_results.keys()
             #     for gal in cat]):
@@ -1532,16 +1548,24 @@ class SED_Property_Calculator(Property_Calculator):
         **kwargs,
     ) -> Optional[Galaxy]:
         # update the relevant Photometry_rest object stored in the Galaxy
-        assert self.aper_diam in gal.aper_phot.keys(), galfind_logger.critical(
-            f"{self.aper_diam=} not in {gal.aper_phot.keys()}"
-        )
-        assert (
+        if self.aper_diam not in gal.aper_phot.keys():
+            raise MissingDataError(
+                f"aper_diam={self.aper_diam!r} not found in "
+                f"gal.aper_phot.keys()={list(gal.aper_phot.keys())!r} for "
+                f"galaxy ID={gal.ID!r}; load aperture photometry at this "
+                "aperture diameter first."
+            )
+        if (
             self.SED_fit_label
-            in gal.aper_phot[self.aper_diam].SED_results.keys()
-        ), galfind_logger.critical(
-            f"{self.SED_fit_label=} not in "
-            + gal.aper_phot[self.aper_diam].SED_results.keys()
-        )
+            not in gal.aper_phot[self.aper_diam].SED_results.keys()
+        ):
+            raise MissingDataError(
+                f"SED_fit_label={self.SED_fit_label!r} not found in "
+                "gal.aper_phot[aper_diam].SED_results.keys()="
+                f"{list(gal.aper_phot[self.aper_diam].SED_results.keys())!r} "
+                f"for galaxy ID={gal.ID!r}; run the {self.SED_fit_label!r} "
+                "SED fit for this galaxy first."
+            )
         # if save_dir != "":
         #     save_dir += "/"
         # save_path = f"{save_dir}{gal.ID}.npy"
@@ -1590,10 +1614,10 @@ class SED_Property_Calculator(Property_Calculator):
 
         Raises
         ------
-        AssertionError
+        InvalidUnitError
             If the per-galaxy property units are not all consistent
             (catalogue case).
-        TypeError
+        GalfindTypeError
             If `object` is not a `Catalogue_Base` subclass, `Galaxy`, or
             `SED_obs` instance.
         """
@@ -1608,11 +1632,12 @@ class SED_Property_Calculator(Property_Calculator):
                 for gal in object
             ]
             if not all(isinstance(val, float) for val in cat_vals):
-                assert all(
-                    val.unit == cat_vals[0].unit for val in cat_vals
-                ), galfind_logger.critical(
-                    f"Units of {self.name} in {object} are not consistent"
-                )
+                if not all(val.unit == cat_vals[0].unit for val in cat_vals):
+                    raise InvalidUnitError(
+                        f"Units of {self.name!r} in {object!r} are not "
+                        f"consistent; got units "
+                        f"{sorted({str(val.unit) for val in cat_vals})}."
+                    )
                 cat_vals = (
                     np.array([val.value for val in cat_vals])
                     * cat_vals[0].unit
@@ -1630,12 +1655,11 @@ class SED_Property_Calculator(Property_Calculator):
         elif isinstance(object, SED_obs):
             return getattr(object, self.name)
         else:
-            err_message = (
-                f"{object=} with {type(object)=} "
-                + "not in [Catalogue, Galaxy, SED_obs]"
+            raise GalfindTypeError(
+                f"extract_vals() received object={object!r} with "
+                f"type(object)={type(object).__name__}; expected a "
+                "Catalogue_Base subclass, Galaxy, or SED_obs instance."
             )
-            galfind_logger.critical(err_message)
-            raise TypeError(err_message)
 
     # TODO: Propagate from parent class
     def extract_errs(
@@ -1657,8 +1681,9 @@ class SED_Property_Calculator(Property_Calculator):
 
         Raises
         ------
-        NotImplementedError
-            If `object` is not a `Catalogue_Base` subclass instance.
+        GalfindTypeError
+            If `object` is not a `Catalogue_Base` subclass instance
+            (`extract_errs` does not yet support `Galaxy`/`SED_obs`).
         """
         if isinstance(object, tuple(Catalogue_Base.__subclasses__())):
             try:
@@ -1682,7 +1707,12 @@ class SED_Property_Calculator(Property_Calculator):
             # else:
             #     cat_errs = np.array(cat_errs)
             return cat_errs
-        raise NotImplementedError()
+        raise GalfindTypeError(
+            f"extract_errs() received object={object!r} with "
+            f"type(object)={type(object).__name__}; expected a "
+            "Catalogue_Base subclass instance (Galaxy/SED_obs not yet "
+            "supported)."
+        )
         # elif isinstance(object, Galaxy):
         #     return getattr(
         #         object.aper_phot[self.aper_diam]
@@ -1716,7 +1746,7 @@ class SED_Property_Calculator(Property_Calculator):
 
         Raises
         ------
-        TypeError
+        GalfindTypeError
             If `object` is not a `Catalogue_Base` subclass, `Galaxy`, or
             `SED_obs` instance.
         """
@@ -1736,12 +1766,11 @@ class SED_Property_Calculator(Property_Calculator):
         elif isinstance(object, SED_obs):
             return object.property_PDFs[self.name]
         else:
-            err_message = (
-                f"{object=} with {type(object)=} "
-                + "not in [Catalogue, Galaxy, SED_obs]"
+            raise GalfindTypeError(
+                f"extract_PDFs() received object={object!r} with "
+                f"type(object)={type(object).__name__}; expected a "
+                "Catalogue_Base subclass, Galaxy, or SED_obs instance."
             )
-            galfind_logger.critical(err_message)
-            raise TypeError(err_message)
 
 
 class MUV_SED_Property_Calculator(SED_Property_Calculator):
@@ -1907,11 +1936,31 @@ class Ext_Src_Property_Calculator(SED_Property_Calculator):
         self.ext_src_uplim = ext_src_uplim
         self.ref_wav = ref_wav
         if self.ext_src_corrs is not None:
-            assert self.ext_src_corrs in ["UV"] + all_filt_names
+            if self.ext_src_corrs not in ["UV"] + all_filt_names:
+                raise InvalidOptionError(
+                    f"Invalid ext_src_corrs={self.ext_src_corrs!r} passed "
+                    f"to {type(self).__name__}; must be one of 'UV' or a "
+                    f"filter name in {all_filt_names}."
+                )
         if self.ext_src_uplim is not None:
-            assert isinstance(self.ext_src_uplim, (int, float))
-            assert self.ext_src_uplim > 0.0
-        assert u.get_physical_type(self.ref_wav) == "length"
+            if not isinstance(self.ext_src_uplim, (int, float)):
+                raise GalfindTypeError(
+                    f"ext_src_uplim={self.ext_src_uplim!r} passed to "
+                    f"{type(self).__name__} has type "
+                    f"{type(self.ext_src_uplim).__name__}; must be an "
+                    "int or float."
+                )
+            if self.ext_src_uplim <= 0.0:
+                raise RangeError(
+                    f"ext_src_uplim={self.ext_src_uplim!r} passed to "
+                    f"{type(self).__name__} must be > 0.0."
+                )
+        if u.get_physical_type(self.ref_wav) != "length":
+            raise InvalidUnitError(
+                f"ref_wav={self.ref_wav!r} passed to {type(self).__name__} "
+                f"has physical type "
+                f"{u.get_physical_type(self.ref_wav)!r}; expected 'length'."
+            )
         self.property_name = property_name
         self._plot_name = plot_name
         super().__init__(aper_diam, SED_fit_label)
@@ -1965,16 +2014,24 @@ class Ext_Src_Property_Calculator(SED_Property_Calculator):
     ) -> Optional[Galaxy]:
         # TODO: Ensure the extended source corrections have already been loaded
         # update the relevant Photometry_rest object stored in the Galaxy
-        assert self.aper_diam in gal.aper_phot.keys(), galfind_logger.critical(
-            f"{self.aper_diam=} not in {gal.aper_phot.keys()}"
-        )
-        assert (
+        if self.aper_diam not in gal.aper_phot.keys():
+            raise MissingDataError(
+                f"aper_diam={self.aper_diam!r} not found in "
+                f"gal.aper_phot.keys()={list(gal.aper_phot.keys())!r} for "
+                f"galaxy ID={gal.ID!r}; load aperture photometry at this "
+                "aperture diameter first."
+            )
+        if (
             self.SED_fit_label
-            in gal.aper_phot[self.aper_diam].SED_results.keys()
-        ), galfind_logger.critical(
-            f"{self.SED_fit_label=} not in "
-            + gal.aper_phot[self.aper_diam].SED_results.keys()
-        )
+            not in gal.aper_phot[self.aper_diam].SED_results.keys()
+        ):
+            raise MissingDataError(
+                f"SED_fit_label={self.SED_fit_label!r} not found in "
+                "gal.aper_phot[aper_diam].SED_results.keys()="
+                f"{list(gal.aper_phot[self.aper_diam].SED_results.keys())!r} "
+                f"for galaxy ID={gal.ID!r}; run the {self.SED_fit_label!r} "
+                "SED fit for this galaxy first."
+            )
         if self.ext_src_corrs == "UV":
             # calculate band nearest to the rest frame UV reference wavelength
             band_wavs = (
@@ -2020,7 +2077,12 @@ class Ext_Src_Property_Calculator(SED_Property_Calculator):
         # load calculated PDF into the SED_result object
         old_pdf = deepcopy(sed_result.property_PDFs[self.property_name])
         if isinstance(old_pdf.input_arr, u.Magnitude):
-            assert old_pdf.input_arr.unit.is_equivalent(u.ABmag)
+            if not old_pdf.input_arr.unit.is_equivalent(u.ABmag):
+                raise InvalidUnitError(
+                    f"property_name={self.property_name!r} PDF has "
+                    f"magnitude unit {old_pdf.input_arr.unit!r}, which is "
+                    "not equivalent to astropy.units.ABmag."
+                )
             new_arr = old_pdf.input_arr.value - 2.5 * np.log10(ext_src_corr)
         elif isinstance(old_pdf.input_arr, u.Dex):
             new_arr = old_pdf.input_arr.value + np.log10(ext_src_corr)
@@ -2223,13 +2285,12 @@ class Multiple_Property_Calculator(Property_Calculator_Base):
         ):
             val = self._call_single(object)
         else:
-            err_message = (
-                f"{object=} with {type(object)=} "
-                + "not in [Catalogue, Galaxy, Photometry_rest, "
-                + "SED_obs, Type[Band_Cutout_Base]]"
+            raise GalfindTypeError(
+                f"__call__() received object={object!r} with "
+                f"type(object)={type(object).__name__}; expected a "
+                "Catalogue_Base subclass, Galaxy, Photometry_rest, "
+                "SED_obs, or Band_Cutout_Base subclass instance."
             )
-            galfind_logger.critical(err_message)
-            raise TypeError(err_message)
         return val
 
     def _call_cat(
@@ -2396,7 +2457,7 @@ class Property_Multiplier(Multiple_Property_Calculator):
         self: Self,
         gal: Galaxy,
     ) -> Optional[Galaxy]:
-        raise NotImplementedError
+        raise AbstractMethodError()
 
 
 class Property_Divider(Multiple_Property_Calculator):
@@ -2420,7 +2481,11 @@ class Property_Divider(Multiple_Property_Calculator):
         name: Optional[str] = None,
         plot_name: Optional[str] = None,
     ) -> None:
-        assert len(calculators) == 2
+        if len(calculators) != 2:
+            raise LengthMismatchError(
+                f"Property_Divider requires exactly 2 calculators, got "
+                f"{len(calculators)} (calculators={calculators!r})."
+            )
         super().__init__(calculators, name, plot_name)
 
     @property
@@ -2565,7 +2630,7 @@ class Property_Divider(Multiple_Property_Calculator):
         self: Self,
         gal: Galaxy,
     ) -> Optional[Galaxy]:
-        raise NotImplementedError
+        raise AbstractMethodError()
 
 
 # class Property_Adder(Multiple_Property_Calculator):
@@ -3001,4 +3066,4 @@ class Surface_Density_Calculator(Multiple_Property_Calculator):
         self: Self,
         gal: Galaxy,
     ) -> Optional[Galaxy]:
-        raise NotImplementedError
+        raise AbstractMethodError()

@@ -48,6 +48,18 @@ except ImportError:
 from .. import config, galfind_logger
 from ..sed_fitting.SED_codes import SED_code
 from ..utils import useful_funcs_austind as funcs
+from ..utils.exceptions import (
+    EmptyCatalogueError,
+    GalfindError,
+    GalfindTypeError,
+    IncompatibleKwargsError,
+    InvalidOptionError,
+    InvalidUnitError,
+    LengthMismatchError,
+    MissingDataError,
+    MissingKeyError,
+    RangeError,
+)
 
 
 class Catalogue_Base:
@@ -185,7 +197,10 @@ class Catalogue_Base:
 
     def __getitem__(self, index: Any) -> Optional[Union[Galaxy, List[Galaxy]]]:
         if len(self) == 0:
-            raise IndexError("No galaxies in catalogue!")
+            raise EmptyCatalogueError(
+                f"Cannot index {repr(self)}: it has 0 galaxies. At "
+                "least one Galaxy is required in self.gals."
+            )
         from ..selection.Selector import Selector
 
         if isinstance(index, int):
@@ -299,7 +314,13 @@ class Catalogue_Base:
                 isinstance(attr, (u.Quantity, u.Magnitude, u.Dex))
                 for attr in attr_arr
             ):
-                assert all(attr.unit == attr_arr[0].unit for attr in attr_arr)
+                if not all(attr.unit == attr_arr[0].unit for attr in attr_arr):
+                    raise InvalidUnitError(
+                        f"Galaxies in {repr(self)} have mismatched units "
+                        f"for property {property_name!r}: "
+                        f"{[str(attr.unit) for attr in attr_arr]!r}; all "
+                        "galaxies must share the same unit."
+                    )
                 attr_arr = [attr.value for attr in attr_arr] * u.Unit(
                     attr_arr[0].unit
                 )
@@ -329,11 +350,11 @@ class Catalogue_Base:
         for key, value in self.__dict__.items():
             try:
                 setattr(result, key, deepcopy(value, memo))
-            except Exception:
-                galfind_logger.critical(
-                    f"deepcopy({self.__class__.__name__}) {key}: {value} FAIL!"
-                )
-                breakpoint()
+            except Exception as e:
+                raise GalfindError(
+                    f"deepcopy({self.__class__.__name__}) failed for "
+                    f"attribute {key!r}={value!r}: {e}"
+                ) from e
         return result
 
     def __add__(self, cat, out_survey=None):
@@ -377,6 +398,11 @@ class Catalogue_Base:
         - Combined_Catalogue
             The resulting Combined_Catalogue after performing the
             multiplication, with duplicates removed.
+
+        Raises:
+        - LengthMismatchError
+            If the cross-match produces a different number of matched
+            galaxies in each catalogue.
 
         """
         from .Multiple_Catalogue import Combined_Catalogue
@@ -553,11 +579,13 @@ class Catalogue_Base:
                             other_gals_indexes[best_match_index]
                         )
 
-            assert (
-                len(cat_matches) == len(other_cat_matches)
-            ), (
-                f"{len(cat_matches)} != {len(other_cat_matches)}"
-            )  # check that the matches are 1-to-1
+            if len(cat_matches) != len(other_cat_matches):
+                raise LengthMismatchError(
+                    f"cat_matches has length {len(cat_matches)} but "
+                    f"other_cat_matches has length "
+                    f"{len(other_cat_matches)}; cross-match indices "
+                    "must be 1-to-1."
+                )  # check that the matches are 1-to-1
             print("Getting galaxies")
             print(cat_matches)
             cat_matches = np.array(cat_matches, dtype=int)
@@ -567,9 +595,13 @@ class Catalogue_Base:
             breakpoint()
             gal_matched_other = other_copy[other_cat_matches]
             print("Obtained matched galaxies")
-            assert len(gal_matched_cat) == len(
-                gal_matched_other
-            )  # check that the matches are 1-to-1
+            if len(gal_matched_cat) != len(gal_matched_other):
+                raise LengthMismatchError(
+                    f"gal_matched_cat has length {len(gal_matched_cat)} "
+                    f"but gal_matched_other has length "
+                    f"{len(gal_matched_other)}; cross-match indices "
+                    "must be 1-to-1."
+                )  # check that the matches are 1-to-1
 
             if len(gal_matched_cat) > 0:
                 if (
@@ -750,12 +782,15 @@ class Catalogue_Base:
 
         Raises
         ------
-        AssertionError
+        GalfindTypeError
             If `max_sep` is `None`.
         """
-        assert max_sep is not None, galfind_logger.critical(
-            "No max_sep provided for cross-match!"
-        )
+        if max_sep is None:
+            raise GalfindTypeError(
+                "max_sep=None passed to cross_match; must be an "
+                "astropy.units.Quantity giving the maximum on-sky "
+                "separation."
+            )
         galfind_logger.info(
             f"Cross-matching {repr(self)} with {repr(other)} within {max_sep}!"
         )
@@ -796,13 +831,21 @@ class Catalogue_Base:
         id : `int`, optional
             ID of the galaxy to remove from `self.gals`. Only used if
             `index` is `None`. Default is `None`.
+
+        Raises
+        ------
+        IncompatibleKwargsError
+            If both `index` and `id` are `None`.
         """
         if index is not None:
             self.gals = np.delete(self.gals, index)
         elif id is not None:
             self.gals = np.delete(self.gals, np.where(self.ID == id))
         else:
-            galfind_logger.critical("No index or ID provided to remove_gal!")
+            raise IncompatibleKwargsError(
+                "remove_gal called with index=None and id=None; at "
+                "least one of 'index' or 'id' must be provided."
+            )
 
     # def crop(
     #     self: Self,
@@ -893,6 +936,18 @@ class Catalogue_Base:
         `astropy.table.Table` or `None`
             The requested catalogue table, or `None` if the requested
             `hdu` does not exist in `self.cat_path`.
+
+        Raises
+        ------
+        GalfindTypeError
+            If `hdu` is not `None`, a `str`, or an `SED_code` instance.
+        MissingDataError
+            If `cropped` is `True`, this catalogue has no galaxies
+            loaded, and not all of `self.crops` have been performed on
+            the ``"SELECTION"`` HDU.
+        InvalidOptionError
+            If `hdu` is a `str` that does not match any recognised HDU
+            naming convention.
         """
         if hdu is None:
             fits_cat = Table.read(
@@ -906,9 +961,10 @@ class Catalogue_Base:
             elif isinstance(hdu, str):
                 hdu_name = hdu
             else:
-                err_message = f"{hdu=} is not a valid input!"
-                galfind_logger.critical(err_message)
-                raise ValueError(err_message)
+                raise GalfindTypeError(
+                    f"hdu={hdu!r} has type {type(hdu).__name__}; must "
+                    "be None, a str, or an SED_code instance."
+                )
             if self.check_hdu_exists(hdu_name):
                 fits_cat = Table.read(
                     self.cat_path,
@@ -932,14 +988,11 @@ class Catalogue_Base:
                 if any(
                     crop.name not in select_cat.colnames for crop in self.crops
                 ):
-                    err_message = (
+                    raise MissingDataError(
                         f"Not all crops in {self.crops} have been "
-                        f"performed on {repr(self)}! "
-                        + "Cropping from .fits table not possible!"
+                        f"performed on {repr(self)}. Run the missing "
+                        "crop(s) before cropping from the .fits table."
                     )
-                    galfind_logger.critical(err_message)
-                    breakpoint()
-                    raise Exception(err_message)
                 crop_mask = np.array(
                     np.logical_and.reduce(
                         [select_cat[crop.name] for crop in self.crops]
@@ -995,9 +1048,12 @@ class Catalogue_Base:
                     if subcls.__name__.upper() == hdu_name.upper()
                 ][0].ID_label
             else:
-                print(hdu, hdu_name)
-                breakpoint()
-                raise NotImplementedError()
+                raise InvalidOptionError(
+                    f"hdu_name={hdu_name!r} (from hdu={hdu!r}) does not "
+                    "match any recognised HDU naming convention "
+                    "('OBJECTS', 'SELECTION', a '*PROPERTIES*' HDU, an "
+                    "SED_code instance, or an SED_code subclass name)."
+                )
             # convert ID column to appropriate units if not already
             if fits_cat[keys_left].dtype != int:
                 fits_cat[keys_left] = fits_cat[keys_left].astype(int)
@@ -1082,7 +1138,6 @@ class Catalogue_Base:
             ]
         except:
             galfind_logger.critical("Failed to write .fits table!")
-            breakpoint()
             raise
         funcs.make_dirs(cat_path)
         hdu_list.writeto(cat_path, overwrite=True)
@@ -1253,6 +1308,13 @@ class Catalogue_Base:
         hdu : `str`, optional
             Name of the extension to remove `col_names`/`hdr_names` from.
             Default is `None`.
+
+        Raises
+        ------
+        MissingKeyError
+            If any name in `col_names` is not a column of the `hdu`
+            table, or any name in `hdr_names` is not a metadata key of
+            the `hdu` table.
         """
         # open up all fits extensions
         tab_arr = []
@@ -1264,8 +1326,18 @@ class Catalogue_Base:
                 # append required fits extension
                 if hdu_.name == hdu.upper():
                     # ensure every column/header name is in catalogue
-                    assert all(name in tab.colnames for name in col_names)
-                    assert all(name in tab.meta.keys() for name in hdr_names)
+                    if not all(name in tab.colnames for name in col_names):
+                        raise MissingKeyError(
+                            f"col_names={col_names} contains names not "
+                            f"present in {hdu.upper()} HDU columns "
+                            f"{tab.colnames}."
+                        )
+                    if not all(name in tab.meta.keys() for name in hdr_names):
+                        raise MissingKeyError(
+                            f"hdr_names={hdr_names} contains keys not "
+                            f"present in {hdu.upper()} HDU metadata "
+                            f"{list(tab.meta.keys())}."
+                        )
                     [tab.remove_column(name) for name in col_names]
                     tab.meta = {
                         key: value
@@ -1326,7 +1398,7 @@ class Catalogue_Base:
 
         Raises
         ------
-        NotImplementedError
+        GalfindTypeError
             If `x_calculator` is not a `Property_Calculator_Base`
             subclass instance.
         """
@@ -1370,7 +1442,11 @@ class Catalogue_Base:
                     x_label = x_calculator.name
                     n_bins = int(np.sqrt(len(x)))
             else:
-                raise NotImplementedError
+                raise GalfindTypeError(
+                    f"x_calculator={x_calculator!r} has type "
+                    f"{type(x_calculator).__name__}; must be a "
+                    "Property_Calculator_Base subclass instance."
+                )
             if log:
                 x = np.log10(x)
                 # x_name = f"log({x_name})"
@@ -1542,10 +1618,13 @@ class Catalogue_Base:
 
         Raises
         ------
-        NotImplementedError
+        GalfindTypeError
             If `x_calculator`, `y_calculator` or `c_calculator` is not a
             `Property_Calculator_Base` subclass instance.
-        Exception
+        IncompatibleKwargsError
+            If `c_calculator` is given together with
+            ``plot_type="contour"`` or ``plot_type="stacked"``.
+        InvalidOptionError
             If `plot_type` is not one of ``"individual"``, ``"contour"``
             or ``"stacked"``.
         """
@@ -1572,7 +1651,11 @@ class Catalogue_Base:
                 else:
                     x_err = None
             else:
-                raise NotImplementedError
+                raise GalfindTypeError(
+                    f"x_calculator={x_calculator!r} has type "
+                    f"{type(x_calculator).__name__}; must be a "
+                    "Property_Calculator_Base subclass instance."
+                )
             if log_x or x_name in funcs.logged_properties:
                 if incl_x_errs:
                     unit = x.unit
@@ -1602,7 +1685,11 @@ class Catalogue_Base:
                 y_err_ = deepcopy(y_err)
                 y_uplims_1 = np.full(y_.shape, False)
             else:
-                raise NotImplementedError
+                raise GalfindTypeError(
+                    f"y_calculator={y_calculator!r} has type "
+                    f"{type(y_calculator).__name__}; must be a "
+                    "Property_Calculator_Base subclass instance."
+                )
             if log_y or y_name in funcs.logged_properties:
                 if incl_y_errs:
                     unit = y.unit
@@ -1635,16 +1722,23 @@ class Catalogue_Base:
                 ):
                     c = c_calculator.extract_vals(self).value.flatten()
                 else:
-                    raise NotImplementedError
+                    raise GalfindTypeError(
+                        f"c_calculator={c_calculator!r} has type "
+                        f"{type(c_calculator).__name__}; must be a "
+                        "Property_Calculator_Base subclass instance."
+                    )
                 if log_c or colour_name in funcs.logged_properties:
                     c = np.log10(c)
                     colour_name = f"log({colour_name})"
                     colour_label = f"log({colour_label})"
 
         elif plot_type.lower() == "contour":
-            assert c_calculator is None, galfind_logger.critical(
-                "Cannot contour galaxies and colour by another property!"
-            )
+            if c_calculator is not None:
+                raise IncompatibleKwargsError(
+                    "Cannot use plot_type='contour' together with a "
+                    f"c_calculator={c_calculator!r}: contour plots "
+                    "cannot colour galaxies by another property."
+                )
             # extract the PDFs
             x_PDFs = x_calculator.extract_PDFs(self)
             y_PDFs = y_calculator.extract_PDFs(self)
@@ -1667,9 +1761,12 @@ class Catalogue_Base:
                 y_label = f"log({y_label})"
 
         elif plot_type.lower() == "stacked":
-            assert c_calculator is None, galfind_logger.critical(
-                "Cannot stack galaxies and colour by another property!"
-            )
+            if c_calculator is not None:
+                raise IncompatibleKwargsError(
+                    "Cannot use plot_type='stacked' together with a "
+                    f"c_calculator={c_calculator!r}: stacked plots "
+                    "cannot colour galaxies by another property."
+                )
             # extract the PDFs
             x_PDFs = x_calculator.extract_PDFs(self)
             y_PDFs = y_calculator.extract_PDFs(self)
@@ -1697,9 +1794,10 @@ class Catalogue_Base:
                 y_err = None
 
         else:
-            err_message = f"{plot_type=} not recognised!"
-            galfind_logger.critical(err_message)
-            raise Exception(err_message)
+            raise InvalidOptionError(
+                f"plot_type={plot_type!r} not recognised; must be one "
+                "of 'individual', 'contour' or 'stacked'."
+            )
 
         # setup matplotlib figure/axis if not already given
         if fig is None or ax is None:
@@ -1868,13 +1966,23 @@ class Catalogue_Base:
                 y = y.value
             # divider = make_axes_locatable(ax)
         if x_hist_ax is not None:
-            assert isinstance(x_hist_ax, plt.Axes)
+            if not isinstance(x_hist_ax, plt.Axes):
+                raise GalfindTypeError(
+                    f"x_hist_ax={x_hist_ax!r} has type "
+                    f"{type(x_hist_ax).__name__}; must be a "
+                    "matplotlib.axes.Axes."
+                )
             # ax_hist_top = divider.append_axes(
             #     "top", size="20%", pad=0.1, sharex=ax
             # )
             x_hist_ax.hist(x, **hist_kwargs)
         if y_hist_ax is not None:
-            assert isinstance(y_hist_ax, plt.Axes)
+            if not isinstance(y_hist_ax, plt.Axes):
+                raise GalfindTypeError(
+                    f"y_hist_ax={y_hist_ax!r} has type "
+                    f"{type(y_hist_ax).__name__}; must be a "
+                    "matplotlib.axes.Axes."
+                )
             # Right histogram
             # ax_hist_right = divider.append_axes(
             #     "right", size="20%", pad=0.1, sharey=ax
@@ -1975,14 +2083,37 @@ class Catalogue_Base:
         Vmax_method: str = "uniform_depth",
         n_jobs: int = 1,
     ) -> Dict[str, NDArray[float]]:
-        assert len(z_bin) == 2
-        assert z_bin[0] < z_bin[1]
-        assert isinstance(SED_fit_code, tuple(SED_code.__subclasses__()))
-        assert all(
+        if len(z_bin) != 2:
+            raise LengthMismatchError(
+                f"z_bin={z_bin!r} has length {len(z_bin)}; must have "
+                "length 2 (a [z_min, z_max] pair)."
+            )
+        if not z_bin[0] < z_bin[1]:
+            raise RangeError(
+                f"z_bin={z_bin!r}: z_bin[0] must be less than z_bin[1]."
+            )
+        if not isinstance(SED_fit_code, tuple(SED_code.__subclasses__())):
+            raise GalfindTypeError(
+                f"SED_fit_code={SED_fit_code!r} has type "
+                f"{type(SED_fit_code).__name__}; must be an SED_code "
+                "subclass instance."
+            )
+        if not all(
             SED_fit_code.label in gal.aper_phot[aper_diam].SED_results.keys()
             for gal in self
-        )
-        assert isinstance(n_jobs, int) and n_jobs >= 1
+        ):
+            raise MissingDataError(
+                f"SED fitting results for {SED_fit_code.label!r} not "
+                f"loaded at aper_diam={aper_diam!r} for every galaxy "
+                f"in {repr(self)}. Run the SED fit first."
+            )
+        if not isinstance(n_jobs, int):
+            raise GalfindTypeError(
+                f"n_jobs={n_jobs!r} has type {type(n_jobs).__name__}; "
+                "must be an int."
+            )
+        if not n_jobs >= 1:
+            raise RangeError(f"n_jobs={n_jobs} must be >= 1.")
 
         save_path = self.get_Vmax_ecsv_path(data, Vmax_method=Vmax_method)
         # if this file already exists
@@ -2095,17 +2226,20 @@ class Catalogue_Base:
 
             # prepare ecsv data
             region_keys = [key for key in Vmax_outputs[0][0].keys()]
-            assert region_keys == data.regions, galfind_logger.critical(
-                f"{region_keys=} from Vmax calculation does not "
-                f"match {data.regions}!"
-            )
-            assert all(
+            if region_keys != data.regions:
+                raise LengthMismatchError(
+                    f"region_keys={region_keys!r} from Vmax calculation "
+                    f"does not match data.regions={data.regions!r}."
+                )
+            if not all(
                 len(Vmax_output[0]) == len(data.regions)
                 for Vmax_output in Vmax_outputs
-            ), galfind_logger.critical(
-                f"{[len(Vmax_output[0]) for Vmax_output in Vmax_outputs]=} "
-                f"!= {len(data.regions)=}"
-            )
+            ):
+                raise LengthMismatchError(
+                    f"Vmax output region counts "
+                    f"{[len(Vmax_output[0]) for Vmax_output in Vmax_outputs]} "
+                    f"do not all match len(data.regions)={len(data.regions)}."
+                )
             zbin_keys = [
                 key for key in Vmax_outputs[0][1][region_keys[0]].keys()
             ]
@@ -2151,8 +2285,11 @@ class Catalogue_Base:
                                             else:
                                                 kwargs[key].extend([value])
                                     else:
-                                        raise NotImplementedError(
-                                            "Vmax output kwarg is not dict!"
+                                        raise GalfindTypeError(
+                                            f"Vmax output kwarg={kwarg!r} "
+                                            f"has type "
+                                            f"{type(kwarg).__name__}; "
+                                            "must be a dict."
                                         )
                             elif isinstance(
                                 Vmax_output[1][region][zbin], dict
@@ -2165,9 +2302,11 @@ class Catalogue_Base:
                                     else:
                                         kwargs[key].extend([value])
                             else:
-                                raise NotImplementedError(
-                                    "Vmax output kwarg is not list, "
-                                    "ndarray or dict!"
+                                val = Vmax_output[1][region][zbin]
+                                raise GalfindTypeError(
+                                    f"Vmax output kwarg={val!r} has type "
+                                    f"{type(val).__name__}; must be a "
+                                    "list, ndarray or dict."
                                 )
                         except Exception as e:
                             galfind_logger.critical(
@@ -2175,7 +2314,6 @@ class Catalogue_Base:
                                 f"galaxy ID {update_gals[i].ID}! "
                                 f"Error={e}"
                             )
-                            breakpoint()
                             raise e
             IDs = np.repeat(
                 np.array([gal.ID for gal in update_gals]),
@@ -2213,7 +2351,6 @@ class Catalogue_Base:
                 galfind_logger.critical(
                     f"Error when creating Vmax ecsv table! Error={e}"
                 )
-                breakpoint()
                 raise e
             new_tab.meta = {"Vmax_invalid_val": -1.0, **meta}
             out_tab = self._save_ecsv(save_path, new_tab)

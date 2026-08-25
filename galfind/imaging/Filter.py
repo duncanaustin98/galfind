@@ -37,6 +37,13 @@ except ImportError:
 
 from .. import config, galfind_logger
 from ..utils import useful_funcs_austind as funcs
+from ..utils.exceptions import (
+    ExternalToolError,
+    GalfindTypeError,
+    InvalidOptionError,
+    LengthMismatchError,
+    RangeError,
+)
 from .Instrument import (  # noqa: F401
     ACS_WFC,
     HST,
@@ -75,6 +82,14 @@ class Filter:
         Additional filter properties (e.g. from SVO), each set as an
         attribute on the instance. Default is ``{}``.
 
+    Raises
+    ------
+    LengthMismatchError
+        If `wav` and `trans` do not have the same length.
+    InvalidOptionError
+        If `instrument` is a `str` that does not match the name of
+        exactly one `Instrument` subclass.
+
     Attributes
     ----------
     instrument : `Instrument` or `None`
@@ -101,14 +116,28 @@ class Filter:
         trans: List[float],
         properties: dict = {},
     ):
-        assert len(wav) == len(trans)
+        if len(wav) != len(trans):
+            raise LengthMismatchError(
+                f"Filter {filt_name!r} given wav with length {len(wav)} "
+                f"and trans with length {len(trans)}; these must match."
+            )
         if isinstance(instrument, str):
+            instrument_name = instrument
             instrument = [
                 instr
                 for instr in Instrument.__subclasses__()
                 if instr.__name__ == instrument
             ]
-            assert len(instrument) == 1
+            if len(instrument) != 1:
+                valid_names = [
+                    instr.__name__ for instr in Instrument.__subclasses__()
+                ]
+                raise InvalidOptionError(
+                    f"instrument={instrument_name!r} passed to Filter "
+                    f"{filt_name!r} does not match exactly one Instrument "
+                    f"subclass name; matched {len(instrument)} of "
+                    f"{valid_names}."
+                )
             instrument = instrument[0]()
         self.instrument = instrument
         self.filt_name = filt_name
@@ -160,7 +189,7 @@ class Filter:
 
         Raises
         ------
-        Exception
+        ExternalToolError
             If the transmission data, or the facility/instrument
             properties, cannot be retrieved from SVO.
         """
@@ -168,11 +197,10 @@ class Filter:
         try:
             filter_profile = SvoFps.get_transmission_data(full_name)
         except Exception as e:
-            err_message = (
-                f"{full_name} is not a valid SvoFps filter! Exception={e}"
-            )
-            galfind_logger.critical(err_message)
-            raise (Exception(err_message))
+            raise ExternalToolError(
+                f"full_name={full_name!r} is not a valid SvoFps filter! "
+                f"Exception={e}"
+            ) from e
         wav = np.array(filter_profile["Wavelength"])
         trans = np.array(filter_profile["Transmission"])
         if SVO_facility_name is None or SVO_instr_name is None:
@@ -198,12 +226,11 @@ class Filter:
                 error_msg=error_msg,
             )
         except Exception as e:
-            err_message = (
+            raise ExternalToolError(
                 f"Could not retrieve properties for "
-                f"{SVO_facility_name}/{SVO_instr_name}! Exception={e}"
-            )
-            galfind_logger.critical(err_message)
-            raise (Exception(err_message))
+                f"SVO_facility_name={SVO_facility_name!r}/"
+                f"SVO_instr_name={SVO_instr_name!r}! Exception={e}"
+            ) from e
         properties = properties[properties["filterID"] == full_name]
         wav *= u.Unit(str(np.array(properties["WavelengthUnit"])[0]))
 
@@ -349,6 +376,18 @@ class Filter:
     def _get_facility_instrument_filt(
         filt_name: str,
     ) -> Tuple[str, str, str, str, str]:
+        """Split a filter name into its facility/instrument/filter parts.
+
+        Raises
+        ------
+        InvalidOptionError
+            If `filt_name` is formatted as ``"<facility>/<instrument>.<filt>"``
+            but the substring after ``"/"`` does not contain exactly one
+            ``"."``, if `filt_name` is a bare band name (no ``"/"``) that
+            does not uniquely match exactly one `Instrument` subclass, or
+            if the resolved `instrument` name does not match exactly one
+            `Instrument` subclass.
+        """
         # determine facility and instrument names of filter string
         split_str = filt_name.split("/")
         if len(split_str) == 3:
@@ -358,7 +397,13 @@ class Filter:
             # formatted as e.g. JWST/NIRCam.F444W
             facility, filt_substr = split_str
             filt_substr_split = filt_substr.split(".")
-            assert len(filt_substr_split) == 2
+            if len(filt_substr_split) != 2:
+                raise InvalidOptionError(
+                    f"filt_name={filt_name!r} has 2 '/'-separated parts, "
+                    f"but the second part {filt_substr!r} does not split "
+                    "into exactly 2 '.'-separated parts; expected format "
+                    "'<facility>/<instrument>.<filt>'."
+                )
             instrument, filt = filt_substr_split
         elif len(split_str) == 1:
             # formatted as e.g. F444W
@@ -369,21 +414,29 @@ class Filter:
                 for instr in [instr() for instr in Instrument.__subclasses__()]
                 if filt in instr.filt_names
             ]
-            assert len(instruments_with_filt) == 1, galfind_logger.critical(
-                f"Could not determine unique instrument from band name {filt}"
-            )
+            if len(instruments_with_filt) != 1:
+                matched_names = [
+                    instr.__class__.__name__ for instr in instruments_with_filt
+                ]
+                raise InvalidOptionError(
+                    f"Could not determine unique instrument from band "
+                    f"name filt={filt!r}; matched {matched_names}."
+                )
             instrument = instruments_with_filt[0]
             facility = instrument.facility.__class__.__name__
         if isinstance(instrument, str):
+            instrument_name = instrument
             instrument = [
                 instr
                 for instr in Instrument.__subclasses__()
                 if instr.__name__ == instrument
             ]
             if len(instrument) != 1:
-                err_message = f"Could not find instrument {instrument}!"
-                galfind_logger.critical(err_message)
-                raise Exception(err_message)
+                raise InvalidOptionError(
+                    f"Could not find exactly one instrument matching "
+                    f"instrument={instrument_name!r}; matched "
+                    f"{[instr.__name__ for instr in instrument]}."
+                )
             else:
                 instrument = instrument[0]()
         # determine instrument and facility SVO names
@@ -409,20 +462,23 @@ class Filter:
                 try:
                     filt = filt()
                 except Exception as e:
-                    err_message = (
-                        f"Please instantiate filter class {repr(filt)}! "
+                    raise GalfindTypeError(
+                        f"Could not instantiate filter class "
+                        f"filt={filt!r} with no arguments; pass an "
+                        f"already-constructed Filter instance instead. "
                         f"Exception={e}"
-                    )
-                    galfind_logger.critical(err_message)
-                    raise (Exception(err_message))
+                    ) from e
             else:
-                err_message = f"filt={repr(filt)} is not a Filter!"
-                galfind_logger.critical(err_message)
-                raise (Exception(err_message))
+                raise GalfindTypeError(
+                    f"filt={filt!r} is not a Filter subclass."
+                )
         elif isinstance(filt, Filter):
             pass
         else:
-            raise TypeError()
+            raise GalfindTypeError(
+                f"filt={filt!r} has type {type(filt).__name__}; must be a "
+                "str, Filter subclass, or Filter instance."
+            )
         # print warning if filter already included
         if filt in current_filt:
             already_included_warning = f"{repr(filt)} duplicated, not adding"
@@ -847,7 +903,7 @@ class Multiple_Filter:
 
         Raises
         ------
-        TypeError
+        GalfindTypeError
             If `facility` is not a `str`, `Facility` instance, or
             `Facility` subclass.
         """
@@ -855,14 +911,21 @@ class Multiple_Filter:
             if issubclass(facility, Facility):
                 facility = facility.__name__
             else:
-                print(f"facility={facility} has type={type(facility)}")
-                raise TypeError()
+                raise GalfindTypeError(
+                    f"facility={facility!r} has type "
+                    f"{type(facility).__name__}, which is not a Facility "
+                    "subclass."
+                )
         elif isinstance(facility, Facility):
             facility = facility.__class__.__name__
         elif isinstance(facility, str):
             pass
         else:
-            raise TypeError()
+            raise GalfindTypeError(
+                f"facility={facility!r} has type "
+                f"{type(facility).__name__}; must be a str, Facility "
+                "subclass, or Facility instance."
+            )
         instruments_from_facility = [
             instr
             for instr in [instr() for instr in Instrument.__subclasses__()]
@@ -915,8 +978,17 @@ class Multiple_Filter:
         `Multiple_Filter`
             Filter set combining the filters from every instrument in
             `instruments`.
+
+        Raises
+        ------
+        RangeError
+            If `instruments` is empty.
         """
-        assert len(instruments) > 0
+        if len(instruments) == 0:
+            raise RangeError(
+                "instruments must contain at least 1 instrument; got an "
+                "empty list."
+            )
         for i, instrument in enumerate(instruments):
             new_multi_filt = cls.from_instrument(
                 instrument, excl_bands, origin, sort_order, keep_suffix
@@ -973,10 +1045,15 @@ class Multiple_Filter:
 
         Raises
         ------
-        TypeError
+        GalfindTypeError
             If `instrument` is not a `str`, `Instrument` instance, or
             `Instrument` subclass.
-        NotImplementedError
+        InvalidOptionError
+            If `instrument` is a `str` that does not match the name of
+            exactly one `Instrument` subclass.
+        ExternalToolError
+            If the filter list cannot be retrieved from SVO.
+        InvalidOptionError
             If `origin` is not ``"SVO"``.
         """
         # convert instrument object to string
@@ -984,20 +1061,33 @@ class Multiple_Filter:
             if issubclass(instrument, Instrument):
                 instrument = instrument()
             else:
-                print(f"instrument={instrument} has type={type(instrument)}")
-                raise TypeError()
+                raise GalfindTypeError(
+                    f"instrument={instrument!r} has type "
+                    f"{type(instrument).__name__}, which is not an "
+                    "Instrument subclass."
+                )
         elif isinstance(instrument, Instrument):
             pass
         elif isinstance(instrument, str):
+            instrument_name = instrument
             instrument = [
                 instr
                 for instr in Instrument.__subclasses__()
                 if instr.__name__ == instrument
             ]
-            assert len(instrument) == 1
+            if len(instrument) != 1:
+                raise InvalidOptionError(
+                    f"instrument={instrument_name!r} does not match "
+                    f"exactly one Instrument subclass name; matched "
+                    f"{[instr.__name__ for instr in instrument]}."
+                )
             instrument = instrument[0]()
         else:
-            raise TypeError()
+            raise GalfindTypeError(
+                f"instrument={instrument!r} has type "
+                f"{type(instrument).__name__}; must be a str, Instrument "
+                "subclass, or Instrument instance."
+            )
         # make excl_bands a list of string filter names
         # belonging to the specific instrument if not already
         excl_bands = cls._get_name_from_filt(excl_bands)
@@ -1020,13 +1110,11 @@ class Multiple_Filter:
                     instrument=instrument.SVO_name,
                 )
             except Exception as e:
-                err_message = (
+                raise ExternalToolError(
                     "Could not retrieve filter list from SVO for "
-                    + f"{instrument.facility.SVO_name}/{instrument.SVO_name}! "
-                    + f"Exception={e}"
-                )
-                galfind_logger.critical(err_message)
-                raise (Exception(err_message))
+                    f"{instrument.facility.SVO_name}/{instrument.SVO_name}! "
+                    f"Exception={e}"
+                ) from e
             # only include filters from the requested instrument
             filter_list = filter_list[
                 np.array(
@@ -1072,7 +1160,10 @@ class Multiple_Filter:
                 ]
             )
         else:
-            raise NotImplementedError
+            raise InvalidOptionError(
+                f"origin={origin!r} not supported; only 'SVO' is "
+                "currently implemented."
+            )
         return cls(filters, sort_order=sort_order)
 
     def __len__(self) -> int:
@@ -1121,12 +1212,10 @@ class Multiple_Filter:
             else:
                 return Multiple_Filter(list(np.array(self.filters)[i]))
         else:
-            raise (
-                TypeError(
-                    f"i={i} in {self.__class__.__name__}.__getitem__"
-                    + f" has type={type(i)} which is not in "
-                    + "[int, slice, str, list, np.ndarray]"
-                )
+            raise GalfindTypeError(
+                f"i={i!r} in {self.__class__.__name__}.__getitem__ has "
+                f"type={type(i).__name__} which is not in "
+                "[int, slice, str, list, np.ndarray]."
             )
 
     def __add__(
@@ -1170,9 +1259,18 @@ class Multiple_Filter:
             remove = True
             if isinstance(filt, type):
                 if issubclass(filt, Filter):
-                    filt = filt()
+                    try:
+                        filt = filt()
+                    except Exception as e:
+                        raise GalfindTypeError(
+                            f"Could not instantiate filter class "
+                            f"filt={filt!r} with no arguments to subtract "
+                            f"it from {self.__class__.__name__}; pass an "
+                            f"already-constructed Filter instance instead. "
+                            f"Exception={e}"
+                        ) from e
                 else:
-                    raise TypeError(
+                    raise GalfindTypeError(
                         f"Cannot subtract {filt!r}; expected a str, "
                         "Filter instance, or Filter subclass."
                     )
@@ -1197,8 +1295,9 @@ class Multiple_Filter:
                 else:
                     remove_filt_names.extend([filt])
             else:
-                raise TypeError(
-                    f"Cannot subtract {filt!r} of type {type(filt)} from "
+                raise GalfindTypeError(
+                    f"Cannot subtract {filt!r} of type "
+                    f"{type(filt).__name__} from "
                     f"{self.__class__.__name__}; expected a str or Filter."
                 )
             # print warning if filter already included
@@ -1318,7 +1417,7 @@ class Multiple_Filter:
                 ascending wavelength order.
 
         Raises:
-            NotImplementedError: If the sort order is not "ascending".
+            InvalidOptionError: If the sort order is not "ascending".
         """
         all_instrument_names = json.loads(
             config.get("Other", "INSTRUMENT_NAMES")
@@ -1349,7 +1448,10 @@ class Multiple_Filter:
                 )
             return name
         else:
-            raise NotImplementedError
+            raise InvalidOptionError(
+                f"sort_order={self.sort_order!r} not supported; only "
+                "'ascending' is currently implemented."
+            )
 
     @property
     def facility_name(self) -> str:
@@ -1368,7 +1470,7 @@ class Multiple_Filter:
                 ascending wavelength order.
 
         Raises:
-            NotImplementedError: If the sort order is not "ascending".
+            InvalidOptionError: If the sort order is not "ascending".
         """
         all_facility_names = json.loads(config.get("Other", "FACILITY_NAMES"))
         unique_facility_names = np.unique(
@@ -1397,7 +1499,10 @@ class Multiple_Filter:
                 )
             return name
         else:
-            raise NotImplementedError
+            raise InvalidOptionError(
+                f"sort_order={self.sort_order!r} not supported; only "
+                "'ascending' is currently implemented."
+            )
 
     @property
     def filt_names(self) -> List[str]:
@@ -1509,7 +1614,7 @@ class Multiple_Filter:
 
         Raises
         ------
-        NotImplementedError
+        InvalidOptionError
             If `self.sort_order` is not ``"ascending"``.
         """
         if self.sort_order == "ascending":
@@ -1522,7 +1627,10 @@ class Multiple_Filter:
                 )
             ]
         else:
-            raise NotImplementedError
+            raise InvalidOptionError(
+                f"sort_order={self.sort_order!r} not supported; only "
+                "'ascending' is currently implemented."
+            )
 
     def plot(
         self,

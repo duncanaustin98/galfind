@@ -46,60 +46,16 @@ from ..spectra.Dust_Attenuation import M99, AUV_from_beta, Calzetti00, Dust_Law
 from ..spectra.Emission_lines import line_diagnostics, strong_optical_lines
 from ..utils import useful_funcs_austind as funcs
 from ..utils.decorators import ignore_warnings
+from ..utils.exceptions import (
+    GalfindTypeError,
+    InvalidOptionError,
+    InvalidUnitError,
+    LengthMismatchError,
+    MissingDataError,
+    RangeError,
+)
 from ..visualization.PDF import PDF
 from .Property_calculator import Property_Calculator
-
-# Rest optical line property naming functions
-
-# def get_rest_optical_flux_contam_label(
-#     line_names: list, flux_contamination_params: dict
-# ):
-#     assert all(
-#         line_name in line_diagnostics.keys() for line_name in line_names
-#     )
-#     assert type(flux_contamination_params) == dict
-#     flux_cont_keys = flux_contamination_params.keys()
-#     if "mu" in flux_cont_keys and "sigma" in flux_cont_keys:
-#         return (
-#             f"{line_names[0]}_cont_G("
-#             f"{flux_contamination_params['mu']:.1f},"
-#             f"{flux_contamination_params['sigma']:.1f})"
-#         )
-#         # _{'+'.join(line_names[1:])}"
-#     elif "mu" in flux_cont_keys and "sigma" not in flux_cont_keys:
-#         return (
-#             f"{line_names[0]}_cont_"
-#             f"{flux_contamination_params['mu']:.1f}"
-#         )
-#         # _{'+'.join(line_names[1:])}"
-#     elif len(flux_contamination_params) == 0:
-#         return "+".join(line_names)
-#     else:
-#         raise NotImplementedError
-
-# def get_rest_optical_flux_contam_scaling(
-#     flux_contamination_params: dict, iters: int
-# ):
-#     assert type(flux_contamination_params) == dict
-#     flux_cont_keys = flux_contamination_params.keys()
-#     if "mu" in flux_cont_keys and "sigma" in flux_cont_keys:
-#         return np.random.normal(
-#             1.0 - flux_contamination_params["mu"],
-#             flux_contamination_params["sigma"],
-#             iters,
-#         )
-#     elif "mu" in flux_cont_keys and "sigma" not in flux_cont_keys:
-#         return 1.0 - flux_contamination_params["mu"]
-#     elif len(flux_contamination_params) == 0:
-#         return 1.0
-#     else:
-#         raise NotImplementedError
-
-# def _get_wav_line_precision(self, line_name: str, dz: float):
-#     assert line_name in line_diagnostics.keys()
-#     wav_rest = line_diagnostics[line_name]["line_wav"]
-#     dlambda = dz * wav_rest / (1.0 + self.z)
-#     return dlambda
 
 
 class Rest_Frame_Property_Calculator(Property_Calculator):
@@ -195,6 +151,12 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
         Modified object or `None`
             If `output=True`, returns the modified object. Otherwise
             returns `None`.
+
+        Raises
+        ------
+        GalfindTypeError
+            If `object` is not a `Catalogue_Base` subclass, `Galaxy`, or
+            `Photometry_rest` instance.
         """
         # calculate pre-requisite properties first
         [
@@ -216,12 +178,11 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
         elif isinstance(object, Photometry_rest):
             obj = self._call_phot_rest(object, n_chains, output, overwrite)
         else:
-            err_message = (
-                f"{object=} with {type(object)=} "
-                + "not in [Catalogue, Galaxy, Photometry_rest]"
+            raise GalfindTypeError(
+                f"object={object!r} with type(object)="
+                f"{type(object).__name__} not in [Catalogue, Galaxy, "
+                "Photometry_rest]."
             )
-            galfind_logger.critical(err_message)
-            raise TypeError(err_message)
         if output:
             return obj
 
@@ -256,10 +217,17 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
         -------
         `Catalogue` or `None`
             Modified catalogue if `output=True`, else `None`.
+
+        Raises
+        ------
+        GalfindTypeError
+            If `n_jobs` is not an `int`.
         """
-        assert isinstance(n_jobs, int), galfind_logger.critical(
-            f"{n_jobs=} with {type(n_jobs)=} != int"
-        )
+        if not isinstance(n_jobs, int):
+            raise GalfindTypeError(
+                f"n_jobs={n_jobs!r} has type {type(n_jobs).__name__}; "
+                "must be an int."
+            )
         try:
             save_dir = (
                 f"{config['PhotProperties']['PDF_SAVE_DIR']}/"
@@ -459,13 +427,12 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
                     ]
 
             else:
-                raise (
-                    ValueError(
-                        galfind_logger.critical(
-                            f"{self.SED_fit_label=} not in all "
-                            f"galaxies in {cat.survey} {cat.version}"
-                        )
-                    )
+                raise MissingDataError(
+                    f"SED_fit_label={self.SED_fit_label!r} not found for "
+                    f"all galaxies in cat.survey={cat.survey!r} "
+                    f"cat.version={cat.version!r}; run the "
+                    f"{self.SED_fit_label!r} SED fit for every galaxy in "
+                    "this catalogue first."
                 )
             # update fits catalogue
             tab[property_name] = property_vals
@@ -507,18 +474,33 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
         -------
         `Galaxy` or `None`
             Modified galaxy if `output=True`, else `None`.
+
+        Raises
+        ------
+        MissingDataError
+            If `self.aper_diam` has no aperture photometry loaded on
+            `gal`, or if `self.SED_fit_label` has not been fit for `gal`
+            at that aperture diameter.
         """
         # update the relevant Photometry_rest object stored in the Galaxy
-        assert self.aper_diam in gal.aper_phot.keys(), galfind_logger.critical(
-            f"{self.aper_diam=} not in {'+'.join(list(gal.aper_phot.keys()))}"
-        )
-        assert (
+        if self.aper_diam not in gal.aper_phot.keys():
+            raise MissingDataError(
+                f"aper_diam={self.aper_diam!r} not found in "
+                f"gal.aper_phot.keys()={list(gal.aper_phot.keys())!r} for "
+                f"galaxy ID={gal.ID!r}; load aperture photometry at this "
+                "aperture diameter first."
+            )
+        if (
             self.SED_fit_label
-            in gal.aper_phot[self.aper_diam].SED_results.keys()
-        ), galfind_logger.critical(
-            f"{self.SED_fit_label=} not in "
-            + "+".join(list(gal.aper_phot[self.aper_diam].SED_results.keys()))
-        )
+            not in gal.aper_phot[self.aper_diam].SED_results.keys()
+        ):
+            raise MissingDataError(
+                f"SED_fit_label={self.SED_fit_label!r} not found in "
+                "gal.aper_phot[aper_diam].SED_results.keys()="
+                f"{list(gal.aper_phot[self.aper_diam].SED_results.keys())!r} "
+                f"for galaxy ID={gal.ID!r}; run the "
+                f"{self.SED_fit_label!r} SED fit for this galaxy first."
+            )
         # Auto-construct save_dir if not provided
         if save_dir is None:
             # Use full path structure if survey and version are
@@ -797,9 +779,10 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
         dtype: np.dtype = np.float32,
     ) -> Tuple[PDF, u.Quantity]:
         # ensure the type is a float
-        assert "float" in dtype.__name__, galfind_logger(
-            f"{dtype=} is not a float type"
-        )
+        if "float" not in dtype.__name__:
+            raise GalfindTypeError(
+                f"dtype={dtype!r} is not a floating-point numpy dtype."
+            )
         # try:
         # scatter relevant photometric data points n_chains times
         if "keep_indices" in self.obj_kwargs.keys():
@@ -858,9 +841,9 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
 
         Raises
         ------
-        AssertionError
+        InvalidUnitError
             If the per-galaxy property units are not all consistent.
-        TypeError
+        GalfindTypeError
             If `object` is not a `Catalogue_Base` subclass instance,
             `Galaxy`, or `Photometry_rest`.
         """
@@ -873,11 +856,14 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
             ]
             cat_vals_no_nans = [val for val in cat_vals if not np.isnan(val)]
             if not all(isinstance(val, float) for val in cat_vals_no_nans):
-                assert all(
+                if not all(
                     val.unit == cat_vals[0].unit for val in cat_vals_no_nans
-                ), galfind_logger.critical(
-                    f"Units of {self.name} in {object} are not consistent"
-                )
+                ):
+                    units = sorted({str(val.unit) for val in cat_vals_no_nans})
+                    raise InvalidUnitError(
+                        f"Units of {self.name!r} in {object!r} are not "
+                        f"consistent; got units {units}."
+                    )
                 cat_vals = (
                     np.array(
                         [
@@ -899,14 +885,14 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
         elif isinstance(object, Photometry_rest):
             return object.properties[self.name]
         else:
-            err_message = (
-                f"{object=} with {type(object)=} "
-                + "not in ["
-                + f"{', '.join(Catalogue_Base.__subclasses__())}, "
-                + "Galaxy, Photometry_rest]"
+            base_names = ", ".join(
+                str(c) for c in Catalogue_Base.__subclasses__()
             )
-            galfind_logger.critical(err_message)
-            raise TypeError(err_message)
+            raise GalfindTypeError(
+                f"object={object!r} with type(object)="
+                f"{type(object).__name__} not in "
+                f"[{base_names}, Galaxy, Photometry_rest]."
+            )
 
     # TODO: Propagate from parent class
     def extract_errs(
@@ -933,9 +919,9 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
 
         Raises
         ------
-        AssertionError
+        InvalidUnitError
             If the per-galaxy property error units are not all consistent.
-        TypeError
+        GalfindTypeError
             If `object` is not a `Catalogue_Base` subclass instance,
             `Galaxy`, or `Photometry_rest`.
         """
@@ -950,11 +936,12 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
                 isinstance(val, tuple([u.Quantity, u.Magnitude, u.Dex]))
                 for val in cat_errs
             ):
-                assert all(
-                    val.unit == cat_errs[0].unit for val in cat_errs
-                ), galfind_logger.critical(
-                    f"Units of {self.name} in {object} are not consistent"
-                )
+                if not all(val.unit == cat_errs[0].unit for val in cat_errs):
+                    raise InvalidUnitError(
+                        f"Units of {self.name!r} in {object!r} are not "
+                        f"consistent; got units "
+                        f"{sorted({str(val.unit) for val in cat_errs})}."
+                    )
                 cat_errs = (
                     np.array([val.value for val in cat_errs])
                     * cat_errs[0].unit
@@ -971,12 +958,11 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
         elif isinstance(object, Photometry_rest):
             return object.property_errs[self.name]
         else:
-            err_message = (
-                f"{object=} with {type(object)=} "
-                + "not in [Catalogue, Galaxy, Photometry_rest]"
+            raise GalfindTypeError(
+                f"object={object!r} with type(object)="
+                f"{type(object).__name__} not in [Catalogue, Galaxy, "
+                "Photometry_rest]."
             )
-            galfind_logger.critical(err_message)
-            raise TypeError(err_message)
 
     def extract_PDFs(
         self: Self,
@@ -998,7 +984,7 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
 
         Raises
         ------
-        TypeError
+        GalfindTypeError
             If `object` is not a `Catalogue_Base` subclass instance,
             `Galaxy`, or `Photometry_rest`.
         """
@@ -1018,14 +1004,14 @@ class Rest_Frame_Property_Calculator(Property_Calculator):
         elif isinstance(object, Photometry_rest):
             return object.property_PDFs[self.name]
         else:
-            err_message = (
-                f"{object=} with {type(object)=} "
-                + "not in ["
-                + f"{', '.join(Catalogue_Base.__subclasses__())}, "
-                + "Galaxy, Photometry_rest]"
+            base_names = ", ".join(
+                str(c) for c in Catalogue_Base.__subclasses__()
             )
-            galfind_logger.critical(err_message)
-            raise TypeError(err_message)
+            raise GalfindTypeError(
+                f"object={object!r} with type(object)="
+                f"{type(object).__name__} not in "
+                f"[{base_names}, Galaxy, Photometry_rest]."
+            )
 
     @abstractmethod
     def _kwarg_assertions(self: Self) -> None:
@@ -1324,17 +1310,33 @@ class UV_Beta_Calculator(Rest_Frame_Property_Calculator):
         return r"$\beta_{\mathrm{UV}}$"
 
     def _kwarg_assertions(self: Self) -> None:
-        assert (
-            u.get_physical_type(self.global_kwargs["rest_UV_wav_lims"])
-            == "length"
-        )
-        assert len(self.global_kwargs["rest_UV_wav_lims"]) == 2
-        assert (
-            self.global_kwargs["rest_UV_wav_lims"][0]
-            < self.global_kwargs["rest_UV_wav_lims"][1]
-        )
-        assert self.global_kwargs["rest_UV_wav_lims"][0] > 1_216.0 * u.AA
-        assert self.global_kwargs["rest_UV_wav_lims"][1] < 3_646.0 * u.AA
+        rest_UV_wav_lims = self.global_kwargs["rest_UV_wav_lims"]
+        if u.get_physical_type(rest_UV_wav_lims) != "length":
+            raise InvalidUnitError(
+                f"rest_UV_wav_lims={rest_UV_wav_lims!r} has physical type "
+                f"{u.get_physical_type(rest_UV_wav_lims)!r}; expected "
+                "'length'."
+            )
+        if len(rest_UV_wav_lims) != 2:
+            raise LengthMismatchError(
+                f"rest_UV_wav_lims={rest_UV_wav_lims!r} must have exactly "
+                f"2 elements; got length {len(rest_UV_wav_lims)}."
+            )
+        if not rest_UV_wav_lims[0] < rest_UV_wav_lims[1]:
+            raise RangeError(
+                f"rest_UV_wav_lims={rest_UV_wav_lims!r} must satisfy "
+                "lower < upper."
+            )
+        if not rest_UV_wav_lims[0] > 1_216.0 * u.AA:
+            raise RangeError(
+                f"rest_UV_wav_lims[0]={rest_UV_wav_lims[0]!r} must be > "
+                "1216.0 AA (redward of Lyman-alpha)."
+            )
+        if not rest_UV_wav_lims[1] < 3_646.0 * u.AA:
+            raise RangeError(
+                f"rest_UV_wav_lims[1]={rest_UV_wav_lims[1]!r} must be < "
+                "3646.0 AA (blueward of the Balmer break)."
+            )
 
     def _calc_obj_kwargs(
         self: Self, phot_rest: Photometry_rest
@@ -1562,19 +1564,36 @@ class UV_Dust_Attenuation_Calculator(Rest_Frame_Property_Calculator):
         return rf"$A_{{{ref_wav_label}}}$"
 
     def _kwarg_assertions(self: Self) -> None:
-        assert (
-            self.global_kwargs["ref_wav"]
-            > self.pre_req_properties[0].global_kwargs["rest_UV_wav_lims"][0]
-        )
-        assert (
-            self.global_kwargs["ref_wav"]
-            < self.pre_req_properties[0].global_kwargs["rest_UV_wav_lims"][1]
-        )
-        assert (
-            self.global_kwargs["beta_dust_conv"].__class__
-            in AUV_from_beta.__subclasses__()
-        )
-        assert isinstance(self.global_kwargs["keep_valid"], bool)
+        rest_UV_wav_lims = self.pre_req_properties[0].global_kwargs[
+            "rest_UV_wav_lims"
+        ]
+        ref_wav = self.global_kwargs["ref_wav"]
+        if not ref_wav > rest_UV_wav_lims[0]:
+            raise RangeError(
+                f"ref_wav={ref_wav!r} must be > "
+                f"rest_UV_wav_lims[0]={rest_UV_wav_lims[0]!r}."
+            )
+        if not ref_wav < rest_UV_wav_lims[1]:
+            raise RangeError(
+                f"ref_wav={ref_wav!r} must be < "
+                f"rest_UV_wav_lims[1]={rest_UV_wav_lims[1]!r}."
+            )
+        beta_dust_conv = self.global_kwargs["beta_dust_conv"]
+        if beta_dust_conv.__class__ not in AUV_from_beta.__subclasses__():
+            valid_classes = [
+                cls.__name__ for cls in AUV_from_beta.__subclasses__()
+            ]
+            raise InvalidOptionError(
+                f"beta_dust_conv={beta_dust_conv!r} has class "
+                f"{beta_dust_conv.__class__.__name__}, which is not one "
+                f"of {valid_classes}."
+            )
+        keep_valid = self.global_kwargs["keep_valid"]
+        if not isinstance(keep_valid, bool):
+            raise GalfindTypeError(
+                f"keep_valid={keep_valid!r} has type "
+                f"{type(keep_valid).__name__}; must be a bool."
+            )
 
     def _calc_obj_kwargs(
         self: Self, phot_rest: Photometry_rest
@@ -1598,7 +1617,11 @@ class UV_Dust_Attenuation_Calculator(Rest_Frame_Property_Calculator):
             beta_arr = phot_rest.property_PDFs[
                 self.pre_req_properties[0].name
             ].input_arr
-            assert len(fluxes_arr) == len(beta_arr)
+            if len(fluxes_arr) != len(beta_arr):
+                raise LengthMismatchError(
+                    f"len(fluxes_arr)={len(fluxes_arr)} != "
+                    f"len(beta_arr)={len(beta_arr)}."
+                )
         else:
             beta_arr = phot_rest.properties[self.pre_req_properties[0].name]
         # calculate A_UV
@@ -1679,17 +1702,19 @@ class Fesc_From_Beta_Calculator(Rest_Frame_Property_Calculator):
         return r"$f_{\mathrm{esc}}$"  # type of fesc here too
 
     def _kwarg_assertions(self: Self) -> None:
-        # if isinstance(self.global_kwargs["fesc_conv"], str):
-        assert (
-            self.global_kwargs["fesc_conv"]
-            in funcs.fesc_from_beta_conversions.keys()
-        )
-        # elif isinstance(self.global_kwargs["fesc_conv"], float):
-        #     assert self.global_kwargs["fesc_conv"] >= 0.0
-        #     assert self.global_kwargs["fesc_conv"] <= 1.0
-        # else:
-        #     raise ValueError("fesc_conv must be a string or float")
-        assert isinstance(self.global_kwargs["keep_valid"], bool)
+        fesc_conv = self.global_kwargs["fesc_conv"]
+        if fesc_conv not in funcs.fesc_from_beta_conversions.keys():
+            raise InvalidOptionError(
+                f"fesc_conv={fesc_conv!r} is not a valid beta-to-fesc "
+                f"conversion; must be one of "
+                f"{sorted(funcs.fesc_from_beta_conversions.keys())}."
+            )
+        keep_valid = self.global_kwargs["keep_valid"]
+        if not isinstance(keep_valid, bool):
+            raise GalfindTypeError(
+                f"keep_valid={keep_valid!r} has type "
+                f"{type(keep_valid).__name__}; must be a bool."
+            )
 
     def _calc_obj_kwargs(
         self: Self, phot_rest: Photometry_rest
@@ -1713,7 +1738,11 @@ class Fesc_From_Beta_Calculator(Rest_Frame_Property_Calculator):
             beta_arr = phot_rest.property_PDFs[
                 self.pre_req_properties[0].name
             ].input_arr
-            assert len(fluxes_arr) == len(beta_arr)
+            if len(fluxes_arr) != len(beta_arr):
+                raise LengthMismatchError(
+                    f"len(fluxes_arr)={len(fluxes_arr)} != "
+                    f"len(beta_arr)={len(beta_arr)}."
+                )
         else:
             beta_arr = phot_rest.properties[self.pre_req_properties[0].name]
         # if isinstance(self.global_kwargs["fesc_conv"], str):
@@ -1819,29 +1848,57 @@ class mUV_Calculator(Rest_Frame_Property_Calculator):
         return r"$m_{\mathrm{UV}}$"
 
     def _kwarg_assertions(self: Self) -> None:
-        assert all(
-            u.get_physical_type(self.global_kwargs[name]) == "length"
-            for name in ["ref_wav", "top_hat_width", "resolution"]
-        )
-        assert (
-            self.global_kwargs["ref_wav"]
-            > self.pre_req_properties[0].global_kwargs["rest_UV_wav_lims"][0]
-        )
-        assert (
-            self.global_kwargs["ref_wav"]
-            < self.pre_req_properties[0].global_kwargs["rest_UV_wav_lims"][1]
-        )
-        assert self.global_kwargs["top_hat_width"] > 0.0 * u.AA
-        assert self.global_kwargs["resolution"] > 0.0 * u.AA
-        if self.global_kwargs["ext_src_corrs"] is not None:
-            assert (
-                self.global_kwargs["ext_src_corrs"] in ["UV"] + all_filt_names
+        for kwarg_name in ["ref_wav", "top_hat_width", "resolution"]:
+            phys_type = u.get_physical_type(self.global_kwargs[kwarg_name])
+            if phys_type != "length":
+                raise InvalidUnitError(
+                    f"{kwarg_name}={self.global_kwargs[kwarg_name]!r} has "
+                    f"physical type {phys_type!r}; expected 'length'."
+                )
+        rest_UV_wav_lims = self.pre_req_properties[0].global_kwargs[
+            "rest_UV_wav_lims"
+        ]
+        ref_wav = self.global_kwargs["ref_wav"]
+        if not ref_wav > rest_UV_wav_lims[0]:
+            raise RangeError(
+                f"ref_wav={ref_wav!r} must be > "
+                f"rest_UV_wav_lims[0]={rest_UV_wav_lims[0]!r}."
             )
-        if self.global_kwargs["ext_src_uplim"] is not None:
-            assert isinstance(
-                self.global_kwargs["ext_src_uplim"], (int, float)
+        if not ref_wav < rest_UV_wav_lims[1]:
+            raise RangeError(
+                f"ref_wav={ref_wav!r} must be < "
+                f"rest_UV_wav_lims[1]={rest_UV_wav_lims[1]!r}."
             )
-            assert self.global_kwargs["ext_src_uplim"] > 0.0
+        if not self.global_kwargs["top_hat_width"] > 0.0 * u.AA:
+            raise RangeError(
+                f"top_hat_width={self.global_kwargs['top_hat_width']!r} "
+                "must be > 0 AA."
+            )
+        if not self.global_kwargs["resolution"] > 0.0 * u.AA:
+            raise RangeError(
+                f"resolution={self.global_kwargs['resolution']!r} must "
+                "be > 0 AA."
+            )
+        ext_src_corrs = self.global_kwargs["ext_src_corrs"]
+        if ext_src_corrs is not None:
+            if ext_src_corrs not in ["UV"] + all_filt_names:
+                raise InvalidOptionError(
+                    f"ext_src_corrs={ext_src_corrs!r} is not valid; must "
+                    "be one of 'UV' or a filter name in "
+                    f"{all_filt_names}."
+                )
+        ext_src_uplim = self.global_kwargs["ext_src_uplim"]
+        if ext_src_uplim is not None:
+            if not isinstance(ext_src_uplim, (int, float)):
+                raise GalfindTypeError(
+                    f"ext_src_uplim={ext_src_uplim!r} has type "
+                    f"{type(ext_src_uplim).__name__}; must be an int or "
+                    "float."
+                )
+            if not ext_src_uplim > 0.0:
+                raise RangeError(
+                    f"ext_src_uplim={ext_src_uplim!r} must be > 0.0."
+                )
 
     def _calc_obj_kwargs(
         self: Self, phot_rest: Photometry_rest
@@ -1869,7 +1926,11 @@ class mUV_Calculator(Rest_Frame_Property_Calculator):
             ].save_path.replace(".npy", "_scattered_fluxes.npy")
             # load scattered fluxes
             scattered_fluxes = np.load(save_path) * u.Jy
-            assert len(fluxes_arr) == len(scattered_fluxes)
+            if len(fluxes_arr) != len(scattered_fluxes):
+                raise LengthMismatchError(
+                    f"len(fluxes_arr)={len(fluxes_arr)} != "
+                    f"len(scattered_fluxes)={len(scattered_fluxes)}."
+                )
             fluxes_arr = scattered_fluxes
             beta_arr = phot_rest.property_PDFs[
                 self.pre_req_properties[0].name
@@ -1902,7 +1963,11 @@ class mUV_Calculator(Rest_Frame_Property_Calculator):
             * u.erg
             / (u.s * u.AA * u.cm**2)
         )
-        assert len(amplitude_arr) == len(beta_arr)
+        if len(amplitude_arr) != len(beta_arr):
+            raise LengthMismatchError(
+                f"len(amplitude_arr)={len(amplitude_arr)} != "
+                f"len(beta_arr)={len(beta_arr)}."
+            )
 
         # re-create linear fit(s) to calculate mUV's
         rest_wavelengths = funcs.convert_wav_units(
@@ -1986,12 +2051,15 @@ class mUV_Calculator(Rest_Frame_Property_Calculator):
         dtype: np.dtype = np.float32,
     ) -> Optional[Photometry_rest]:
         if self.global_kwargs["ext_src_corrs"]:
-            # assert that extended source corrections have been loaded
-            assert hasattr(
-                phot_rest, "ext_src_corrs"
-            ), galfind_logger.critical(
-                "Extended source corrections must be pre-loaded!"
-            )
+            # ensure that extended source corrections have been loaded
+            if not hasattr(phot_rest, "ext_src_corrs"):
+                raise MissingDataError(
+                    f"phot_rest={phot_rest!r} has no 'ext_src_corrs' "
+                    "attribute; extended source corrections must be "
+                    "pre-loaded (e.g. via "
+                    "Catalogue.load_sextractor_ext_src_corrs()) before "
+                    f"calling {type(self).__name__}."
+                )
         return super()._call_phot_rest(
             phot_rest,
             n_chains,
@@ -2100,6 +2168,10 @@ class MUV_Calculator(Rest_Frame_Property_Calculator):
         return r"$M_{\mathrm{UV}}$"
 
     def _kwarg_assertions(self: Self) -> NoReturn:
+        # No-op by design: MUV_Calculator takes no global_kwargs of its
+        # own (all user-facing parameters are forwarded to and validated
+        # by the mUV_Calculator prerequisite's own __init__/
+        # _kwarg_assertions), so self.global_kwargs is always {} here.
         pass
 
     def _calc_obj_kwargs(
@@ -2282,8 +2354,14 @@ class LUV_Calculator(Rest_Frame_Property_Calculator):
         return r"$L_{\mathrm{UV}}$"  # frame and units here too
 
     def _kwarg_assertions(self: Self) -> NoReturn:
+        # No-op by design: LUV_Calculator takes no global_kwargs of its
+        # own (all user-facing parameters are forwarded to and validated
+        # by the mUV_Calculator/UV_Dust_Attenuation_Calculator
+        # prerequisites' own __init__/_kwarg_assertions), so
+        # self.global_kwargs is always {} here. The commented-out
+        # "frame" kwarg below was never wired up (see the commented-out
+        # `frame` parameter in __init__) and has no live code path.
         pass
-        # assert self.global_kwargs["frame"] in ["rest", "obs"]
 
     def _calc_obj_kwargs(
         self: Self, phot_rest: Photometry_rest
@@ -2329,7 +2407,11 @@ class LUV_Calculator(Rest_Frame_Property_Calculator):
                 AUV_arr = phot_rest.property_PDFs[
                     self.dust_calculator.name
                 ].input_arr
-                assert len(fluxes_arr) == len(AUV_arr)
+                if len(fluxes_arr) != len(AUV_arr):
+                    raise LengthMismatchError(
+                        f"len(fluxes_arr)={len(fluxes_arr)} != "
+                        f"len(AUV_arr)={len(AUV_arr)}."
+                    )
             else:
                 AUV_arr = phot_rest.properties[self.dust_calculator.name]
             LUV_arr = funcs.dust_correct(LUV_arr, AUV_arr)
@@ -2488,7 +2570,12 @@ class SFR_UV_Calculator(Rest_Frame_Property_Calculator):
         return r"$\mathrm{SFR}_{\mathrm{UV}}$"
 
     def _kwarg_assertions(self: Self) -> None:
-        assert self.global_kwargs["SFR_conv"] in funcs.SFR_conversions.keys()
+        SFR_conv = self.global_kwargs["SFR_conv"]
+        if SFR_conv not in funcs.SFR_conversions.keys():
+            raise InvalidOptionError(
+                f"SFR_conv={SFR_conv!r} is not a valid SFR conversion; "
+                f"must be one of {sorted(funcs.SFR_conversions.keys())}."
+            )
 
     def _calc_obj_kwargs(
         self: Self, phot_rest: Photometry_rest
@@ -2583,10 +2670,18 @@ class Optical_Continuum_Calculator(Rest_Frame_Property_Calculator):
         )
 
     def _kwarg_assertions(self: Self) -> None:
-        assert all(
-            line_name in strong_optical_lines
-            for line_name in self.global_kwargs["strong_line_names"]
-        )
+        strong_line_names = self.global_kwargs["strong_line_names"]
+        invalid_line_names = [
+            line_name
+            for line_name in strong_line_names
+            if line_name not in strong_optical_lines
+        ]
+        if invalid_line_names:
+            raise InvalidOptionError(
+                f"strong_line_names={strong_line_names!r} contains "
+                f"invalid name(s) {invalid_line_names!r}; must be one "
+                f"of {sorted(strong_optical_lines)}."
+            )
 
     def _calc_obj_kwargs(
         self: Self, phot_rest: Photometry_rest
@@ -2830,11 +2925,24 @@ class Optical_Line_EW_Calculator(Rest_Frame_Property_Calculator):
         return rf"$\mathrm{{EW}}_{{\mathrm{{{line_label}}}}}$"
 
     def _kwarg_assertions(self: Self) -> None:
-        assert all(
-            line_name in strong_optical_lines
-            for line_name in self.global_kwargs["strong_line_names"]
-        )
-        assert self.global_kwargs["frame"] in ["rest", "obs"]
+        strong_line_names = self.global_kwargs["strong_line_names"]
+        invalid_line_names = [
+            line_name
+            for line_name in strong_line_names
+            if line_name not in strong_optical_lines
+        ]
+        if invalid_line_names:
+            raise InvalidOptionError(
+                f"strong_line_names={strong_line_names!r} contains "
+                f"invalid name(s) {invalid_line_names!r}; must be one "
+                f"of {sorted(strong_optical_lines)}."
+            )
+        frame = self.global_kwargs["frame"]
+        if frame not in ["rest", "obs"]:
+            raise InvalidOptionError(
+                f"frame={frame!r} is not valid; must be one of "
+                "['rest', 'obs']."
+            )
 
     def _calc_obj_kwargs(
         self: Self, phot_rest: Photometry_rest
@@ -2938,7 +3046,11 @@ class Optical_Line_EW_Calculator(Rest_Frame_Property_Calculator):
             cont_fluxes = phot_rest.property_PDFs[
                 self.pre_req_properties[0].name
             ].input_arr
-            assert len(fluxes_arr) == len(cont_fluxes)
+            if len(fluxes_arr) != len(cont_fluxes):
+                raise LengthMismatchError(
+                    f"len(fluxes_arr)={len(fluxes_arr)} != "
+                    f"len(cont_fluxes)={len(cont_fluxes)}."
+                )
         else:
             cont_fluxes = phot_rest.properties[self.pre_req_properties[0].name]
         return (
@@ -3060,12 +3172,26 @@ class Dust_Attenuation_From_UV_Calculator(Rest_Frame_Property_Calculator):
         return f"Dust attenuation (E(B-V)) @ {self.global_kwargs['calc_wav']}"
 
     def _kwarg_assertions(self: Self) -> None:
-        assert u.get_physical_type(self.global_kwargs["calc_wav"]) == "length"
-        assert (
-            self.global_kwargs["dust_law"].__class__
-            in Dust_Law.__subclasses__()
-        )
-        assert isinstance(self.global_kwargs["keep_valid"], bool)
+        calc_wav = self.global_kwargs["calc_wav"]
+        phys_type = u.get_physical_type(calc_wav)
+        if phys_type != "length":
+            raise InvalidUnitError(
+                f"calc_wav={calc_wav!r} has physical type {phys_type!r}; "
+                "expected 'length'."
+            )
+        dust_law = self.global_kwargs["dust_law"]
+        if dust_law.__class__ not in Dust_Law.__subclasses__():
+            raise InvalidOptionError(
+                f"dust_law={dust_law!r} has class "
+                f"{dust_law.__class__.__name__}, which is not one of "
+                f"{[cls.__name__ for cls in Dust_Law.__subclasses__()]}."
+            )
+        keep_valid = self.global_kwargs["keep_valid"]
+        if not isinstance(keep_valid, bool):
+            raise GalfindTypeError(
+                f"keep_valid={keep_valid!r} has type "
+                f"{type(keep_valid).__name__}; must be a bool."
+            )
 
     def _calc_obj_kwargs(
         self: Self, phot_rest: Photometry_rest
@@ -3091,7 +3217,11 @@ class Dust_Attenuation_From_UV_Calculator(Rest_Frame_Property_Calculator):
             AUV_arr = phot_rest.property_PDFs[
                 self.pre_req_properties[0].name
             ].input_arr
-            assert len(fluxes_arr) == len(AUV_arr)
+            if len(fluxes_arr) != len(AUV_arr):
+                raise LengthMismatchError(
+                    f"len(fluxes_arr)={len(fluxes_arr)} != "
+                    f"len(AUV_arr)={len(AUV_arr)}."
+                )
         else:
             AUV_arr = phot_rest.properties[self.pre_req_properties[0].name]
         AUV_arr = AUV_arr.to(u.ABmag).value
@@ -3153,7 +3283,7 @@ class Line_Dust_Attenuation_From_UV_Calculator(
 
     Raises
     ------
-    AssertionError
+    InvalidOptionError
         If `line_name` is not a key of `Emission_lines.line_diagnostics`.
     """
 
@@ -3168,9 +3298,11 @@ class Line_Dust_Attenuation_From_UV_Calculator(
         UV_wav_lims: u.Quantity = [1_250.0, 3_000.0] * u.AA,
         keep_valid: bool = False,
     ) -> NoReturn:
-        assert line_name in line_diagnostics.keys(), galfind_logger.critical(
-            f"{line_name=} not in {line_diagnostics.keys()}"
-        )
+        if line_name not in line_diagnostics.keys():
+            raise InvalidOptionError(
+                f"line_name={line_name!r} is not a valid emission line; "
+                f"must be one of {sorted(line_diagnostics.keys())}."
+            )
         super().__init__(
             aper_diam,
             SED_fit_label,
@@ -3361,7 +3493,12 @@ class Optical_Line_Flux_Calculator(Rest_Frame_Property_Calculator):
             EW_arr = phot_rest.property_PDFs[
                 self.pre_req_properties[1].name
             ].input_arr
-            assert len(fluxes_arr) == len(cont_arr) == len(EW_arr)
+            if not len(fluxes_arr) == len(cont_arr) == len(EW_arr):
+                raise LengthMismatchError(
+                    f"len(fluxes_arr)={len(fluxes_arr)}, "
+                    f"len(cont_arr)={len(cont_arr)}, "
+                    f"len(EW_arr)={len(EW_arr)} must all be equal."
+                )
         else:
             cont_arr = phot_rest.properties[self.pre_req_properties[0].name]
             EW_arr = phot_rest.properties[self.pre_req_properties[1].name]
@@ -3380,7 +3517,11 @@ class Optical_Line_Flux_Calculator(Rest_Frame_Property_Calculator):
                 A_arr = phot_rest.property_PDFs[
                     self.dust_calculator.name
                 ].input_arr
-                assert len(fluxes_arr) == len(A_arr)
+                if len(fluxes_arr) != len(A_arr):
+                    raise LengthMismatchError(
+                        f"len(fluxes_arr)={len(fluxes_arr)} != "
+                        f"len(A_arr)={len(A_arr)}."
+                    )
             else:
                 A_arr = phot_rest.properties[self.dust_calculator.name]
             # correct for dust attenuation
@@ -3520,7 +3661,11 @@ class Optical_Line_Luminosity_Calculator(Rest_Frame_Property_Calculator):
             line_flux_arr = phot_rest.property_PDFs[
                 self.pre_req_properties[0].name
             ].input_arr
-            assert len(fluxes_arr) == len(line_flux_arr)
+            if len(fluxes_arr) != len(line_flux_arr):
+                raise LengthMismatchError(
+                    f"len(fluxes_arr)={len(fluxes_arr)} != "
+                    f"len(line_flux_arr)={len(line_flux_arr)}."
+                )
         else:
             line_flux_arr = phot_rest.properties[
                 self.pre_req_properties[0].name
@@ -3690,12 +3835,20 @@ class Ndot_Ion_Calculator(Rest_Frame_Property_Calculator):
 
     def _kwarg_assertions(self: Self) -> NoReturn:
         if self.fesc_calculator is not None:
-            assert isinstance(
+            if not isinstance(
                 self.fesc_calculator, (Fesc_From_Beta_Calculator, float)
-            )
+            ):
+                raise GalfindTypeError(
+                    f"fesc_calculator={self.fesc_calculator!r} has type "
+                    f"{type(self.fesc_calculator).__name__}; must be a "
+                    "Fesc_From_Beta_Calculator, a float, or None."
+                )
         if isinstance(self.fesc_calculator, float):
-            assert self.fesc_calculator >= 0.0
-            assert self.fesc_calculator <= 1.0
+            if not 0.0 <= self.fesc_calculator <= 1.0:
+                raise RangeError(
+                    f"fesc_calculator={self.fesc_calculator!r} must lie "
+                    "in [0.0, 1.0]."
+                )
 
     def _calc_obj_kwargs(
         self: Self, phot_rest: Photometry_rest
@@ -3727,7 +3880,11 @@ class Ndot_Ion_Calculator(Rest_Frame_Property_Calculator):
             line_lum_arr = phot_rest.property_PDFs[
                 self.pre_req_properties[0].name
             ].input_arr
-            assert len(fluxes_arr) == len(line_lum_arr)
+            if len(fluxes_arr) != len(line_lum_arr):
+                raise LengthMismatchError(
+                    f"len(fluxes_arr)={len(fluxes_arr)} != "
+                    f"len(line_lum_arr)={len(line_lum_arr)}."
+                )
             if self.fesc_calculator is None:
                 fesc_arr = np.full(len(fluxes_arr), 0.0)
             elif isinstance(self.fesc_calculator, Fesc_From_Beta_Calculator):
@@ -3738,7 +3895,11 @@ class Ndot_Ion_Calculator(Rest_Frame_Property_Calculator):
                 fesc_arr = np.full(
                     len(fluxes_arr), float(self.fesc_calculator)
                 )
-            assert len(fluxes_arr) == len(fesc_arr)
+            if len(fluxes_arr) != len(fesc_arr):
+                raise LengthMismatchError(
+                    f"len(fluxes_arr)={len(fluxes_arr)} != "
+                    f"len(fesc_arr)={len(fesc_arr)}."
+                )
         else:
             line_lum_arr = phot_rest.properties[
                 self.pre_req_properties[0].name
@@ -3783,165 +3944,6 @@ class Ndot_Ion_Calculator(Rest_Frame_Property_Calculator):
         self: Self, phot_rest: Photometry_rest
     ) -> Dict[str, Any]:
         return {}
-
-
-# class Ndot_Ion_Fesc_Calculator(Rest_Frame_Property_Calculator):
-
-#     def __init__(
-#         self: Self,
-#         aper_diam: u.Quantity,
-#         SED_fit_label: Union[str, Type[SED_code]],
-#         #frame: str = "rest",
-#         rest_optical_wavs: u.Quantity = [4_200.0, 10_000.0] * u.AA,
-#         dust_law: Optional[Union[str, Type[Dust_Law]]] = Calzetti00,
-#         beta_dust_conv: Optional[Union[str, Type[AUV_from_beta]]] = M99,
-#         UV_wav_lims: Optional[u.Quantity] = [1_250.0, 3_000.0] * u.AA,
-#         fesc_conv: Union[str, float] = "Chisholm22",
-#         logged: bool = True,
-#     ) -> NoReturn:
-#         ndot_ion_calculator = \
-#             Ndot_Ion_Calculator(
-#                 aper_diam,
-#                 SED_fit_label,
-#                 #frame,
-#                 rest_optical_wavs,
-#                 dust_law,
-#                 beta_dust_conv,
-#                 UV_wav_lims,
-#                 fesc_conv,
-#                 logged = False,
-#             )
-
-#         pre_req_properties = [ndot_ion_calculator]
-#         if isinstance(fesc_conv, str):
-#             self.fesc_calculator = Fesc_From_Beta_Calculator(
-#                 aper_diam,
-#                 SED_fit_label,
-#                 UV_wav_lims,
-#                 fesc_conv,
-#                 keep_valid = True
-#             )
-#             pre_req_properties.append(self.fesc_calculator)
-#         else: # float
-#             self.fesc_calculator = fesc_conv
-#         global_kwargs = {"logged": logged}
-#         super().__init__(
-#             aper_diam, SED_fit_label, pre_req_properties, **global_kwargs
-#         )
-
-#     @property
-#     def name(self: Self) -> str:
-#         if self.pre_req_properties[0].pre_req_properties[0] \
-#                 .pre_req_properties[0].dust_calculator is not None:
-#             dust_label = "_" + "_".join(
-#                 self.pre_req_properties[0].pre_req_properties[0]
-#                 .dust_calculator.name.split("_")[1:2]
-#             ) + "dust"
-#         else:
-#             dust_label = ""
-#         if isinstance(self.fesc_calculator, Fesc_From_Beta_Calculator):
-#             fesc_label = self.fesc_calculator.name.split("_")[0]
-#             if dust_label == "":
-#                 fesc_label += "_".join(fesc_label.split("_")[1:])
-#         else: # isinstance(fesc_conv, float)
-#             fesc_label = f"fesc={self.fesc_calculator:.2f}"
-#         line_label = "+".join(
-#             self.pre_req_properties[0].pre_req_properties[0]
-#             .pre_req_properties[0].pre_req_properties[1]
-#             .global_kwargs["strong_line_names"]
-#         )
-#         # try:
-#         #     ext_src_label = f"_extsrc_{self.pre_req_properties[0]
-#         #         .pre_req_properties[0].global_kwargs['ext_src_corrs']}" \
-#         #         if self.pre_req_properties[0].pre_req_properties[0]
-#         #         .global_kwargs["ext_src_corrs"] is not None else ""
-#         #     ext_src_lim_label = f"<{self.pre_req_properties[0]
-#         #         .pre_req_properties[0]
-#         #         .global_kwargs['ext_src_uplim']:.0f}" if \
-#         #         self.pre_req_properties[0].pre_req_properties[0]
-#         #         .global_kwargs["ext_src_uplim"] is not None and \
-#         #         self.pre_req_properties[0].pre_req_properties[0]
-#         #         .global_kwargs["ext_src_corrs"] is not None else ""
-#         # except:
-#         #     breakpoint()
-#         label = f"fesc_ndot_ion_{line_label}{dust_label}_{fesc_label}"
-#         #{ext_src_label}{ext_src_lim_label}"
-#         if self.global_kwargs["logged"]:
-#             label = f"log_{label}"
-#         return label
-
-#     @property
-#     def plot_name(self: Self) -> str:
-#         if self.global_kwargs["logged"]:
-#             return (
-#                 r"$\log(\dot{n}_{\mathrm{ion}}f_{\mathrm{esc}}"
-#                 r"~/~\mathrm{s}^{-1})$"
-#             )
-#         else:
-#             return
-r"$\dot{n}_{\mathrm{ion}}f_{\mathrm{esc}}~/~\mathrm{s}^{-1}$"
-
-#     def _kwarg_assertions(self: Self) -> NoReturn:
-#         if isinstance(self.fesc_calculator, float):
-#             assert self.fesc_calculator >= 0.0
-#             assert self.fesc_calculator <= 1.0
-#         else:
-#             assert isinstance(
-#                 self.fesc_calculator, Fesc_From_Beta_Calculator
-#             )
-
-#     def _calc_obj_kwargs(
-#         self: Self,
-#         phot_rest: Photometry_rest
-#     ) -> Dict[str, Any]:
-#         return {}
-
-#     def _fail_criteria(
-#         self: Self,
-#         phot_rest: Photometry_rest,
-#     ) -> bool:
-#         # always pass
-#         return False
-
-#     def _calculate(
-#         self: Self,
-#         fluxes_arr: u.Quantity,
-#         phot_rest: Photometry_rest,
-#     ) -> Optional[Union[u.Quantity, u.Magnitude, u.Dex]]:
-#         # extract line and UV luminosity (and fesc is required) chains/value
-#         if len(fluxes_arr) > 1:
-#             ndot_ion_arr = phot_rest.property_PDFs[
-#                 self.pre_req_properties[0].name
-#             ].input_arr
-#             assert len(fluxes_arr) == len(ndot_ion_arr)
-#             if self.fesc_calculator is None:
-#                 fesc_arr = np.full(len(fluxes_arr), 0.0)
-#             elif isinstance(self.fesc_calculator, Fesc_From_Beta_Calculator):
-#                 fesc_arr = phot_rest.property_PDFs[
-#                     self.fesc_calculator.name
-#                 ].input_arr
-#             else: # isinstance(fesc_conv, float)
-#                 fesc_arr = np.full(len(fluxes_arr), self.fesc_calculator)
-#             assert len(fluxes_arr) == len(fesc_arr)
-#         else:
-#             ndot_ion_arr = phot_rest.properties[
-#                 self.pre_req_properties[0].name
-#             ]
-#             if self.fesc_calculator is None:
-#                 fesc_arr = 0.0
-#             elif isinstance(self.fesc_calculator, Fesc_From_Beta_Calculator):
-#                 fesc_arr = phot_rest.properties[self.fesc_calculator.name]
-#             else: # isinstance(fesc_conv, float)
-#                 fesc_arr = self.fesc_calculator
-#         # calculate fesc_ndot_ion values
-#         fesc_ndot_ion_arr = fesc_arr * ndot_ion_arr
-#         return fesc_ndot_ion_arr
-
-#     def _get_output_kwargs(
-#         self: Self,
-#         phot_rest: Photometry_rest
-#     ) -> Dict[str, Any]:
-#         return {}
 
 
 class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
@@ -4111,12 +4113,20 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
 
     def _kwarg_assertions(self: Self) -> NoReturn:
         if self.fesc_calculator is not None:
-            assert isinstance(
+            if not isinstance(
                 self.fesc_calculator, (Fesc_From_Beta_Calculator, float)
-            )
+            ):
+                raise GalfindTypeError(
+                    f"fesc_calculator={self.fesc_calculator!r} has type "
+                    f"{type(self.fesc_calculator).__name__}; must be a "
+                    "Fesc_From_Beta_Calculator, a float, or None."
+                )
         if isinstance(self.fesc_calculator, float):
-            assert self.fesc_calculator >= 0.0
-            assert self.fesc_calculator <= 1.0
+            if not 0.0 <= self.fesc_calculator <= 1.0:
+                raise RangeError(
+                    f"fesc_calculator={self.fesc_calculator!r} must lie "
+                    "in [0.0, 1.0]."
+                )
 
     def _calc_obj_kwargs(
         self: Self, phot_rest: Photometry_rest
@@ -4143,7 +4153,12 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
             LUV_arr = phot_rest.property_PDFs[
                 self.pre_req_properties[1].name
             ].input_arr
-            assert len(fluxes_arr) == len(line_lum_arr) == len(LUV_arr)
+            if not len(fluxes_arr) == len(line_lum_arr) == len(LUV_arr):
+                raise LengthMismatchError(
+                    f"len(fluxes_arr)={len(fluxes_arr)}, "
+                    f"len(line_lum_arr)={len(line_lum_arr)}, "
+                    f"len(LUV_arr)={len(LUV_arr)} must all be equal."
+                )
             if self.fesc_calculator is None:
                 fesc_arr = np.full(len(fluxes_arr), 0.0)
             elif isinstance(self.fesc_calculator, Fesc_From_Beta_Calculator):
@@ -4152,7 +4167,11 @@ class Xi_Ion_Calculator(Rest_Frame_Property_Calculator):
                 ].input_arr
             else:  # isinstance(fesc_conv, float)
                 fesc_arr = np.full(len(fluxes_arr), self.fesc_calculator)
-            assert len(fluxes_arr) == len(fesc_arr)
+            if len(fluxes_arr) != len(fesc_arr):
+                raise LengthMismatchError(
+                    f"len(fluxes_arr)={len(fluxes_arr)} != "
+                    f"len(fesc_arr)={len(fesc_arr)}."
+                )
         else:
             line_lum_arr = phot_rest.properties[
                 self.pre_req_properties[0].name
@@ -4319,7 +4338,11 @@ class SFR_Halpha_Calculator(Rest_Frame_Property_Calculator):
             line_lum_arr = phot_rest.property_PDFs[
                 self.pre_req_properties[0].name
             ].input_arr
-            assert len(fluxes_arr) == len(line_lum_arr)
+            if len(fluxes_arr) != len(line_lum_arr):
+                raise LengthMismatchError(
+                    f"len(fluxes_arr)={len(fluxes_arr)} != "
+                    f"len(line_lum_arr)={len(line_lum_arr)}."
+                )
         else:
             line_lum_arr = phot_rest.properties[
                 self.pre_req_properties[0].name
