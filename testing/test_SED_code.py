@@ -51,6 +51,7 @@ def test_template_fitter_missing_required_key_raises_missing_key_error():
 
 
 @pytest.mark.requires_data
+@pytest.mark.lephare
 def test_cat_custom_lephare_loaded(cat_custom_lephare_loaded):
     assert isinstance(cat_custom_lephare_loaded, Catalogue)
 

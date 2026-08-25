@@ -31,6 +31,7 @@ def custom_lephare_sed(
 
 
 @pytest.mark.requires_data
+@pytest.mark.lephare
 def test_custom_lephare_sed(custom_lephare_sed):
     assert isinstance(custom_lephare_sed, SED_obs)
 

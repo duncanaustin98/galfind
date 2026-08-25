@@ -279,5 +279,5 @@ markers = [
   "slow: marks slow tests",
   "instrument: tests that require instrument setup",
   "requires_data: marks tests requiring data to run",
-  "lephare: tests requiring the custom LePhare SED fitter, currently producing empty SED results for the synthetic test galaxy (unresolved)",
+  "lephare: tests requiring a local LePhare install (LEPHAREDIR/LEPHAREWORK); excluded in CI since LePhare is a separate compiled Fortran/C++ codebase, not pip-installable (see galfind.def). Some also currently produce empty SED results for the synthetic test galaxy (unresolved)",
 ]
