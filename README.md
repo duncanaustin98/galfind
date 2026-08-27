@@ -24,7 +24,7 @@ pip install -e . # Install galfind in editable mode.
 
 # Installation with conda
 ```bash
-conda create -n {env_name} python==3.9 # Create a virtual environment with conda
+conda create -n {env_name} python==3.11 # Create a virtual environment with conda
 conda activate {env_name} # Activate the conda environment
 git clone https://github.com/duncanaustin98/galfind.git
 cd galfind

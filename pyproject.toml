@@ -19,7 +19,7 @@ description = "A flexible pipeline for optical and infra-red photometric observa
 readme = "README.md"
 
 # Minimum Python version
-requires-python = ">=3.9" # needed for latest configparser
+requires-python = ">=3.11"
 
 # The licence
 license = {file = "LICENCE.md"}
@@ -62,10 +62,10 @@ classifiers = [  # Optional
   "License :: GNU GENERAL PUBLIC LICENSE v3.0",
 
   # Supported Python versions
-  "Programming Language :: Python :: 3.8",
-  "Programming Language :: Python :: 3.9",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Programming Language :: Python :: 3 :: Only",
 ]
 
@@ -85,7 +85,7 @@ dependencies = [
   "opencv-python-headless", # headless build: no libGL/X11 dependency, needed for CI/RTD builds
   "joblib",
   "trilogy",
-  "scikit-learn>=1.9.0", # earlier versions import a numpy-1.x-built pyarrow via sklearn.utils.fixes, which crashes under numpy>=2.0
+  "scikit-learn>=1.4.0", # earlier versions import a numpy-1.x-built pyarrow via sklearn.utils.fixes, which crashes under numpy>=2.0
   "scikit-image",
   "eazy",
   "regions",
@@ -105,8 +105,11 @@ dependencies = [
   "pypher", # PSF.py's make_kernel() shells out to the `pypher`/`addpixscl` CLIs it installs
 ]
 # numpy>=2.0 requires numba>=0.67.0 (llvmlite pulled in automatically) and
-# scikit-learn>=1.9.0 (its numpy-1.x-built pyarrow import otherwise crashes);
+# scikit-learn>=1.4.0 (its numpy-1.x-built pyarrow import otherwise crashes);
 # sep itself has supported numpy>=2.0 since before this pin was added.
+# NB: scikit-learn's own Python floor keeps rising each release (1.7+ needs
+# >=3.10, 1.8+ needs >=3.11) -- check that against requires-python above and
+# the CI matrix before raising this pin any further.
 #grizli
 #msaexp
 
