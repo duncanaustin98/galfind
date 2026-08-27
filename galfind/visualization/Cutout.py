@@ -63,7 +63,7 @@ try:
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from .. import astropy_cosmo, config, figs, galfind_logger
+from .. import astropy_cosmo, config, galfind_logger
 from ..imaging.Data import Band_Data, Stacked_Band_Data
 from ..imaging.Filter import Filter
 from ..utils import Depths
@@ -76,6 +76,7 @@ from ..utils.exceptions import (
     MissingKeyError,
     RangeError,
 )
+from . import figs
 
 
 class Cutout_Base(ABC):

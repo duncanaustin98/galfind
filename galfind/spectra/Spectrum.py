@@ -6,6 +6,7 @@ including dispersion, resolution, and transmission curves for named gratings.
 
 from __future__ import annotations
 
+import csv
 import os
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -32,6 +33,7 @@ except ImportError:
 
 if TYPE_CHECKING:
     from ..imaging import Multiple_Filter
+    from ..visualization import PDF
 import logging
 from copy import deepcopy
 
@@ -307,6 +309,17 @@ class NIRSpec(Spectral_Instrument):
 
 instrument_conv_dict = {"NIRSPEC": NIRSpec}
 
+#: Mapping of ``author_year`` strings to the rest-frame
+#: ``[blue_range, red_range]`` continuum windows either side of the
+#: 4000 Angstrom break, for use in `Spectrum.fit_D4000_break`.
+D4000_WAV_RANGES: Dict[str, u.Quantity] = {
+    # original/"wide" definition
+    "Bruzual+83": [[3_750.0, 3_950.0], [4_050.0, 4_200.0]] * u.AA,
+    # narrow definition, D4000_n
+    "Balogh+99": [[3_850.0, 3_950.0], [4_000.0, 4_100.0]] * u.AA,
+    "Wang+25": [[3_620.0, 3_720.0], [4_000.0, 4_100.0]] * u.AA,
+}
+
 
 class Spectrum:
     """A single reduced 1D spectrum of a source, with associated metadata.
@@ -401,6 +414,9 @@ class Spectrum:
         self.MSA_metafile_name = MSA_metafile_name
         self.author_years = author_years
         self.meta = meta
+        # rest-frame wavelength ranges cached by e.g. fit_D4000_break,
+        # highlighted on subsequent calls to plot()
+        self._plot_wav_highlights: Dict[str, Dict[str, Any]] = {}
         for key, value in kwargs.items():
             setattr(self, key, value)
 
@@ -410,6 +426,40 @@ class Spectrum:
             f"Spectrum({self.src_name}, z={self.z}, "
             f"{self.instrument.grating_filter_name})"
         )
+
+    def _cache_wav_highlight(
+        self: Self,
+        key: str,
+        rest_wav_ranges: u.Quantity,
+        colors: Union[str, List[str]] = "grey",
+    ) -> NoReturn:
+        """Cache rest-frame wavelength range(s) to highlight on `plot()`.
+
+        Stores `rest_wav_ranges` (and associated `colors`) under `key` in
+        `self._plot_wav_highlights`, overwriting any existing entry with
+        the same key. `plot()` converts these to the frame and units it
+        is called with and draws them as shaded spans (not added to the
+        legend).
+
+        Parameters
+        ----------
+        key : `str`
+            Name identifying this set of highlighted ranges (e.g.
+            ``"D4000"``). Overwrites any previously cached entry with the
+            same key.
+        rest_wav_ranges : `astropy.units.Quantity`
+            Rest-frame wavelength ranges to highlight, as an ``(N, 2)``
+            array of ``[low, high]`` pairs.
+        colors : `str` or `list` of `str`, optional
+            Colour(s) to shade each range with. If a single `str`, used
+            for every range. Default is ``"grey"``.
+        """
+        if isinstance(colors, str):
+            colors = [colors] * len(rest_wav_ranges)
+        self._plot_wav_highlights[key] = {
+            "rest_wav_ranges": rest_wav_ranges,
+            "colors": colors,
+        }
 
     @property
     def PID(self) -> Union[int, None]:
@@ -873,7 +923,7 @@ class Spectrum:
         flux_units: u.Unit = u.uJy,
         annotate: bool = True,
         log_fluxes: bool = False,
-        rest_wav_range: Optional[Tuple[float, float]] = None,
+        rest_wav_range: Optional[u.Quantity] = None,
         plot_masked: bool = True,
         **fit_kwargs: Dict[str, Any],
     ) -> NoReturn:
@@ -913,10 +963,10 @@ class Spectrum:
             Default is `True`.
         log_fluxes : `bool`, optional
             Whether to plot the flux axis in log10 space. Default is `False`.
-        rest_wav_range : `tuple` of `float` or `None`, optional
-            Rest-frame wavelength range to plot, as ``(min, max)``.
-            If given, the spectrum is cropped to this range before plotting.
-            Default is `None`.
+        rest_wav_range : `astropy.units.Quantity` or `None`, optional
+            Rest-frame wavelength range to plot, as ``(min, max)``, in any
+            units convertible to Angstrom. If given, the spectrum is
+            cropped to this range before plotting. Default is `None`.
         plot_masked : `bool`, optional
             Whether to plot masked data points. Default is `True`.
         **fit_kwargs : `dict`
@@ -1011,6 +1061,24 @@ class Spectrum:
                 alpha=alpha,
                 **fit_kwargs,
             )
+            # highlight any cached wavelength ranges
+            # (e.g. from fit_D4000_break), excluded from the legend
+            for highlight in self._plot_wav_highlights.values():
+                for rest_wav_range, color in zip(
+                    highlight["rest_wav_ranges"],
+                    highlight["colors"],
+                ):
+                    plot_wav_range = funcs.convert_wav_units(
+                        rest_wav_range, wav_units
+                    )
+                    if frame == "obs":
+                        plot_wav_range = plot_wav_range * (1.0 + self.z)
+                    ax.axvspan(
+                        plot_wav_range[0].value,
+                        plot_wav_range[1].value,
+                        color=color,
+                        alpha=0.2,
+                    )
         if annotate:
             # label x and y axes
             ax.set_xlabel(
@@ -1246,40 +1314,69 @@ class Spectrum:
 
     def fit_D4000_break(
         self: Self,
-        wav_ranges: u.Quantity = [[3_400.0, 3_600.0], [4_150.0, 4_250.0]]
-        * u.AA,
-        size=10_000,
-    ) -> Tuple[float, List[float]]:
+        wav_ranges: Union[str, u.Quantity] = "Bruzual+83",
+        size: int = 10_000,
+    ) -> Optional[PDF]:
         """Compute the D4000 spectral break strength of the spectrum.
 
         Computes the median flux in the two rest-frame wavelength windows
         given by `wav_ranges` (blue and red side of the 4000 Angstrom
         break), forms their flux ratio, propagates its uncertainty via
         Monte Carlo sampling of size `size`, and converts to the
-        magnitude-like D4000 index ``-2.5 * log10(ratio)``.
+        magnitude-like D4000 index ``blue_mag - red_mag =
+        2.5 * log10(f_red / f_blue)``, so a real break (``f_red >
+        f_blue``) gives a positive D4000.
+
+        Also caches `wav_ranges` (as rest-frame wavelengths) under the
+        ``"D4000"`` key, so that subsequent calls to `plot()` highlight
+        the blue/red continuum windows used here.
 
         Parameters
         ----------
-        wav_ranges : `astropy.units.Quantity`, optional
-            Two rest-frame wavelength ranges ``[blue_range, red_range]``
-            used to measure the continuum either side of the break. The
-            first range must be entirely blueward of the second. Default
-            is ``[[3400.0, 3600.0], [4150.0, 4250.0]] * u.AA``.
+        wav_ranges : `str` or `astropy.units.Quantity`, optional
+            Either an ``author_year`` string identifying a literature
+            definition of the two rest-frame wavelength ranges either side
+            of the break (see `D4000_WAV_RANGES` for the available
+            options, currently ``"Bruzual+83"``, ``"Balogh+99"`` and
+            ``"Wang+25"``), or
+            the two rest-frame wavelength ranges
+            ``[blue_range, red_range]`` themselves, used to measure the
+            continuum either side of the break. The first range must be
+            entirely blueward of the second. Default is ``"Bruzual+83"``.
         size : `int`, optional
             Number of Monte Carlo samples used to propagate the flux ratio
             uncertainty. Default is `10_000`.
 
         Returns
         -------
-        `tuple` of (`float`, `list` of `float`)
-            The median D4000 value and its ``[l1, u1]`` 16th/84th
-            percentile uncertainties. Returns ``(nan, [nan, nan])`` if
+        `PDF` or `None`
+            A `PDF` (in `astropy.units.ABmag`) wrapping the Monte Carlo
+            chain of `size` D4000 samples (its `median`/`errs` give the
+            usual point estimate and ``[l1, u1]`` uncertainty). Also
+            cached on `self.D4000_PDF`. Returns (and caches) `None` if
             either continuum window has a negative median flux.
+
+        Raises
+        ------
+        InvalidOptionError
+            If `wav_ranges` is a `str` not in `D4000_WAV_RANGES`.
         """
+        from ..visualization.PDF import PDF
+
         if not hasattr(self, "z"):
             raise MissingDataError(
                 f"{repr(self)} does not have a redshift (z) attribute!"
             )
+        if isinstance(wav_ranges, str):
+            author_year = wav_ranges
+            if author_year not in D4000_WAV_RANGES:
+                raise InvalidOptionError(
+                    f"wav_ranges={author_year!r} not in "
+                    f"{list(D4000_WAV_RANGES.keys())}."
+                )
+            wav_ranges = D4000_WAV_RANGES[author_year]
+        else:
+            author_year = None
         if len(wav_ranges) != 2:
             raise LengthMismatchError(
                 f"wav_ranges={wav_ranges!r} has length {len(wav_ranges)}; "
@@ -1301,6 +1398,11 @@ class Spectrum:
                 f"The first wavelength range in wav_ranges={wav_ranges!r} "
                 "must be blueshifted relative to the second."
             )
+        self._cache_wav_highlight(
+            key="D4000",
+            rest_wav_ranges=wav_ranges,
+            colors=["tab:blue", "tab:red"],
+        )
         rest_wavs = funcs.convert_wav_units(self.wavs, u.AA) / (1.0 + self.z)
         D4000_fluxes = {}
         D4000_flux_errs = {}
@@ -1332,7 +1434,8 @@ class Spectrum:
                 f"Negative fluxes for {self.src_name} in D4000 "
                 f"wav_ranges: {D4000_fluxes=}"
             )
-            return np.nan, [np.nan, np.nan]
+            self.D4000_PDF = None
+            return None
         else:
             # compute D4000 and error
             D4000_flux_ratio = D4000_fluxes[1] / D4000_fluxes[0]
@@ -1343,11 +1446,16 @@ class Spectrum:
             D4000_flux_ratio_arr = np.random.normal(
                 D4000_flux_ratio, D4000_flux_ratio_err, size
             )
-            D4000_arr = -2.5 * np.log10(D4000_flux_ratio_arr)
-            D4000 = np.nanmedian(D4000_arr)
-            D4000_l1 = D4000 - np.nanpercentile(D4000_arr, 16)
-            D4000_u1 = np.nanpercentile(D4000_arr, 84) - D4000
-            return D4000, [D4000_l1, D4000_u1]
+            # D4000 = blue_mag - red_mag = -2.5*log10(f_blue/f_red)
+            #        = +2.5*log10(f_red/f_blue), so a real break
+            #        (f_red > f_blue) gives a positive D4000
+            D4000_arr = 2.5 * np.log10(D4000_flux_ratio_arr)
+            self.D4000_PDF = PDF.from_1D_arr(
+                "D4000",
+                D4000_arr * u.ABmag,
+                kwargs={"wav_ranges": wav_ranges, "author_year": author_year},
+            )
+            return self.D4000_PDF
 
     def fit_Ha(
         self: Self,
@@ -1857,10 +1965,54 @@ class Spectral_Catalogue:
         # DJA_cat = utils.read_catalog(
         #     config['Spectra']['DJA_CAT_PATH'], format = "ascii.ecsv"
         # )
-        DJA_cat = Table.read(
-            config["Spectra"]["DJA_CAT_PATH"].replace("v4_4", version)
-        )
-        if filename_arr is None:
+        cat_path = config["Spectra"]["DJA_CAT_PATH"].replace("v4_4", version)
+        if filename_arr is not None:
+            # only a handful of rows are typically needed here, so avoid
+            # paying the cost of parsing the full (~80k row, ~350MB)
+            # catalogue: scan the raw text for the "file" column and only
+            # fully parse the matching lines
+            filename_set = set(filename_arr)
+            with open(cat_path, newline="") as f:
+                header_line = f.readline()
+                header = next(csv.reader([header_line]))
+                file_idx = header.index("file")
+                matched_lines = [
+                    line
+                    for line in f
+                    if line.split(",", file_idx + 1)[file_idx]
+                    .strip()
+                    .strip('"')
+                    in filename_set
+                ]
+            DJA_cat = Table.read(
+                header_line + "".join(matched_lines), format="csv"
+            )
+            mask = np.isin(np.array(DJA_cat["file"]), np.array(filename_arr))
+            DJA_cat = DJA_cat[mask]
+            # TODO: assertions that these follow the other rules
+        else:
+            # only read the columns this call actually needs, rather than
+            # all 500+ columns in the full catalogue
+            needed_cols = {"root", "file"}
+            if ra_range is not None:
+                needed_cols.add("ra")
+            if dec_range is not None:
+                needed_cols.add("dec")
+            if grade is not None:
+                needed_cols.add("grade")
+            if grating_filter is not None:
+                needed_cols.update({"grating", "filter"})
+            if z_cat_range is not None:
+                needed_cols.add(zlabel)
+            if PID is not None:
+                needed_cols.add("PID")
+            if z_from_cat:
+                needed_cols.add(zlabel)
+            DJA_cat = Table.read(
+                cat_path,
+                include_names=sorted(needed_cols),
+                fast_reader=True,
+            )
             if ra_range is not None:
                 if len(ra_range) != 2:
                     raise LengthMismatchError(
@@ -1983,10 +2135,6 @@ class Spectral_Catalogue:
                 galfind_logger.info(
                     f"Filtered DJA_{version} catalogue to size: {len(DJA_cat)}"
                 )
-        else:
-            mask = np.isin(np.array(DJA_cat["file"]), np.array(filename_arr))
-            DJA_cat = DJA_cat[mask]
-            # TODO: assertions that these follow the other rules
         if z_from_cat:
             return cls(
                 [

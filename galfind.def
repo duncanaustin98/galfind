@@ -58,7 +58,7 @@ From: python:3.12-slim-bookworm
     # package-data bug for its configs/ submodule, so `import bagpipes`
     # currently fails at runtime even though it installs successfully here.
     # This is an upstream bug, not fixable from this repo. See %help.
-    WITH_OPENMP=1 python3 -m pip install --no-cache-dir ".[bagpipes,test,docs]"
+    WITH_OPENMP=1 python3 -m pip install --no-cache-dir ".[bagpipes,test,docs,spectra]"
 
     # GALFIND_WORK/GALFIND_DATA in the shipped config point at this machine's
     # local paths, which won't exist elsewhere. Repoint them at mount points
@@ -79,6 +79,7 @@ From: python:3.12-slim-bookworm
     set -eu
     python3 -c "import galfind; print('galfind', galfind.__file__, 'imported OK')"
     python3 -c "import sep, astropy, scipy, numba, eazy; print('core deps OK')"
+    python3 -c "import msaexp; print('msaexp', msaexp.__version__, 'imported OK')"
     command -v sex >/dev/null 2>&1 && sex --version || (echo "sex binary missing" >&2; exit 1)
     # pypher/addpixscl: CLIs PSF.py's make_kernel() shells out to for PSF
     # homogenization kernels; installed by the pip `pypher` package above.

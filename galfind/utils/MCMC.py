@@ -462,14 +462,10 @@ class Base_MCMC_Fitter(ABC):
     def ndim(self):
         """`int`: Number of free (fitted) parameters, i.e. the number of
         priors."""
-        """`int`: Number of free (fitted) parameters, i.e. the number
-        of priors."""
-        """`int`: Number of free (fitted) parameters, i.e. the
-        number of priors."""
-        """`int`: Number of free (fitted) parameters, i.e.
-        the number of priors."""
-        """`int`: Number of free (fitted) parameters,
-        i.e. the number of priors."""
+        return len(self.priors)
+
+    @property
+    def fiducial_params(self):
         """`list` of `float`: Fiducial value of every prior, in prior order."""
         return [prior.fiducial for prior in self.priors]
 

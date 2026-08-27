@@ -75,6 +75,35 @@ def _mock_gaia_launch_job_async(*args, **kwargs):
     return _MockJob()
 
 
+def _mock_load_wss_opd_by_date(self, *args, **kwargs):
+    # Stands in for a live stpsf.JWInstrument.load_wss_opd_by_date call,
+    # which does a MAST engineering-database query (mast.stsci.edu) to find
+    # the OPD measurement closest to a given date. That query is flaky/slow
+    # (has hung CI with an unbounded read timeout) and unsuitable for
+    # automated test runs, much like the Gaia archive above. Leaving this a
+    # no-op keeps `self.pupilopd` at its instrument default (a bundled
+    # representative OPD file) instead of a date-matched one, which is fine
+    # since these tests don't assert on PSF epoch-accuracy.
+    return None
+
+
+def _mock_get_opd_at_time(*args, **kwargs):
+    # Backstop for the mock above: patches stpsf.mast_wss.get_opd_at_time,
+    # the actual mast.stsci.edu network call, one level below
+    # load_wss_opd_by_date. If that higher-level mock is ever bypassed (e.g.
+    # a future stpsf release moves load_wss_opd_by_date onto a different
+    # class in the MRO than the one patched), this turns what would
+    # otherwise be a ~100s unbounded-timeout CI hang into an immediate,
+    # clearly-diagnosable failure instead.
+    raise AssertionError(
+        "stpsf.mast_wss.get_opd_at_time was called live -- "
+        "JWInstrument.load_wss_opd_by_date mock was bypassed. This call "
+        "would otherwise hang on an unbounded read timeout against "
+        "mast.stsci.edu; fix the monkeypatch target instead of letting "
+        "this reach the network."
+    )
+
+
 @pytest.fixture(scope="session")
 def test_bands():
     return test_bands_
@@ -528,10 +557,18 @@ def data(
     aper_diams,
     forced_phot_stacked_band_data_from_arr,
 ):
+    import stpsf.mast_wss
     from astroquery.gaia import Gaia
+    from stpsf.stpsf_core import JWInstrument
 
     mp = pytest.MonkeyPatch()
     mp.setattr(Gaia, "launch_job_async", _mock_gaia_launch_job_async)
+    mp.setattr(
+        JWInstrument, "load_wss_opd_by_date", _mock_load_wss_opd_by_date
+    )
+    mp.setattr(
+        stpsf.mast_wss, "get_opd_at_time", _mock_get_opd_at_time
+    )
     try:
         return Data.pipeline(
             survey,

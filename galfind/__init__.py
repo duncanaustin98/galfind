@@ -24,6 +24,17 @@ import json
 import logging
 import astropy.units as u
 from astropy.cosmology import FlatLambdaCDM
+import matplotlib.cm as _mpl_cm
+
+# matplotlib>=3.9 removed matplotlib.cm.get_cmap, but stpsf's opds.py
+# (PSF.py's from_stpsf) and grizli/mastquery's overlaps.py still call it
+# directly; pysiaf>=0.28 (a stpsf/jwst dependency) pins matplotlib>=3.10,
+# so downgrading matplotlib below 3.9 to dodge this isn't an option.
+# plt.get_cmap has the same (name, lut) signature as the removed function,
+# so it's a safe drop-in.
+if not hasattr(_mpl_cm, "get_cmap"):
+    import matplotlib.pyplot as _plt
+    _mpl_cm.get_cmap = _plt.get_cmap
 end = time.time()
 #print(f"__init__ imports took {end - start}s")
 

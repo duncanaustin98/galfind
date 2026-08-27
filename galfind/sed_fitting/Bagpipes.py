@@ -70,7 +70,6 @@ from ..utils.exceptions import (
     MissingKeyError,
     RangeError,
 )
-from ..visualization import Redshift_PDF, SED_fit_PDF
 from .SED_codes import SED_code
 
 pipes_unit_dict = {
@@ -2092,6 +2091,8 @@ class Bagpipes(SED_code):
         MissingFileError
             If a path in `PDF_paths` does not point to an existing file.
         """
+        from ..visualization import Redshift_PDF, SED_fit_PDF
+
         if len(IDs) != len(PDF_paths):
             raise LengthMismatchError(
                 f"len(IDs)={len(IDs)} != len(PDF_paths)={len(PDF_paths)}."

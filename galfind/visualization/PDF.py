@@ -575,7 +575,9 @@ class PDF:
         # secondary_peak, 'secondary_peak', ratio, 'ratio')
 
     def get_percentile(
-        self: Self, percentile: float, log: bool = False
+        self: Self,
+        percentile: float,
+        log: bool = False,
     ) -> float:
         """Get a given percentile of the PDF, with caching.
 

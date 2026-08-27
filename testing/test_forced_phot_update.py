@@ -26,7 +26,11 @@ os.environ["GALFIND_CONFIG_DIR"] = os.path.dirname(os.path.abspath(__file__))
 os.environ["GALFIND_CONFIG_NAME"] = "test_galfind_config.ini"
 
 import galfind
-from conftest import _mock_gaia_launch_job_async
+from conftest import (
+    _mock_gaia_launch_job_async,
+    _mock_get_opd_at_time,
+    _mock_load_wss_opd_by_date,
+)
 from galfind.imaging import Data
 
 
@@ -57,10 +61,18 @@ def _run_pipeline(
     forced_phot_stacked_band_data_from_arr,
     update,
 ):
+    import stpsf.mast_wss
     from astroquery.gaia import Gaia
+    from stpsf.stpsf_core import JWInstrument
 
     mp = pytest.MonkeyPatch()
     mp.setattr(Gaia, "launch_job_async", _mock_gaia_launch_job_async)
+    mp.setattr(
+        JWInstrument, "load_wss_opd_by_date", _mock_load_wss_opd_by_date
+    )
+    mp.setattr(
+        stpsf.mast_wss, "get_opd_at_time", _mock_get_opd_at_time
+    )
     try:
         return Data.pipeline(
             survey,

@@ -58,7 +58,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        WITH_OPENMP=1 pip install .
+        WITH_OPENMP=1 pip install ".[spectra]"
         pip install ruff pytest pytest-cov pytest-lazy-fixtures pre-commit
     - name: Cache STPSF calibration data
       uses: actions/cache@v4

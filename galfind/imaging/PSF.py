@@ -53,7 +53,7 @@ try:
 except ImportError:
     from typing_extensions import Self, Type  # python > 3.7 AND python < 3.11
 
-from .. import config, figs, galfind_logger
+from .. import config, galfind_logger
 from ..utils import useful_funcs_austind as funcs
 from ..utils.exceptions import (
     GalfindError,
@@ -1796,6 +1796,8 @@ def psf_from_stars(
         ########
         nsig = 30
         stretch = LinearStretch()  # LogStretch()
+
+        from .. import figs
 
         fig, axs = figs.make_rectangular_fig(len(stars), 1.0)
         for i, (star, ax, ok_) in enumerate(zip(stars, axs, ok)):

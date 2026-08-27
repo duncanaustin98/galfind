@@ -137,6 +137,11 @@ pysersic = [
   "pysersic",
 ]
 
+# msaexp: NIRSpec 1D extraction/plotting used by galfind.spectra.Spectrum
+spectra = [
+  "msaexp",
+]
+
 # Downloading data
 data = [
     "click",

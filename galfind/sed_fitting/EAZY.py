@@ -38,6 +38,7 @@ from scipy.linalg import LinAlgWarning
 from tqdm import tqdm
 
 if TYPE_CHECKING:
+    from ..visualization import Redshift_PDF
     from . import (
         PDF,
         Catalogue,
@@ -65,7 +66,6 @@ from ..utils.exceptions import (
     MissingFileError,
     RangeError,
 )
-from ..visualization import Redshift_PDF
 from .SED_codes import SED_code
 
 # %% EAZY SED fitting code
@@ -1257,6 +1257,8 @@ class EAZY(SED_code):
             If `PDF_paths[0]` does not have a ``.h5`` extension, when
             `gal_property` is ``"z"``.
         """
+        from ..visualization import Redshift_PDF
+
         # ensure this works if only extracting 1 galaxy
         if isinstance(IDs, (str, int, float)):
             IDs = np.array([int(IDs)])
