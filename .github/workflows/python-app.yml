@@ -47,6 +47,13 @@ jobs:
         # first and fall back to the old one for older runners.
         sudo apt-get install -y --no-install-recommends source-extractor \
           || sudo apt-get install -y --no-install-recommends sextractor
+        # pip's resolver can land on a Pillow release with no prebuilt
+        # wheel for the runner's Python (e.g. it backtracks to an old
+        # Pillow while working through the [spectra] extra's huge
+        # msaexp/jwst/grizli dependency chain on a brand-new Python like
+        # 3.14), forcing a from-source build. That build needs libjpeg
+        # headers Ubuntu doesn't ship by default.
+        sudo apt-get install -y --no-install-recommends libjpeg-dev zlib1g-dev
         # Either package installs the binary as `source-extractor` (or
         # `sextractor` on older releases); galfind shells out to `sex`.
         if ! command -v sex >/dev/null 2>&1; then
