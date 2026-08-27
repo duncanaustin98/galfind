@@ -382,6 +382,12 @@ class EAZY(SED_code):
             def _cat_from_hdf5_no_dup_translate(h5file):
                 cat_, trans_ = _orig_cat_from_hdf5(h5file)
                 trans_.remove_rows(slice(None))
+                # eazy's TranslateFile.__init__ does `tr["error"] = 1.0`
+                # when "error" isn't already a column, which recent
+                # astropy versions reject as a scalar assignment to a
+                # zero-length table. Pre-empt that by adding the column
+                # ourselves (also zero-length, so still a no-op).
+                trans_["error"] = np.array([], dtype=float)
                 return cat_, trans_
 
             hdf5.cat_from_hdf5 = _cat_from_hdf5_no_dup_translate
