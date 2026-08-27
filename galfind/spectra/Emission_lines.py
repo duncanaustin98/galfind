@@ -65,6 +65,12 @@ line_diagnostics = {
         "cont_wavs": [[3_848.8, 3_858.8], [3_878.8, 3_888.8]] * u.AA,
         "rel_lambda": None,
     },
+    "Hdelta": {
+        "line_wav": 4_101.7 * u.AA,
+        "feature_wavs": [4_091.7, 4_111.7] * u.AA,
+        "cont_wavs": [[4_081.7, 4_091.7], [4_111.7, 4_121.7]] * u.AA,
+        "rel_lambda": None,
+    },
     "Hgamma": {
         "line_wav": 4_340.5 * u.AA,
         "feature_wavs": [4_330.5, 4_350.5] * u.AA,

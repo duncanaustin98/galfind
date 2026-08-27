@@ -7,6 +7,7 @@ including dispersion, resolution, and transmission curves for named gratings.
 from __future__ import annotations
 
 import csv
+import getpass
 import os
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -62,6 +63,7 @@ from ..utils.exceptions import (
     MissingKeyError,
     RangeError,
 )
+from .Emission_lines import line_diagnostics
 
 
 class Spectral_Grating:  # disperser
@@ -320,6 +322,18 @@ D4000_WAV_RANGES: Dict[str, u.Quantity] = {
     "Wang+25": [[3_620.0, 3_720.0], [4_000.0, 4_100.0]] * u.AA,
 }
 
+#: Mapping of ``author_year`` strings to the single rest-frame
+#: wavelength range used to fit the optical continuum slope, beta_opt,
+#: for use in `Spectrum.fit_beta_opt`.
+BETA_OPT_WAV_RANGES: Dict[str, u.Quantity] = {
+    # redward of the Balmer limit (3645 Angstrom) out to 7000 Angstrom
+    "Setton+25": [3_645.0, 7_000.0] * u.AA,
+    # Calzetti+94-like UV window [1250, 3000] Angstrom, scaled onto the
+    # rest-frame optical by the ratio of the 4000 Angstrom break to
+    # Lyman-alpha (1216 Angstrom)
+    "Austin+26b": [1_250.0, 3_000.0] * u.AA * (4_000.0 / 1_216.0),
+}
+
 
 class Spectrum:
     """A single reduced 1D spectrum of a source, with associated metadata.
@@ -432,14 +446,15 @@ class Spectrum:
         key: str,
         rest_wav_ranges: u.Quantity,
         colors: Union[str, List[str]] = "grey",
+        alphas: Union[float, List[float]] = 0.2,
     ) -> NoReturn:
         """Cache rest-frame wavelength range(s) to highlight on `plot()`.
 
-        Stores `rest_wav_ranges` (and associated `colors`) under `key` in
-        `self._plot_wav_highlights`, overwriting any existing entry with
-        the same key. `plot()` converts these to the frame and units it
-        is called with and draws them as shaded spans (not added to the
-        legend).
+        Stores `rest_wav_ranges` (and associated `colors`/`alphas`)
+        under `key` in `self._plot_wav_highlights`, overwriting any
+        existing entry with the same key. `plot()` converts these to
+        the frame and units it is called with and draws them as shaded
+        spans (not added to the legend).
 
         Parameters
         ----------
@@ -453,12 +468,18 @@ class Spectrum:
         colors : `str` or `list` of `str`, optional
             Colour(s) to shade each range with. If a single `str`, used
             for every range. Default is ``"grey"``.
+        alphas : `float` or `list` of `float`, optional
+            Shading opacity/opacities for each range. If a single
+            `float`, used for every range. Default is `0.2`.
         """
         if isinstance(colors, str):
             colors = [colors] * len(rest_wav_ranges)
+        if isinstance(alphas, (int, float)):
+            alphas = [alphas] * len(rest_wav_ranges)
         self._plot_wav_highlights[key] = {
             "rest_wav_ranges": rest_wav_ranges,
             "colors": colors,
+            "alphas": alphas,
         }
 
     @property
@@ -609,6 +630,13 @@ class Spectrum:
             additional `origin` attribute set to the local path of the 2D
             spectrum FITS file.
         """
+        # msaexp/grizli log to a shared /tmp/grizli.log by default, which is
+        # often owned by another user and unwritable; point it at a
+        # per-user file instead
+        from grizli import utils as grizli_utils
+
+        grizli_utils.LOGFILE = f"/tmp/grizli_{getpass.getuser()}.log"
+
         # open 2D spectrum
         loc_2d_path = url_path.replace(
             config["Spectra"]["DJA_WEB_DIR"],
@@ -966,7 +994,10 @@ class Spectrum:
         rest_wav_range : `astropy.units.Quantity` or `None`, optional
             Rest-frame wavelength range to plot, as ``(min, max)``, in any
             units convertible to Angstrom. If given, the spectrum is
-            cropped to this range before plotting. Default is `None`.
+            cropped to this range before plotting, and the x-axis limits
+            are set to this range (converted to observed frame, i.e.
+            multiplied by ``1 + self.z``, if `frame` is ``"obs"``).
+            Default is `None`.
         plot_masked : `bool`, optional
             Whether to plot masked data points. Default is `True`.
         **fit_kwargs : `dict`
@@ -1007,6 +1038,7 @@ class Spectrum:
                 wavs /= 1 + self.z
             if rest_wav_range is None:
                 wav_range_mask = np.ones_like(wavs, dtype=bool)
+                axis_xlim = None
             else:
                 if frame == "rest":
                     wav_range = np.array(rest_wav_range.to(u.AA).value)
@@ -1020,6 +1052,7 @@ class Spectrum:
                         for wav in wavs.to(u.AA).value
                     ]
                 ).astype(bool)
+                axis_xlim = (wav_range * u.AA).to(wav_units).value
             wavs = wavs[wav_range_mask]
             fluxes = funcs.convert_mag_units(
                 wavs,
@@ -1064,9 +1097,10 @@ class Spectrum:
             # highlight any cached wavelength ranges
             # (e.g. from fit_D4000_break), excluded from the legend
             for highlight in self._plot_wav_highlights.values():
-                for rest_wav_range, color in zip(
+                for rest_wav_range, color, alpha in zip(
                     highlight["rest_wav_ranges"],
                     highlight["colors"],
+                    highlight["alphas"],
                 ):
                     plot_wav_range = funcs.convert_wav_units(
                         rest_wav_range, wav_units
@@ -1077,8 +1111,30 @@ class Spectrum:
                         plot_wav_range[0].value,
                         plot_wav_range[1].value,
                         color=color,
-                        alpha=0.2,
+                        alpha=alpha,
                     )
+            # rescale the y-axis to only the shaded (highlighted)
+            # wavelength ranges, if any are cached, so flux excursions
+            # outside them (e.g. masked-out emission lines) don't
+            # dominate the y-axis scale
+            highlight_mask = np.zeros_like(wavs, dtype=bool)
+            for highlight in self._plot_wav_highlights.values():
+                for rest_wav_range in highlight["rest_wav_ranges"]:
+                    plot_wav_range = funcs.convert_wav_units(
+                        rest_wav_range, wav_units
+                    )
+                    if frame == "obs":
+                        plot_wav_range = plot_wav_range * (1.0 + self.z)
+                    highlight_mask |= (wavs > plot_wav_range[0].value) & (
+                        wavs < plot_wav_range[1].value
+                    )
+            if highlight_mask.any():
+                y_lo = np.nanmin((fluxes - flux_errs[0])[highlight_mask])
+                y_hi = np.nanmax((fluxes + flux_errs[1])[highlight_mask])
+                y_pad = 0.1 * (y_hi - y_lo)
+                ax.set_ylim(y_lo - y_pad, y_hi + y_pad)
+            if axis_xlim is not None:
+                ax.set_xlim(axis_xlim[0], axis_xlim[1])
         if annotate:
             # label x and y axes
             ax.set_xlabel(
@@ -1088,6 +1144,9 @@ class Spectrum:
                 ax.set_ylabel(f"log10(flux [{flux_units.to_string()}])")
             else:
                 ax.set_ylabel(f"flux [{flux_units.to_string()}]")
+            if isinstance(flux_units, u.MagUnit):
+                # invert y axis for magnitudes
+                ax.invert_yaxis()
             # add title with source name and redshift
             ax.set_title(f"{self.src_name} (z={self.z:.3f})")
             # add legend
@@ -1321,11 +1380,9 @@ class Spectrum:
 
         Computes the median flux in the two rest-frame wavelength windows
         given by `wav_ranges` (blue and red side of the 4000 Angstrom
-        break), forms their flux ratio, propagates its uncertainty via
-        Monte Carlo sampling of size `size`, and converts to the
-        magnitude-like D4000 index ``blue_mag - red_mag =
-        2.5 * log10(f_red / f_blue)``, so a real break (``f_red >
-        f_blue``) gives a positive D4000.
+        break), forms their flux ratio ``D4000 = f_red / f_blue``, and
+        propagates its uncertainty via Monte Carlo sampling of size
+        `size`. A real break (``f_red > f_blue``) gives ``D4000 > 1``.
 
         Also caches `wav_ranges` (as rest-frame wavelengths) under the
         ``"D4000"`` key, so that subsequent calls to `plot()` highlight
@@ -1350,11 +1407,12 @@ class Spectrum:
         Returns
         -------
         `PDF` or `None`
-            A `PDF` (in `astropy.units.ABmag`) wrapping the Monte Carlo
-            chain of `size` D4000 samples (its `median`/`errs` give the
-            usual point estimate and ``[l1, u1]`` uncertainty). Also
-            cached on `self.D4000_PDF`. Returns (and caches) `None` if
-            either continuum window has a negative median flux.
+            A dimensionless `PDF` wrapping the Monte Carlo chain of
+            `size` D4000 flux-ratio samples (its `median`/`errs` give
+            the usual point estimate and ``[l1, u1]`` uncertainty).
+            Also cached on `self.D4000_PDF`. Returns (and caches)
+            `None` if either continuum window has a negative median
+            flux.
 
         Raises
         ------
@@ -1437,25 +1495,323 @@ class Spectrum:
             self.D4000_PDF = None
             return None
         else:
-            # compute D4000 and error
-            D4000_flux_ratio = D4000_fluxes[1] / D4000_fluxes[0]
-            D4000_flux_ratio_err = D4000_flux_ratio * np.sqrt(
-                (D4000_flux_errs[1] / D4000_fluxes[1]) ** 2
-                + (D4000_flux_errs[0] / D4000_fluxes[0]) ** 2
+            # compute D4000 and error via Monte Carlo sampling of the
+            # blue and red fluxes themselves, rather than linear
+            # error propagation of their ratio, since the latter
+            # blows up (and can even go negative) when either window
+            # has a low signal-to-noise ratio
+            blue_flux_arr = np.random.normal(
+                D4000_fluxes[0], D4000_flux_errs[0], size
             )
-            D4000_flux_ratio_arr = np.random.normal(
-                D4000_flux_ratio, D4000_flux_ratio_err, size
+            red_flux_arr = np.random.normal(
+                D4000_fluxes[1], D4000_flux_errs[1], size
             )
-            # D4000 = blue_mag - red_mag = -2.5*log10(f_blue/f_red)
-            #        = +2.5*log10(f_red/f_blue), so a real break
-            #        (f_red > f_blue) gives a positive D4000
-            D4000_arr = 2.5 * np.log10(D4000_flux_ratio_arr)
+            D4000_flux_ratio_arr = red_flux_arr / blue_flux_arr
+            # D4000 = f_red / f_blue, so a real break (f_red > f_blue)
+            # gives D4000 > 1
             self.D4000_PDF = PDF.from_1D_arr(
                 "D4000",
-                D4000_arr * u.ABmag,
+                D4000_flux_ratio_arr * u.dimensionless_unscaled,
                 kwargs={"wav_ranges": wav_ranges, "author_year": author_year},
             )
             return self.D4000_PDF
+
+    def fit_Balmer_break(
+        self: Self,
+        wav_ranges: Union[str, u.Quantity] = "Bruzual+83",
+        size: int = 10_000,
+    ) -> Optional[PDF]:
+        """Compute the magnitude-like Balmer break strength of the spectrum.
+
+        Calls `fit_D4000_break` (see it for the `wav_ranges`/`size`
+        definitions) and converts its Monte Carlo chain of D4000 flux
+        ratios to the magnitude-like index ``blue_mag - red_mag =
+        2.5 * log10(D4000)``, so a real break (``D4000 > 1``) gives a
+        positive Balmer break strength.
+
+        Parameters
+        ----------
+        wav_ranges : `str` or `astropy.units.Quantity`, optional
+            Passed through to `fit_D4000_break`. Default is
+            ``"Bruzual+83"``.
+        size : `int`, optional
+            Passed through to `fit_D4000_break`. Default is `10_000`.
+
+        Returns
+        -------
+        `PDF` or `None`
+            A `PDF` (in `astropy.units.ABmag`) wrapping
+            ``2.5 * log10(D4000)`` for each sample in the D4000 Monte
+            Carlo chain. Also cached on `self.Balmer_break_PDF`.
+            Returns (and caches) `None` if `fit_D4000_break` itself
+            returns `None`.
+        """
+        from ..visualization.PDF import PDF
+
+        D4000_PDF = self.fit_D4000_break(wav_ranges=wav_ranges, size=size)
+        if D4000_PDF is None:
+            self.Balmer_break_PDF = None
+            return None
+        Balmer_break_arr = 2.5 * np.log10(D4000_PDF.input_arr.value)
+        self.Balmer_break_PDF = PDF.from_1D_arr(
+            "Balmer_break",
+            Balmer_break_arr * u.ABmag,
+            kwargs=D4000_PDF.kwargs,
+        )
+        return self.Balmer_break_PDF
+
+    def fit_beta_opt(
+        self: Self,
+        wav_range: Union[str, u.Quantity] = "Setton+25",
+        size: int = 10_000,
+        avoid_lines: bool = True,
+        line_mask_half_width: u.Quantity = 100.0 * u.AA,
+    ) -> Optional[PDF]:
+        """Compute the rest-frame optical continuum slope, beta_opt.
+
+        Crops the rest-frame spectrum to `wav_range` (redward of the
+        Balmer limit by default; see `BETA_OPT_WAV_RANGES`), restricted
+        to the maximum coverage of the spectrum (i.e. every finite,
+        unmasked data point in `wav_range`, so no NaNs enter the fit).
+        If `avoid_lines` is `True` (the default), also excludes a
+        `line_mask_half_width`-wide window either side of Halpha,
+        Hgamma and Hdelta, and of the blended Hbeta+[OIII] complex
+        (spanning Hbeta through [OIII]-5007; `line_diagnostics`), so
+        the fit only sees continuum. Converts the remaining fluxes to
+        f_lambda, and fits a power-law
+        ``f(wav) = 10**A * wav**beta`` via `scipy.optimize.curve_fit`,
+        weighted by the flux uncertainties. The fitted `beta` and its
+        `curve_fit` covariance uncertainty are then propagated via
+        Monte Carlo sampling of size `size` into a `PDF`, following the
+        same convention as `fit_D4000_break`.
+
+        Also caches `wav_range` (as a rest-frame wavelength range)
+        under the ``"beta_opt"`` key, so that subsequent calls to
+        `plot()` highlight the continuum window used here.
+
+        Parameters
+        ----------
+        wav_range : `str` or `astropy.units.Quantity`, optional
+            Either an ``author_year`` string identifying a literature
+            definition of the rest-frame wavelength range to fit the
+            optical continuum slope over (see `BETA_OPT_WAV_RANGES`
+            for the available options, currently only
+            ``"Setton+25"``), or the rest-frame wavelength range
+            ``[low, high]`` itself. Default is ``"Setton+25"``.
+        size : `int`, optional
+            Number of Monte Carlo samples used to propagate the
+            `beta_opt` fit uncertainty. Default is `10_000`.
+        avoid_lines : `bool`, optional
+            Whether to exclude a window around Halpha, Hgamma, Hdelta
+            and the blended Hbeta+[OIII] complex from the continuum
+            used to fit `beta_opt`. Default is `True`.
+        line_mask_half_width : `astropy.units.Quantity`, optional
+            Rest-frame half-width, in any units convertible to
+            Angstrom, added either side of Halpha, Hgamma, Hdelta and
+            of the Hbeta-to-[OIII]-5007 span when `avoid_lines` is
+            `True`. Default is ``100.0 * u.AA`` (i.e. a ~200 Angstrom
+            window around each of Halpha, Hgamma and Hdelta).
+
+        Returns
+        -------
+        `PDF` or `None`
+            A dimensionless `PDF` wrapping the Monte Carlo chain of
+            `size` `beta_opt` samples (its `median`/`errs` give the
+            usual point estimate and ``[l1, u1]`` uncertainty). Also
+            cached on `self.beta_opt_PDF`. Returns (and caches) `None`
+            if there are fewer than 3 valid (finite, unmasked, and
+            optionally line-free) data points in `wav_range`, or if
+            the fit fails.
+
+        Raises
+        ------
+        MissingDataError
+            If the spectrum does not have a redshift (`z`) attribute.
+        InvalidOptionError
+            If `wav_range` is a `str` not in `BETA_OPT_WAV_RANGES`.
+        LengthMismatchError
+            If `wav_range` is not a single wavelength range (i.e. does
+            not have length 2).
+        RangeError
+            If the first wavelength in `wav_range` is not less than
+            the second.
+
+        References
+        ----------
+        The default ``"Setton+25"`` window follows Setton et al.
+        (2025, ApJ 995, 40), who fit the rest-optical continuum of
+        little red dots from the Balmer limit (3645 Angstrom) out to
+        7000 Angstrom.
+        """
+        from ..visualization.PDF import PDF
+
+        if not hasattr(self, "z"):
+            raise MissingDataError(
+                f"{repr(self)} does not have a redshift (z) attribute!"
+            )
+        if isinstance(wav_range, str):
+            author_year = wav_range
+            if author_year not in BETA_OPT_WAV_RANGES:
+                raise InvalidOptionError(
+                    f"wav_range={author_year!r} not in "
+                    f"{list(BETA_OPT_WAV_RANGES.keys())}."
+                )
+            wav_range = BETA_OPT_WAV_RANGES[author_year]
+        else:
+            author_year = None
+        if len(wav_range) != 2:
+            raise LengthMismatchError(
+                f"wav_range={wav_range!r} has length {len(wav_range)}; "
+                "must be a single wavelength range."
+            )
+        if not wav_range[0] < wav_range[1]:
+            raise RangeError(
+                f"In wav_range={wav_range!r}, the first wavelength "
+                "must be less than the second wavelength."
+            )
+        rest_wavs = funcs.convert_wav_units(self.wavs, u.AA) / (1.0 + self.z)
+        wav_range_AA = wav_range.to(u.AA)
+        fluxes_filled = self.fluxes.filled(np.nan)
+        flux_errs_filled = self.flux_errs.filled(np.nan)
+        # restrict to the maximum coverage of the spectrum, i.e. every
+        # finite, unmasked data point in wav_range
+        valid = (
+            np.isfinite(fluxes_filled.value)
+            & np.isfinite(flux_errs_filled.value)
+            & (rest_wavs < wav_range_AA[1])
+            & (rest_wavs > wav_range_AA[0])
+        )
+        # cut windows out of wav_range_AA, so plot() only shades the
+        # continuum sub-intervals actually used in the fit, leaving the
+        # excluded emission line windows unshaded
+        cut_wavs = []
+        if avoid_lines:
+            # exclude a line_mask_half_width-wide window either side of
+            # the strong Halpha, Hgamma and Hdelta lines, and of the
+            # blended Hbeta+[OIII] complex (spanning Hbeta through
+            # [OIII]-5007), from the continuum used to fit beta_opt
+            half_width = line_mask_half_width.to(u.AA)
+
+            def _single_line_wavs(line_name: str) -> u.Quantity:
+                line_wav = line_diagnostics[line_name]["line_wav"].to(u.AA)
+                return u.Quantity(
+                    [line_wav - half_width, line_wav + half_width]
+                )
+
+            hbeta_oiii_wavs = u.Quantity(
+                [
+                    line_diagnostics["Hbeta"]["line_wav"].to(u.AA)
+                    - half_width,
+                    line_diagnostics["[OIII]-5007"]["line_wav"].to(u.AA)
+                    + half_width,
+                ]
+            )
+            cut_wavs = [
+                _single_line_wavs("Halpha"),
+                _single_line_wavs("Hgamma"),
+                _single_line_wavs("Hdelta"),
+                hbeta_oiii_wavs,
+            ]
+            for feature_wavs in cut_wavs:
+                valid &= ~(
+                    (rest_wavs > feature_wavs[0])
+                    & (rest_wavs < feature_wavs[1])
+                )
+        # clip each cut window to wav_range_AA, sort and merge any
+        # overlaps, then take the complement to get the sub-intervals
+        # of wav_range_AA actually used in the fit
+        clipped_cuts = sorted(
+            (
+                (max(lo, wav_range_AA[0]), min(hi, wav_range_AA[1]))
+                for lo, hi in cut_wavs
+                if max(lo, wav_range_AA[0]) < min(hi, wav_range_AA[1])
+            ),
+            key=lambda iv: iv[0],
+        )
+        merged_cuts = []
+        for lo, hi in clipped_cuts:
+            if merged_cuts and lo <= merged_cuts[-1][1]:
+                merged_cuts[-1] = (
+                    merged_cuts[-1][0],
+                    max(merged_cuts[-1][1], hi),
+                )
+            else:
+                merged_cuts.append((lo, hi))
+        used_ranges = []
+        prev = wav_range_AA[0]
+        for lo, hi in merged_cuts:
+            if prev < lo:
+                used_ranges.append(u.Quantity([prev, lo]))
+            prev = hi
+        if prev < wav_range_AA[1]:
+            used_ranges.append(u.Quantity([prev, wav_range_AA[1]]))
+        self._cache_wav_highlight(
+            key="beta_opt",
+            rest_wav_ranges=u.Quantity(used_ranges),
+            colors="tab:orange",
+            alphas=0.2,
+        )
+        wavs = rest_wavs[valid]
+        if len(wavs) < 3:
+            galfind_logger.debug(
+                "Not enough valid data points to fit beta_opt for "
+                f"{repr(self)}"
+            )
+            self.beta_opt_PDF = None
+            return None
+        fluxes = fluxes_filled[valid]
+        flux_errs = flux_errs_filled[valid]
+        # convert fluxes to f_lambda in rest frame
+        flux_errs = funcs.convert_mag_err_units(
+            wavs,
+            fluxes,
+            [flux_errs, flux_errs],
+            u.erg / u.s / u.cm**2 / u.AA,
+        )[0]  # symmetric in flux space
+        fluxes = funcs.convert_mag_units(
+            wavs, fluxes, u.erg / u.s / u.cm**2 / u.AA
+        )
+        # unit conversion (e.g. of a non-positive flux to a magnitude-
+        # like system) can introduce further non-finite values
+        finite = np.isfinite(fluxes.value) & np.isfinite(flux_errs.value)
+        wavs = wavs[finite]
+        fluxes = fluxes[finite]
+        flux_errs = flux_errs[finite]
+        if len(wavs) < 3:
+            galfind_logger.debug(
+                "Not enough valid data points to fit beta_opt for "
+                f"{repr(self)} after unit conversion"
+            )
+            self.beta_opt_PDF = None
+            return None
+        try:
+            popt, pcov = curve_fit(
+                funcs.beta_slope_power_law_func,
+                wavs.value,
+                fluxes.value,
+                sigma=flux_errs.value,
+                absolute_sigma=True,
+                maxfev=1_000,
+            )
+            # A = popt[0]
+            beta = popt[1]
+            # A_err = np.sqrt(pcov[0][0])
+            beta_err = np.sqrt(pcov[1][1])
+        except Exception as e:
+            galfind_logger.debug(
+                f"Failed to fit beta_opt for {repr(self)}: {e}"
+            )
+            self.beta_opt_PDF = None
+            return None
+        beta_opt_arr = (
+            np.random.normal(beta, beta_err, size) * u.dimensionless_unscaled
+        )
+        self.beta_opt_PDF = PDF.from_1D_arr(
+            "beta_opt",
+            beta_opt_arr,
+            kwargs={"wav_range": wav_range, "author_year": author_year},
+        )
+        return self.beta_opt_PDF
 
     def fit_Ha(
         self: Self,
