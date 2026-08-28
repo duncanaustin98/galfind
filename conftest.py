@@ -577,6 +577,10 @@ def data(
             aper_diams=aper_diams,
             forced_phot_band=forced_phot_stacked_band_data_from_arr,
             im_str=["test"],
+            # always redo PSF homogenization rather than silently
+            # reusing whatever {version}_psfmatch_{filt}_stpsf files
+            # happen to be sitting in test_data/ from a previous run
+            psf_homog_overwrite=True,
         )
     finally:
         mp.undo()

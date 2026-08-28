@@ -3552,6 +3552,7 @@ class Data:
         mask_method: str = "auto",
         psf_method: str = "default",
         psf_homog_filt: Optional[str] = "F444W",
+        psf_homog_overwrite: bool = False,
         update: bool = False,
     ) -> Type[Data]:
         """Run the full galfind data-reduction pipeline for a survey/version.
@@ -3617,6 +3618,11 @@ class Data:
         psf_homog_filt : `str`, optional
             Filter to PSF-homogenize all bands to. If `None`, PSF
             homogenization is skipped. Default is ``"F444W"``.
+        psf_homog_overwrite : `bool`, optional
+            Forwarded to `Data.psf_homogenize` as `overwrite`; if `True`,
+            redo the PSF-homogenization convolution even if the output
+            (`{version}_psfmatch_{psf_name}`) files already exist on
+            disk, rather than silently reusing them. Default is `False`.
         update : `bool`, optional
             Whether to update existing catalogue columns rather than
             recomputing them from scratch. Default is `False`.
@@ -3644,7 +3650,7 @@ class Data:
         )
         data.load_psfs(method=psf_method)
         if psf_homog_filt is not None:
-            data.psf_homogenize(psf_homog_filt)
+            data.psf_homogenize(psf_homog_filt, overwrite=psf_homog_overwrite)
         if stacked_band_data is not None:
             if not isinstance(stacked_band_data, (list, np.ndarray)):
                 stacked_band_data = [stacked_band_data]

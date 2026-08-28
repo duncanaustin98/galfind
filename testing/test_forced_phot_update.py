@@ -87,6 +87,10 @@ def _run_pipeline(
             },
             im_str=["test"],
             update=update,
+            # always redo PSF homogenization rather than silently
+            # reusing whatever {version}_psfmatch_{filt}_stpsf files
+            # happen to be sitting in test_data/ from a previous run
+            psf_homog_overwrite=True,
         )
     finally:
         mp.undo()

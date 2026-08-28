@@ -21,6 +21,7 @@ from typing import (
     Tuple,
     Union,
 )
+from urllib.error import HTTPError
 
 from astropy.wcs import WCS
 from scipy.optimize import curve_fit
@@ -2491,45 +2492,59 @@ class Spectral_Catalogue:
                 galfind_logger.info(
                     f"Filtered DJA_{version} catalogue to size: {len(DJA_cat)}"
                 )
+
+        def _load_one(root, file, z=None):
+            kwargs = {"root": root, "file": file}
+            if z is not None:
+                kwargs["z"] = z
+            try:
+                return Spectrum.from_DJA(
+                    f"{config['Spectra']['DJA_WEB_DIR']}/{root}/{file}",
+                    save=save,
+                    version=version,
+                    **kwargs,
+                )
+            except HTTPError as e:
+                if e.code == 403:
+                    galfind_logger.warning(
+                        f"Access forbidden (403) to DJA spectrum {file!r} "
+                        f"(root={root!r}); skipping."
+                    )
+                else:
+                    galfind_logger.warning(
+                        f"HTTP error {e.code} loading DJA spectrum {file!r} "
+                        f"(root={root!r}): {e}; skipping."
+                    )
+                return None
+            except Exception as e:
+                galfind_logger.warning(
+                    f"Failed to load DJA spectrum {file!r} "
+                    f"(root={root!r}): {e}; skipping."
+                )
+                return None
+
+        spectra = []
         if z_from_cat:
-            return cls(
-                [
-                    Spectrum.from_DJA(
-                        f"{config['Spectra']['DJA_WEB_DIR']}/{root}/{file}",
-                        save=save,
-                        version=version,
-                        z=z,
-                        root=root,
-                        file=file,
-                    )
-                    for root, file, z in tqdm(
-                        zip(DJA_cat["root"], DJA_cat["file"], DJA_cat[zlabel]),
-                        total=len(DJA_cat),
-                        desc=f"Loading DJA_{version} catalogue",
-                        disable=galfind_logger.getEffectiveLevel()
-                        > logging.INFO,
-                    )
-                ]
-            )
+            for root, file, z in tqdm(
+                zip(DJA_cat["root"], DJA_cat["file"], DJA_cat[zlabel]),
+                total=len(DJA_cat),
+                desc=f"Loading DJA_{version} catalogue",
+                disable=galfind_logger.getEffectiveLevel() > logging.INFO,
+            ):
+                spectrum = _load_one(root, file, z=z)
+                if spectrum is not None:
+                    spectra.append(spectrum)
         else:
-            return cls(
-                [
-                    Spectrum.from_DJA(
-                        f"{config['Spectra']['DJA_WEB_DIR']}/{root}/{file}",
-                        save=save,
-                        version=version,
-                        root=root,
-                        file=file,
-                    )
-                    for root, file in tqdm(
-                        zip(DJA_cat["root"], DJA_cat["file"]),
-                        total=len(DJA_cat),
-                        desc=f"Loading DJA_{version} catalogue",
-                        disable=galfind_logger.getEffectiveLevel()
-                        > logging.INFO,
-                    )
-                ]
-            )
+            for root, file in tqdm(
+                zip(DJA_cat["root"], DJA_cat["file"]),
+                total=len(DJA_cat),
+                desc=f"Loading DJA_{version} catalogue",
+                disable=galfind_logger.getEffectiveLevel() > logging.INFO,
+            ):
+                spectrum = _load_one(root, file)
+                if spectrum is not None:
+                    spectra.append(spectrum)
+        return cls(spectra)
 
     def plot(
         self: Self,

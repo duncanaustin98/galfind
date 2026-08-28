@@ -36,6 +36,7 @@ configs/EAZY_templates/templates/PEGASE2.0
 configs/DJA_spectral_catalogues/DJA_v4_2.csv
 examples/ACS_SBC_testing.py
 **/test_work
+testing/test_data/**/*_psfmatch_*_stpsf
 examples
 .ruff_cache
 galfind.sif

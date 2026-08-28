@@ -432,8 +432,9 @@ class Bagpipes(SED_code):
             HDU name (same as the label).
         """
         # TODO: Copied from EAZY
-        # return
-        f"{self.__class__.__name__}_{self.SED_fit_params['templates']}"
+        # return (
+        #     f"{self.__class__.__name__}_{self.SED_fit_params['templates']}"
+        # )
         return self.label
 
     @property

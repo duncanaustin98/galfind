@@ -2025,7 +2025,7 @@ class Galaxy:
                 "crops must not be empty; at least one Selector is "
                 "required to compute Vmax."
             )
-        from . import (
+        from ..selection.Selector import (
             Data_Selector,
             Multiple_Selector,
             Rest_Frame_Property_Limit_Selector,
