@@ -16,7 +16,6 @@ import json
 import logging
 import os
 import shutil
-import sys
 import time
 
 # from reproject import reproject_adaptive
@@ -6643,10 +6642,7 @@ class Data:
 
                 funcs.change_file_permissions(in_path)
                 # Run trilogy
-                sys.path.insert(
-                    1, "/nvme/scratch/software/trilogy"
-                )  # TRILOGY_DIR config not working here
-                from trilogy3 import Trilogy
+                from trilogy import Trilogy
 
                 galfind_logger.info(
                     f"Making full trilogy RGB image at {out_path}"

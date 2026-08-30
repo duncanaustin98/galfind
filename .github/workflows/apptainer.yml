@@ -1,5 +1,7 @@
-# Builds the Apptainer image from galfind.def as a check that it still
-# builds cleanly. This does not publish the resulting .sif anywhere.
+# Builds the Apptainer image from galfind.def and runs the full pytest
+# suite against it, so failures show up against the actual containerised
+# environment users deploy (not just the install-time import/binary checks
+# in galfind.def's %test section).
 
 name: apptainer
 
@@ -11,6 +13,7 @@ on:
       - "pyproject.toml"
       - "galfind/**"
       - "configs/**"
+      - "testing/**"
       - ".github/workflows/apptainer.yml"
   push:
     branches: ["main"]
@@ -19,6 +22,7 @@ on:
       - "pyproject.toml"
       - "galfind/**"
       - "configs/**"
+      - "testing/**"
       - ".github/workflows/apptainer.yml"
   workflow_dispatch:
 
@@ -28,7 +32,15 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
+    env:
+      # galfind/imaging/PSF.py always overrides $STPSF_PATH to
+      # config['PSF']['STPSF_CACHE'] (testing/test_galfind_config.ini:
+      # PSF_WORK_DIR/stpsf_cache/stpsf-data, i.e. relative to the repo
+      # checkout) before ever touching stpsf, so the calibration data must
+      # be downloaded to that exact path -- see python-app.yml for the
+      # same setup.
+      STPSF_PATH: ${{ github.workspace }}/testing/test_work/PSFs/stpsf_cache/stpsf-data
 
     steps:
     - uses: actions/checkout@v4
@@ -46,9 +58,70 @@ jobs:
       run: apptainer build --fakeroot --notest galfind.sif galfind.def
 
     - name: Run built-in image tests
+      # Cheap import/binary sanity check -- fails fast before we spend time
+      # downloading STPSF data and running the full suite below.
       run: |
         mkdir -p /tmp/galfind_work /tmp/galfind_data
         apptainer test \
           --bind /tmp/galfind_work:/data/GALFIND_WORK \
           --bind /tmp/galfind_data:/data/GALFIND_DATA \
           galfind.sif
+
+    - name: Cache STPSF calibration data
+      uses: actions/cache@v4
+      with:
+        path: ${{ env.STPSF_PATH }}
+        # bump the trailing version suffix if stpsf ever needs newer
+        # calibration data than this cache holds
+        key: stpsf-data-v1
+
+    - name: Download STPSF calibration data
+      run: |
+        mkdir -p "$STPSF_PATH"
+        if [ -z "$(ls -A "$STPSF_PATH" 2>/dev/null)" ]; then
+          python3 -c "
+        import tarfile
+        from pathlib import Path
+        from urllib.request import urlretrieve
+        target = Path('$STPSF_PATH')
+        url = 'https://stsci.box.com/shared/static/kqfolg2bfzqc4mjkgmujo06d3iaymahv.gz'
+        tmp = '/tmp/stpsf-data-LATEST.tar.gz'
+        urlretrieve(url, tmp)
+        with tarfile.open(tmp, 'r:gz') as tar:
+            tar.extractall(target.parent)
+        "
+        fi
+
+    - name: Run full pytest suite inside the container
+      # Bind the checkout into the container at its own path so testing/
+      # (not shipped in the image -- see galfind.def %files) and the
+      # STPSF cache downloaded above are visible, and junit.xml lands
+      # back on the runner for the upload step below.
+      # LePhare isn't in the image (separate compiled Fortran/C++
+      # codebase, not pip-installable), so tests marked lephare are
+      # excluded here too, matching python-app.yml.
+      run: |
+        mkdir -p /tmp/galfind_work /tmp/galfind_data
+        apptainer exec \
+          --bind /tmp/galfind_work:/data/GALFIND_WORK \
+          --bind /tmp/galfind_data:/data/GALFIND_DATA \
+          --bind "${{ github.workspace }}:${{ github.workspace }}" \
+          --pwd "${{ github.workspace }}" \
+          galfind.sif \
+          python3 -m pytest --cov=galfind --cov-branch --cov-report=xml --junitxml=junit.xml -o junit_family=legacy -m "not lephare" testing
+
+    - name: Upload coverage to Codecov
+      if: always()
+      uses: codecov/codecov-action@v4
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        files: ./coverage.xml
+        flags: apptainer
+        fail_ci_if_error: false
+
+    - name: Upload test results to Codecov
+      if: ${{ !cancelled() }}
+      uses: codecov/test-results-action@v1
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        flags: apptainer

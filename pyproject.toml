@@ -85,7 +85,11 @@ dependencies = [
   "photutils>=2.0", # <2.0 has no cp313 wheels and the 1.12.0 sdist on PyPI is broken (missing pyproject.toml/setup.py), crashing pip's resolver
   "opencv-python-headless", # headless build: no libGL/X11 dependency, needed for CI/RTD builds
   "joblib",
-  "trilogy",
+  # trilogy>=1.0 is an unrelated API rewrite (TrilogyConfig-based, no infile
+  # arg) that dropped the legacy Trilogy(infile, images=None).run() /
+  # trilogy.in file interface galfind's RGB code (Cutout.py, Data.py) calls;
+  # pin below it or plot_RGB(method="trilogy") breaks with a TypeError.
+  "trilogy<1.0",
   "scikit-learn>=1.4.0", # earlier versions import a numpy-1.x-built pyarrow via sklearn.utils.fixes, which crashes under numpy>=2.0
   "scikit-image",
   "eazy",
@@ -129,6 +133,7 @@ test = [
     # upstream fixes it -- see dev-petrov/pytest-lazy-fixtures#55.
     "pytest<9.1",
     "pytest-lazy-fixtures",
+    "pytest-cov",
     "mypy",
     "ruff",
     "nbmake"

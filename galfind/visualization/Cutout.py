@@ -8,7 +8,6 @@ and contours, and support for stacked and multiple-cutout operations.
 from __future__ import annotations
 
 import itertools
-import sys
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from pathlib import Path
@@ -1741,8 +1740,7 @@ class RGB_Base(Cutout_Base, ABC):
 
                 funcs.change_file_permissions(in_path)
                 # Run trilogy
-                sys.path.insert(1, "/nvme/scratch/software/trilogy")
-                from trilogy3 import Trilogy
+                from trilogy import Trilogy
 
                 galfind_logger.info(
                     f"Making trilogy cutout RGB at {save_path}"
