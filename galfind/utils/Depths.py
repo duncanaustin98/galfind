@@ -85,6 +85,10 @@ def do_photometry(image, xy_coords, radius_pixels):
     `numpy.ndarray`
         Summed flux within each aperture.
     """
+    if len(xy_coords) == 0:
+        # no empty apertures were placed -- CircularAperture rejects an
+        # empty positions list outright
+        return np.array([])
     aper = CircularAperture(xy_coords, radius_pixels)
     aper_sums, _ = aper.do_photometry(image, error=None)
     return aper_sums
@@ -504,7 +508,15 @@ def calc_depths(
         split_depths = True
     # Extract x and y coordinates
     coordinates = np.array(coordinates)
-    x, y = coordinates[:, 0], coordinates[:, 1]
+    if coordinates.size == 0:
+        # no empty apertures were placed for this band (e.g. a fully
+        # masked/tiny image) -- fall through with empty x/y so every
+        # catalogue position below is treated as outside the
+        # (degenerate) calibration grid and gets a NaN depth, rather
+        # than crashing on the indexing below
+        x, y = np.array([]), np.array([])
+    else:
+        x, y = coordinates[:, 0], coordinates[:, 1]
 
     # if type(wht_data) == str:
     #     weight_map = fits.open(wht_data)
@@ -575,7 +587,10 @@ def calc_depths(
                 f"coord_type={coord_type!r} must be either 'sky' or 'pixel'."
             )
 
-    x_max, y_max = np.max(x), np.max(y)
+    if x.size == 0:
+        x_max, y_max = -1.0, -1.0
+    else:
+        x_max, y_max = np.max(x), np.max(y)
     x_label, y_label = x.astype(int), y.astype(int)
     # Don't look for label of pixels outside the image
 
@@ -904,11 +919,16 @@ def make_ds9_region_file(
     wcs = WCS object - the wcs object to use for the conversion if convert
     is True
     """
-    # If coordinate shape is (2, n) then we have to transpose it
-    if np.shape(coordinates)[-1] == 2:
-        coordinates = np.array(coordinates).T
-    print(f"empty aperture coordinates = {coordinates}")
-    x, y = np.array(coordinates)
+    if len(coordinates) == 0:
+        # no empty apertures were placed (e.g. a fully masked/tiny
+        # image) -- write a region file with no circles rather than
+        # crashing on the unpack below
+        x, y = np.array([]), np.array([])
+    else:
+        # If coordinate shape is (2, n) then we have to transpose it
+        if np.shape(coordinates)[-1] == 2:
+            coordinates = np.array(coordinates).T
+        x, y = np.array(coordinates)
 
     if coordinate_type == "sky":
         coord_type = "fk5"
@@ -2661,6 +2681,15 @@ def plot_depth_diagnostic(
     if not hasattr(self, "depth_path"):
         raise MissingDataError(f"{repr(self)} has no 'depth_path'.")
     hf_output = get_hf_output(self, aper_diam)
+    if np.all(np.isnan(hf_output["depths"])):
+        # no empty apertures were placed for this band (e.g. a fully
+        # masked/tiny image), so every depth is NaN -- there's nothing
+        # meaningful to plot
+        galfind_logger.warning(
+            f"All depths are NaN for {repr(self)}; skipping depth "
+            "diagnostic plot."
+        )
+        return
     cat_x, cat_y = get_cat_xy(self, master_cat_path)
     combined_mask = self._combine_seg_data_and_mask()
 

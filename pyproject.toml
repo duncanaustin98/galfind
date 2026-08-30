@@ -122,7 +122,12 @@ dev = [
 ]
 # Testing
 test = [
-    "pytest",
+    # pytest 9.1.0/9.1.1 have a fixture-finalizer regression
+    # (pytest-dev/pytest#14800) that breaks pytest-lazy-fixtures whenever
+    # the same lazy fixture is reused across parametrized cases (see
+    # testing/test_Selectors.py's `call_selector`); pin below 9.1 until
+    # upstream fixes it -- see dev-petrov/pytest-lazy-fixtures#55.
+    "pytest<9.1",
     "pytest-lazy-fixtures",
     "mypy",
     "ruff",

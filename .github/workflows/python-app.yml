@@ -68,7 +68,14 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         WITH_OPENMP=1 pip install ".[spectra]"
-        pip install ruff pytest pytest-cov pytest-lazy-fixtures pre-commit
+        # pytest 9.1.0/9.1.1 have a fixture-finalizer regression
+        # (pytest-dev/pytest#14800) that pytest-lazy-fixtures triggers
+        # whenever the same lazy fixture is reused across parametrized
+        # cases -- exactly how testing/test_Selectors.py's `call_selector`
+        # is built -- causing spurious "assert not self._finalizers"/
+        # "not enough values to unpack" errors. Pin below 9.1 until
+        # upstream fixes it; see dev-petrov/pytest-lazy-fixtures#55.
+        pip install "pytest<9.1" ruff pytest-cov pytest-lazy-fixtures pre-commit
     - name: Cache STPSF calibration data
       uses: actions/cache@v4
       with:

@@ -950,11 +950,24 @@ class Band_Data_Base(ABC):
             "RMS_ERR": self.load_rms_err,
             "WHT": self.load_wht,
         }
-        same_orig_filename = all(
-            name == filenames["SCI"]
-            for name in filenames.values()
+        # Some extensions (e.g. WHT for a band with no dedicated weight
+        # file) fall back to reusing another extension's original file,
+        # possibly from a different subdirectory with the same basename
+        # (e.g. "F090W_test.fits" alongside "wht/F090W_test.fits"). The
+        # output paths below are built from basenames only (the
+        # subdirectory is stripped), so any extensions sharing a
+        # basename would otherwise collide and silently overwrite each
+        # other's freshly-convolved output -- suffix any extension
+        # whose basename isn't unique among the others to avoid that.
+        basenames = {
+            ext: name.split("/")[-1]
+            for ext, name in filenames.items()
             if name is not None
-        )
+        }
+        needs_suffix = {
+            ext: list(basenames.values()).count(basename) > 1
+            for ext, basename in basenames.items()
+        }
         orig_wht = self.load_wht(output_hdr=False)
 
         # determine new version and data directory based on kernel choice
@@ -973,7 +986,7 @@ class Band_Data_Base(ABC):
                 if filename is not None:
                     galfind_logger.debug(f"Symlinking {repr(self)} {ext}!")
                     out_filepath = f"{new_data_dir}/{filename.split('/')[-1]}"
-                    if same_orig_filename:
+                    if needs_suffix[ext]:
                         # add ext to suffix
                         out_filepath = out_filepath.replace(
                             ".fits", f"_{ext.lower()}.fits"
@@ -988,7 +1001,7 @@ class Band_Data_Base(ABC):
             filename = filenames[ext]
             if filename is not None:
                 out_filepath = f"{new_data_dir}/{filename.split('/')[-1]}"
-                if same_orig_filename:
+                if needs_suffix[ext]:
                     # add ext to suffix
                     out_filepath = out_filepath.replace(
                         ".fits", f"_{ext.lower()}.fits"
