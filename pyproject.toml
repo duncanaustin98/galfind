@@ -156,6 +156,18 @@ spectra = [
   "msaexp",
 ]
 
+# JWST calibration pipeline, used by galfind.imaging.NIRCam_reduction to run
+# stage1/stage2 NIRCam reduction. NOTE: msaexp (spectra extra) declares
+# jwst<1.17, so installing this alongside the spectra extra triggers a pip
+# resolver warning; jwst 3.0.0 and msaexp continue to import and work
+# together in practice (verified 2026-09-10). Leaving this unpinned lets pip
+# backtrack to jwst 1.9.1 to satisfy msaexp's constraint, which is too old to
+# import (ModuleNotFoundError: pkg_resources) -- so it stays pinned.
+jwst = [
+  "jwst==3.0.0",
+  "snowblind",
+]
+
 # Downloading data
 data = [
     "click",
