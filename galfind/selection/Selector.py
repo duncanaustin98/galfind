@@ -6398,30 +6398,43 @@ class zPDF_High_Tail_Selector(SED_fit_Selector):
         self: Self,
         aper_diam: u.Quantity,
         SED_fit_label: Union[str, SED_code],
-        z_thr: float,
         p_lim: float,
+        z_lolim: float,
+        z_uplim: float = 25.0,
     ):
         kwargs = {
-            "z_thr": z_thr,
             "p_lim": p_lim,
+            "z_lolim": z_lolim,
+            "z_uplim": z_uplim,
         }
         super().__init__(aper_diam, SED_fit_label, **kwargs)
 
     @property
     def _selection_name(self) -> str:
-        name = f"P(z>{self.kwargs['z_thr']})>{float(self.kwargs['p_lim'])}"
+        name = (
+            f"P({self.kwargs['z_lolim']}<z<{self.kwargs['z_uplim']})"
+            f">{float(self.kwargs['p_lim'])}"
+        )
         return name
 
     @property
     def _include_kwargs(self) -> List[str]:
-        return ["z_thr", "p_lim"]
+        return ["z_lolim", "z_uplim", "p_lim"]
 
     def _assertions(self: Self) -> bool:
         try:
             assertions = []
             # z_thr must be a positive number
-            assertions.extend([isinstance(self.kwargs["z_thr"], (int, float))])
-            assertions.extend([self.kwargs["z_thr"] > 0.0])
+            assertions.extend(
+                [isinstance(self.kwargs["z_lolim"], (int, float))]
+            )
+            assertions.extend(
+                [isinstance(self.kwargs["z_uplim"], (int, float))]
+            )
+            assertions.extend([self.kwargs["z_lolim"] > 0.0])
+            assertions.extend(
+                [self.kwargs["z_uplim"] > self.kwargs["z_lolim"]]
+            )
             # p_lim must be between 0 and 1
             assertions.extend([isinstance(self.kwargs["p_lim"], float)])
             assertions.extend([0.0 < self.kwargs["p_lim"] < 1.0])
@@ -6451,7 +6464,8 @@ class zPDF_High_Tail_Selector(SED_fit_Selector):
         gal: Galaxy,
     ) -> Tuple[bool, Dict[str, Any]]:
         """
-        Select galaxies with integrated PDF tail P(z > z_thr) > p_lim.
+        Select galaxies with integrated PDF tail
+        P(z_lolim < z < z_uplim) > p_lim.
         """
         z_pdf = (
             gal.aper_phot[self.aper_diam]
@@ -6470,8 +6484,8 @@ class zPDF_High_Tail_Selector(SED_fit_Selector):
 
         p_tail = PDF.integrate_between_lims(
             z_pdf,
-            float(self.kwargs["z_thr"]),
-            25.0,  # upper limit in galfind base code
+            float(self.kwargs["z_lolim"]),
+            float(self.kwargs["z_uplim"]),
         )
 
         return p_tail > self.kwargs["p_lim"], {}

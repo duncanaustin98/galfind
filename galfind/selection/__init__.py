@@ -25,6 +25,7 @@ from .grid import Grid_2D
 from .completeness import Completeness, Catalogue_Completeness, Completeness_2D
 from .contamination import Contamination
 from .Selector import (
+    Redshift_Limit_Selector,
     Redshift_Bin_Selector,
     EPOCHS_Selector,
     Redwards_Lya_Detect_Selector,
@@ -34,6 +35,9 @@ from .Selector import (
     Brown_Dwarf_Selector,
     Mask_Selector,
     EPOCHS_unmasked_criteria,
+    Kokorev24_LRD_Selector,
+    Kokorev24_LRD_red1_Selector,
+    Kokorev24_LRD_red2_Selector,
 )
 
 __all__ = [
@@ -42,6 +46,7 @@ __all__ = [
     "Catalogue_Completeness",
     "Completeness_2D",
     "Contamination",
+    "Redshift_Limit_Selector",
     "Redshift_Bin_Selector",
     "EPOCHS_Selector",
     "Redwards_Lya_Detect_Selector",
@@ -51,4 +56,7 @@ __all__ = [
     "Mask_Selector",
     "EPOCHS_unmasked_criteria",
     "Stacked_Blue_Lya_Non_Detect_Selector",
+    "Kokorev24_LRD_Selector",
+    "Kokorev24_LRD_red1_Selector",
+    "Kokorev24_LRD_red2_Selector",
 ]

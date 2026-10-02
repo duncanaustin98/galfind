@@ -1009,7 +1009,12 @@ class Base_MCMC_Fitter(ABC):
         fig_ = corner.corner(flat_samples, range=range, **default_plot_kwargs)
 
         # plot fiducial values
-        if fid_colour is not None:
+        if fid_colour is not None and len(self.fiducial_params) == 1:
+            # corner.overplot_lines indexes axes[k, k], which fails for a
+            # single free parameter (corner returns a bare Axes when K = 1)
+            if self.fiducial_params[0] is not None:
+                fig_.axes[0].axvline(self.fiducial_params[0], color=fid_colour)
+        elif fid_colour is not None:
             corner.overplot_lines(fig_, self.fiducial_params, color=fid_colour)
             corner.overplot_points(
                 fig_,

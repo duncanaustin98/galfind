@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import contextlib
 import glob
+import hashlib
+import json
 import logging
 import os
 import re
@@ -24,6 +26,8 @@ from astropy import units as u
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.table import vstack
+from astropy.wcs import WCS
+from astropy.wcs.utils import proj_plane_pixel_scales
 from matplotlib.patches import Polygon
 from numpy.typing import NDArray
 from tqdm import tqdm
@@ -35,7 +39,6 @@ except ImportError:
 from typing import TYPE_CHECKING, List
 
 if TYPE_CHECKING:
-    from jwst.datamodels import ImageModel
     from jwst.pipeline import JWSTPipeline
 
     from . import Instrument
@@ -50,6 +53,7 @@ from ..utils.exceptions import (
     MissingDataError,
     MissingFileError,
 )
+from .Data import Data
 from .Instrument import NIRCam
 
 CURL_OUTPUT_RE = re.compile(r"--output \./\$\{DOWNLOAD_FOLDER\}'([^']+)'")
@@ -57,6 +61,75 @@ FOLDER_RE = re.compile(r"^FOLDER=(.+)$", re.MULTILINE)
 NIRCAM_DETECTOR_RE = re.compile(
     r"_(nrca[1-4]|nrcalong|nrcb[1-4]|nrcblong)_uncal\.fits$"
 )
+
+DEFAULT_REGISTRY_PATH = (
+    Path(__file__).resolve().parent.parent.parent
+    / "configs"
+    / "reduction_versions.json"
+)
+
+
+def reduction_version_key(
+    stage1_steps: Dict[str, Any],
+    stage2_steps: Dict[str, Any],
+    stage3_steps: Dict[str, Any],
+    jwst_version: str,
+    pmap: str,
+) -> str:
+    """Deterministic key for a reduction's exact configuration.
+
+    Two calls with structurally-equal `steps` dicts (regardless of key
+    order), `jwst_version`, and `pmap` always produce the same key, so
+    `get_or_register_reduction_version` can tell whether this exact
+    configuration has already been aliased.
+    """
+    payload = {
+        "stage1_steps": stage1_steps,
+        "stage2_steps": stage2_steps,
+        "stage3_steps": stage3_steps,
+        "jwst_version": jwst_version,
+        "pmap": pmap,
+    }
+    canonical = json.dumps(payload, sort_keys=True, default=str)
+    return hashlib.sha256(canonical.encode()).hexdigest()[:16]
+
+
+def get_or_register_reduction_version(
+    key: str,
+    registry_path: Path = DEFAULT_REGISTRY_PATH,
+) -> str:
+    """The ``"vN"`` alias for `key`, registering a new one if not yet seen.
+
+    `registry_path` is a JSON file mapping ``{key: alias}``, committed
+    to the GALFIND repo so every user resolves the same configuration
+    to the same alias regardless of who ran the reduction. A
+    configuration not yet in the registry is auto-registered under the
+    next unused ``"vN"`` (``max`` existing N + 1) and the registry file
+    is updated on disk immediately, so a concurrent reduction with a
+    different new configuration doesn't collide with it.
+    """
+    registry_path = Path(registry_path)
+    if registry_path.is_file():
+        registry: Dict[str, str] = json.loads(registry_path.read_text())
+    else:
+        registry = {}
+
+    if key in registry:
+        return registry[key]
+
+    existing_numbers = [
+        int(alias[1:])
+        for alias in registry.values()
+        if alias.startswith("v") and alias[1:].isdigit()
+    ]
+    alias = f"v{max(existing_numbers, default=0) + 1}"
+
+    registry[key] = alias
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.write_text(
+        json.dumps(registry, indent=2, sort_keys=True) + "\n"
+    )
+    return alias
 
 
 def expected_uncal_sizes(downloads_dir: Path) -> Dict[str, int]:
@@ -86,6 +159,7 @@ def existing_uncal_filenames(
     downloads_dir: Path,
     later_stage_base_dir: Optional[Path] = None,
     input_crds: int = 1584,
+    cache: Optional[Dict[Tuple[str, str, int], bool]] = None,
 ) -> Set[str]:
     """Filenames of UNCAL files that don't need to be (re)downloaded
     for this PID.
@@ -103,7 +177,8 @@ def existing_uncal_filenames(
     produced output for it under that directory - e.g. because its
     UNCAL file was intentionally removed by
     `Raw_JWST_Data.remove_uncals_with_rate` once no longer needed.
-    Pass `None` (default) to check UNCAL completeness only.
+    Pass `None` (default) to check UNCAL completeness only. `cache` is
+    forwarded to `later_stage_output_exists` - see its docstring.
     """
     expected_sizes = expected_uncal_sizes(downloads_dir)
     local_files = glob.glob(
@@ -118,9 +193,23 @@ def existing_uncal_filenames(
             complete.add(filename)
 
     if later_stage_base_dir is not None:
-        for filename in expected_sizes:
-            if filename not in complete and later_stage_output_exists(
-                filename, later_stage_base_dir, input_crds=input_crds
+        # each check opens up to 3 FITS files (RATE/CAL/science) to
+        # verify pipeline completeness, which for a programme with
+        # thousands of exposures and no local UNCAL files left (e.g.
+        # after `remove_uncals_with_rate`) takes long enough to look
+        # hung without a progress indicator
+        missing = [f for f in expected_sizes if f not in complete]
+        for filename in tqdm(
+            missing,
+            desc="Checking downstream RATE/CAL/science output for "
+            "already-processed UNCAL files",
+            disable=galfind_logger.getEffectiveLevel() > logging.INFO,
+        ):
+            if later_stage_output_exists(
+                filename,
+                later_stage_base_dir,
+                input_crds=input_crds,
+                cache=cache,
             ):
                 complete.add(filename)
     return complete
@@ -178,8 +267,141 @@ def stage_output_path(
     return Path(f"{output_dir}/{out_filename}.fits")
 
 
+def asn_product_name(asn_file: str) -> str:
+    """The Level 3 product name declared in `asn_file`.
+
+    Image3Pipeline names its output files from this (e.g. an i2d file
+    is written to ``f"{name}_i2d.fits"``), rather than from the
+    association filename itself - unlike stage 1/2, whose per-exposure
+    output filenames are a suffix-replace on their input filename (see
+    `stage_output_path`), so a stage 3 output path can't be derived
+    without reading the association.
+    """
+    with open(asn_file) as f:
+        return json.load(f)["products"][0]["name"]
+
+
+def stage3_output_paths(
+    asn_files: List[str],
+    output_dir: str,
+    cache: Optional[Dict[str, Dict[str, Path]]] = None,
+) -> Dict[str, Path]:
+    """Expected Image3Pipeline i2d.fits output path for each of `asn_files`.
+
+    Keyed by association filename. `cache`, if given, is a `dict` of
+    ``{output_dir: {asn_file: output_path}}`` (e.g.
+    `Raw_JWST_Data.stage3_output_paths`), keyed first by `output_dir`
+    (the ``science_{input_crds}`` directory outputs for this CRDS
+    context are written to) so the same association isn't re-read by a
+    later `Raw_JWST_Data.run_stage3` call against the same output
+    directory - e.g. one made per ``asn_file_search_dir`` in a loop.
+    """
+    dir_cache = cache.setdefault(output_dir, {}) if cache is not None else {}
+    result = {}
+    for asn_file in asn_files:
+        if asn_file not in dir_cache:
+            dir_cache[asn_file] = Path(output_dir) / (
+                f"{asn_product_name(asn_file)}_i2d.fits"
+            )
+        result[asn_file] = dir_cache[asn_file]
+    return result
+
+
+def parse_i2d_filename(i2d_file: Union[str, Path]) -> Tuple[str, str]:
+    """(survey, filter_name) parsed from an Image3Pipeline i2d filename.
+
+    Image3Pipeline names its output ``f"{product_name}_i2d.fits"``, and
+    `run_stage3`'s associations declare `product_name` as
+    ``f"{pointing}-{filter}"`` (see `asn_product_name`) - so the filter
+    is the segment after the *last* hyphen, and the survey (pointing)
+    name is everything before it. Standard JWST filter names never
+    contain a hyphen, so this split is unambiguous.
+    """
+    stem = Path(i2d_file).name
+    if stem.endswith("_i2d.fits"):
+        stem = stem[: -len("_i2d.fits")]
+    survey, sep, filt_name = stem.rpartition("-")
+    if not sep:
+        raise ValueError(
+            f"Can't parse survey/filter from i2d_file={str(i2d_file)!r}: "
+            "expected '<survey>-<filter>_i2d.fits'."
+        )
+    return survey, filt_name
+
+
+def i2d_pixel_scale(
+    i2d_file: Union[str, Path], im_ext_name: str = "SCI"
+) -> u.Quantity:
+    """True on-sky pixel scale of an i2d mosaic, read from its WCS.
+
+    Image3Pipeline's output pixel scale is set by resampling parameters
+    (e.g. ``resample.pixel_scale_ratio``), not a fixed value, so it has
+    to be read from the file rather than assumed - `Data.pipeline`
+    defaults to 30mas for NIRCam, but a given reduction may not be.
+    """
+    with fits.open(i2d_file) as hdul:
+        wcs = WCS(hdul[im_ext_name].header)
+    scales = proj_plane_pixel_scales(wcs) * wcs.wcs.cunit[0]
+    return np.mean(scales).to(u.arcsec)
+
+
+def wisp_subtracted_filename(filename: str) -> str:
+    """`filename`'s wisp-subtracted counterpart, if one exists.
+
+    `subtract_wisps.subtract_Sunnquist24_wisps` writes its output
+    alongside the input 'cal' file with a `'_wisp'` suffix inserted
+    before the extension (e.g. ``..._cal.fits`` ->
+    ``..._cal_wisp.fits``), and only for the wisp-affected detectors
+    (nrca3/nrca4/nrcb3/nrcb4). Returns `filename` unchanged if no such
+    file exists, e.g. for other detectors or if wisp subtraction
+    hasn't been run.
+    """
+    wisp_filename = filename.replace(".fits", "_wisp.fits")
+    return wisp_filename if os.path.isfile(wisp_filename) else filename
+
+
+def is_complete_pipeline_output(path: Union[str, Path]) -> bool:
+    """Whether `path` is a complete, readable JWST pipeline output.
+
+    `stpipe`'s ``save_results=True`` writes a datamodel's metadata as
+    an ``ASDF`` extension *last*, after the SCI/ERR/DQ (and, for
+    Detector1, VAR_POISSON/VAR_RNOISE) image extensions - so a process
+    killed mid-write (walltime limit, OOM-kill, node failure, ...)
+    leaves a file that exists and opens fine, but is missing that
+    extension. `Path.is_file()` alone can't tell that file apart from
+    a genuinely finished one, which is exactly the failure mode from
+    `self.pid=2514`: two RATE files truncated mid-write by an earlier,
+    interrupted `run_stage1` were treated as "already done" by every
+    existence-only check below, silently skipped on every subsequent
+    run, and only surfaced once `run_stage2` tried to read their
+    (missing) metadata.
+
+    Used everywhere this module decides a pipeline stage's output (or,
+    transitively, an UNCAL file's downstream RATE/CAL/science product)
+    already exists, so a truncated file is instead treated as not yet
+    produced and gets automatically reprocessed - no manual
+    intervention needed to pick it back up.
+    """
+    path = Path(path)
+    if not path.is_file():
+        return False
+    try:
+        with fits.open(path) as hdul:
+            return "ASDF" in hdul
+    except Exception:
+        # any read failure (truncated file, corrupt header, ...) means
+        # this isn't a usable, complete output
+        return False
+
+
+STAGE_SUFFIX_ORDER = ("rate", "cal", "science")
+
+
 def later_stage_output_exists(
-    filename: str, base_dir: Path, input_crds: int = 1584
+    filename: str,
+    base_dir: Path,
+    input_crds: int = 1584,
+    cache: Optional[Dict[Tuple[str, str, int], bool]] = None,
 ) -> bool:
     """Whether a later pipeline stage has already produced output for
     the UNCAL file `filename`.
@@ -190,13 +412,40 @@ def later_stage_output_exists(
     `stage_output_path`. Used to avoid re-downloading or re-moving an
     UNCAL file that was intentionally removed once no longer needed
     (see `Raw_JWST_Data.remove_uncals_with_rate`).
+
+    Checked with a bare existence check, not `is_complete_pipeline_output`:
+    the latter opens every candidate file to verify its ASDF metadata,
+    which for a programme with thousands of exposures dominates this
+    check's runtime. The tradeoff is that a RATE/CAL/science file left
+    truncated by an interrupted run is (wrongly) treated as complete
+    here, so if its UNCAL input is also missing locally, that UNCAL
+    won't be re-downloaded to redo it - unlike `remove_if_next_stage_exists`
+    (used by `remove_uncals_with_rate` to decide what's safe to *delete*),
+    which still uses the full `is_complete_pipeline_output` check, since
+    getting that one wrong loses the UNCAL input permanently.
+
+    `cache`, if given, is a `dict` shared across calls (e.g.
+    `Raw_JWST_Data._later_stage_cache`) that this result is read from
+    and written to, so the same file's RATE/CAL/science output isn't
+    re-checked by every caller that needs to know - e.g.
+    `Raw_JWST_Data.query_mast` and `Raw_JWST_Data.move_uncals`, called
+    back-to-back for the same programme with nothing in between that
+    could change the answer.
     """
-    return any(
+    key = (filename, str(base_dir), input_crds)
+    if cache is not None and key in cache:
+        return cache[key]
+    result = any(
         stage_output_path(
-            filename, str(Path(base_dir) / f"{suffix}_{input_crds}"), suffix
+            filename,
+            str(Path(base_dir) / f"{suffix}_{input_crds}"),
+            suffix,
         ).is_file()
-        for suffix in ("rate", "cal", "science")
+        for suffix in STAGE_SUFFIX_ORDER
     )
+    if cache is not None:
+        cache[key] = result
+    return result
 
 
 def split_curl_script(
@@ -353,6 +602,7 @@ def write_resume_script(
     name: Optional[str] = None,
     later_stage_base_dir: Optional[Path] = None,
     input_crds: int = 1584,
+    cache: Optional[Dict[Tuple[str, str, int], bool]] = None,
 ) -> Optional[Path]:
     """Filter and merge `script_paths`, writing one resume script.
 
@@ -370,6 +620,9 @@ def write_resume_script(
         (UNCAL completeness only).
     input_crds : `int`, optional
         Forwarded to `existing_uncal_filenames`. Default is 1584.
+    cache : `dict`, optional
+        Forwarded to `existing_uncal_filenames`/`later_stage_output_exists`.
+        Default is `None` (no caching).
 
     Returns
     -------
@@ -383,6 +636,7 @@ def write_resume_script(
         downloads_dir,
         later_stage_base_dir=later_stage_base_dir,
         input_crds=input_crds,
+        cache=cache,
     )
     try_n = next_try_number(downloads_dir, name)
 
@@ -467,6 +721,19 @@ class Raw_JWST_Data:
         self.instrument = instrument()
         self.survey = survey
         self.pid = pid
+        # shared across `query_mast`/`download`/`move_uncals` within
+        # this instance's lifetime, so a file's RATE/CAL/science
+        # completeness (expensive - opens each file) isn't
+        # re-verified by every method that needs to know, when
+        # nothing on disk could have changed the answer in between
+        self._later_stage_cache: Dict[Tuple[str, str, int], bool] = {}
+        # accumulated across every `run_stage3` call made on this
+        # instance (e.g. one per `asn_file_search_dir` in a loop), so
+        # the same association isn't re-read from disk every time, and
+        # so every i2d output produced this session stays inspectable
+        # afterwards - keyed by output_dir, then by association file;
+        # see the module-level `stage3_output_paths` function
+        self.stage3_output_paths: Dict[str, Dict[str, Path]] = {}
 
     @property
     def folder_name(self: Self) -> str:
@@ -494,19 +761,58 @@ class Raw_JWST_Data:
 
     def __call__(
         self: Self,
-        remove_1overf: bool = True,
-        subdivide: Optional[str] = None,
+        split_by: str = "sky",
         n_cores: int = 1,
         input_crds: int = 1584,
         pre_download_refs: bool = False,
-    ):
+        make_asn_kwargs: Dict[str, Any] = {},
+        # stage1_steps: Dict[str, Any] = {},
+        # stage2_steps: Dict[str, Any] = {},
+        # stage3_steps: Dict[str, Any] = {},
+    ) -> List[Data]:
+        """Run the full raw-to-reduced pipeline: download through stage 3.
+
+        Parameters
+        ----------
+        split_by : `str`, optional
+            How to group exposures into stage 3 associations. Forwarded
+            to `make_asn` as `split_by`. Default is ``"sky"`` (group by
+            pointing).
+        n_cores : `int`, optional
+            Number of CPU cores to use for parallel processing. Forwarded
+            to `download`, `run_stage1`, `run_stage2`, and `run_stage3`.
+            Default is 1 (no parallelism).
+        input_crds : `int`, optional
+            CRDS context version to use for the JWST pipeline. Forwarded
+            to `download`, `run_stage1`, `run_stage2`, and `run_stage3`.
+            Default is 1584.
+        pre_download_refs : `bool`, optional
+            Whether to pre-download reference files for the JWST pipeline
+            before running each stage. Forwarded to `download`, `run_stage1`,
+            `run_stage2`, and `run_stage3`. Default is `False`.
+        make_asn_kwargs : `dict`, optional
+            Extra keyword arguments forwarded to `make_asn` (e.g.
+            `hdr_cols`, `match_radius`, `plot`); `split_by` is set
+            from `subdivide` and `input_crds` from `input_crds`, so
+            neither should be given here. Default is empty dict.
+
+        Returns
+        -------
+        `list` of `Data`
+            One `Data` object per survey (pointing) associations were
+            generated for, built from that pointing's freshly-reduced
+            stage 3 imaging.
+        """
         if self.instrument.__class__.__name__ == "NIRCam":
-            self._call_nircam(
-                remove_1overf=remove_1overf,
-                subdivide=subdivide,
+            return self._call_nircam(
+                split_by=split_by,
                 n_cores=n_cores,
                 input_crds=input_crds,
                 pre_download_refs=pre_download_refs,
+                make_asn_kwargs=make_asn_kwargs,
+                # stage1_steps=stage1_steps,
+                # stage2_steps=stage2_steps,
+                # stage3_steps=stage3_steps,
             )
         else:
             raise NotImplementedError(
@@ -516,12 +822,15 @@ class Raw_JWST_Data:
 
     def _call_nircam(
         self: Self,
-        remove_1overf: bool = True,
-        subdivide: Optional[str] = None,
+        split_by: str = "sky",
         n_cores: int = 1,
         input_crds: int = 1584,
         pre_download_refs: bool = False,
-    ):
+        make_asn_kwargs: Dict[str, Any] = {},
+        surveys: Optional[List[str]] = None,
+        # stage3_steps: Dict[str, Any] = {},
+    ) -> List[Data]:
+        import jwst
         from snowblind import JumpPlusStep, SnowblindStep
 
         # download the data from MAST
@@ -537,14 +846,10 @@ class Raw_JWST_Data:
                     f"{JumpPlusStep.__module__}.{JumpPlusStep.__qualname__}",
                 ],
             },
+            "clean_flicker_noise": {
+                "skip": False,
+            },
         }
-        if remove_1overf:
-            stage1_steps = {
-                **stage1_steps,
-                "clean_flicker_noise": {
-                    "skip": False,
-                },
-            }
         self.run_stage1(
             input_crds=input_crds,
             steps=stage1_steps,
@@ -561,6 +866,70 @@ class Raw_JWST_Data:
             pre_download_refs=pre_download_refs,
         )
         # run post stage 2 steps - bg subtraction and wisp removal
+
+        # generate stage 3 associations - one group (pointing) per
+        # returned asn_file_search_dir
+        asn_file_search_dirs = self.make_asn(
+            split_by=split_by,
+            input_crds=input_crds,
+            **make_asn_kwargs,
+        )
+        if surveys is None:
+            surveys = [
+                Path(d).name for d in asn_file_search_dirs if Path(d).is_dir()
+            ]
+
+        # run the stage 3 pipeline for each association group
+        stage3_steps = {
+            "tweakreg": {
+                "skip": False,
+                "abs_refcat": "GAIADR3",
+                "abs_minobj": 3,
+                "save_abs_catalog": True,
+            }
+        }
+        for survey in surveys:
+            self.run_stage3(
+                input_crds=input_crds,
+                steps=stage3_steps,
+                asn_file_search_dir=surveys,
+                n_cores=n_cores,
+                pre_download_refs=pre_download_refs,
+            )
+
+        # alias identifying this exact stage1/stage2/stage3
+        # configuration, jwst pipeline version, and CRDS/PMAP context -
+        # the same configuration always resolves to the same alias; a
+        # genuinely new configuration is auto-registered under the
+        # next unused "vN" in configs/reduction_versions.json
+        version = get_or_register_reduction_version(
+            reduction_version_key(
+                stage1_steps,
+                stage2_steps,
+                stage3_steps,
+                jwst.__version__,
+                f"jwst_{input_crds}.pmap",
+            )
+        )
+        # symlink stage 3 i2d outputs into the survey/version/pixel-
+        # scale layout Data.pipeline expects, then build a Data object
+        # for every survey (pointing) touched
+        symlinks_by_survey = self.ingest_stage3_outputs(version=version)
+        instrument_names = [self.instrument.__class__.__name__]
+        return [
+            Data.from_survey_version_psfs(
+                survey,
+                version,
+                instrument_names=instrument_names,
+                # pix_scales={"NIRCam": 0.063 * u.arcsec},
+                psfs=None,
+            )
+            for survey in tqdm(
+                symlinks_by_survey,
+                desc="Building Data objects",
+                total=len(symlinks_by_survey),
+            )
+        ]
 
     @run_in_self_dir(lambda self: f"{self.folder_name}/downloads")
     @log_time(logging.INFO, u.min)
@@ -633,6 +1002,7 @@ class Raw_JWST_Data:
                 [Path(p) for p in source_scripts],
                 later_stage_base_dir=later_stage_base_dir,
                 input_crds=input_crds,
+                cache=self._later_stage_cache,
             )
             self.download_products = (
                 [str(out_path)] if out_path is not None else []
@@ -708,6 +1078,7 @@ class Raw_JWST_Data:
             Path.cwd(),
             later_stage_base_dir=later_stage_base_dir,
             input_crds=input_crds,
+            cache=self._later_stage_cache,
         )
         n_expected = len(filtered_data_products)
         missing_data_products = filtered_data_products[
@@ -813,6 +1184,11 @@ class Raw_JWST_Data:
             [Path(p) for p in self.download_products]
         )
         n_already_downloaded = self.n_files - len(commands)
+        galfind_logger.info(
+            f"Downloading {len(commands)} "
+            f"{self.instrument.__class__.__name__} PID={self.pid} UNCAL "
+            "file(s); this may take a while for programmes with many files"
+        )
 
         def _run_curl(curl_command: str, download_folder: str) -> None:
             process = subprocess.Popen(
@@ -929,11 +1305,20 @@ class Raw_JWST_Data:
         downloads_dir = Path.cwd() / "downloads"
         expected_sizes = expected_uncal_sizes(downloads_dir)
         if expected_sizes:
-            later_stage_base_dir = Path.cwd() if skip_if_processed else None
+            # `Path(self.folder_name)`, not `Path.cwd()`: both resolve
+            # to the same directory here (this method runs inside it
+            # via `run_in_self_dir`), but matching `query_mast`'s exact
+            # string means the two share cache hits in
+            # `self._later_stage_cache` instead of missing on a
+            # symlink-resolution difference between the two spellings
+            later_stage_base_dir = (
+                Path(self.folder_name) if skip_if_processed else None
+            )
             complete_filenames = existing_uncal_filenames(
                 downloads_dir,
                 later_stage_base_dir=later_stage_base_dir,
                 input_crds=input_crds,
+                cache=self._later_stage_cache,
             )
             missing_filenames = set(expected_sizes) - complete_filenames
             if missing_filenames:
@@ -983,11 +1368,12 @@ class Raw_JWST_Data:
 
         Uses `stage_output_path` to determine where the next pipeline
         stage would (or did) write its output for `filename`, and only
-        removes `filename` once that output is confirmed present on
-        disk - i.e. once `filename` is no longer needed to reproduce
-        it. Does not verify the output file's integrity (e.g. that it
-        is a complete, uncorrupted product of a finished pipeline run);
-        only its existence is checked.
+        removes `filename` once that output is confirmed complete on
+        disk (via `is_complete_pipeline_output`) - i.e. once `filename`
+        is no longer needed to reproduce it. A RATE/CAL file left
+        truncated by an interrupted run is therefore *not* treated as
+        "already produced", so its UNCAL input is kept rather than
+        deleted out from under a retry.
 
         Parameters
         ----------
@@ -1013,10 +1399,10 @@ class Raw_JWST_Data:
         """
         out_path = stage_output_path(filename, output_dir, output_suffix)
         in_path = Path(filename)
-        if not out_path.is_file():
+        if not is_complete_pipeline_output(out_path):
             galfind_logger.debug(
                 f"Not removing {filename!r}: expected next-stage output "
-                f"{str(out_path)!r} does not exist yet"
+                f"{str(out_path)!r} does not exist yet or is incomplete"
             )
             return False
         if not in_path.is_file():
@@ -1215,7 +1601,8 @@ class Raw_JWST_Data:
         Returns
         -------
         `list` of `str`
-            Paths to created association JSON files.
+            Each group ID (pointing) associations were generated for -
+            usable directly as `run_stage3`'s `asn_file_search_dir`.
         """
         # set CRDS context
         self.set_crds_context(input_crds)
@@ -1334,30 +1721,35 @@ class Raw_JWST_Data:
                     [id for id in group if hdr_info["FILTER"][id] == filt]
                 )
                 product_filenames = cal_filenames[filt_group]
-                # copy appropriate files to subdirectory
                 product_subdir = f"asn_{input_crds}/{group_id}"
                 os.makedirs(product_subdir, exist_ok=True)
-                # for file in tqdm(
-                #     product_filenames,
-                #     desc=(
-                #         f"Copying {len(product_filenames)} 'cal' files to "
-                #         f"{product_subdir}"
-                #     ),
-                #     total=len(product_filenames),
-                #     disable=galfind_logger.getEffectiveLevel() >
-                #         logging.INFO
-                # ):
-                #     shutil.copy(
-                #         f"{self.folder_name}/{file}",
-                #         f"{self.folder_name}/{product_subdir}/"
-                #         f"{os.path.basename(file)}"
-                #     )
-                file_paths = [
-                    f"{self.folder_name}/{file}" for file in product_filenames
-                ]
-                file_list = " ".join(file_paths)
+                # symlink (not copy - avoids duplicating large FITS
+                # data) each selected file into product_subdir under
+                # its basename, preferring the wisp-subtracted version
+                # when available (see `wisp_subtracted_filename`), so
+                # `asn_from_list` can be run against bare basenames
+                # instead of full paths: an association's `expname`
+                # containing path information triggers a `UserWarning`
+                # from `jwst.associations` and complicates moving the
+                # association around independently of `self.folder_name`
+                basenames = []
+                for file in product_filenames:
+                    src = (
+                        f"{self.folder_name}/{wisp_subtracted_filename(file)}"
+                    )
+                    basename = os.path.basename(src)
+                    link = f"{self.folder_name}/{product_subdir}/{basename}"
+                    # `lexists`, not `exists`: a broken symlink (stale
+                    # target since removed) still counts as "exists" to
+                    # `os.symlink`, which errors if anything - even a
+                    # dangling link - already sits at that path
+                    if not os.path.lexists(link):
+                        os.symlink(src, link)
+                    basenames.append(basename)
+                file_list = " ".join(basenames)
                 os.system(
-                    f"asn_from_list -o {product_subdir}/{filt}.json "
+                    f"cd {self.folder_name}/{product_subdir} && "
+                    f"asn_from_list -o {filt}.json "
                     f"--product-name {product_name} {file_list}"
                 )
         asn_dir = f"{self.folder_name}/asn_{input_crds}/"
@@ -1365,6 +1757,7 @@ class Raw_JWST_Data:
             f"Generated associations for {self.survey} {self.pid=} in "
             f"{asn_dir}"
         )
+        return list(groups.keys())
 
     @run_in_self_dir(lambda self: self.folder_name)
     @log_time(logging.INFO, u.hour)
@@ -1444,7 +1837,7 @@ class Raw_JWST_Data:
         n_cores: int = 1,
         pre_download_refs: bool = False,
         overwrite: bool = False,
-        wisp_when: str = "pre",
+        wisp_author_year: Optional[str] = "Sunnquist2024",
         silence_pipeline: bool = True,
     ) -> None:
         """Run JWST stage 2 image calibration pipeline.
@@ -1469,40 +1862,42 @@ class Raw_JWST_Data:
             Whether to pre-download calibration references. Default is False.
         overwrite : `bool`, optional
             Whether to overwrite existing output. Default is False.
-        wisp_when : `str`, optional
-            When to apply WISP processing ("pre" or "post"). Default is "pre".
+        wisp_author_year : `str` or `None`, optional
+            WISP processing to apply, if any. Default is "Sunnquist2024".
         silence_pipeline : `bool`, optional
             Whether to suppress the JWST pipeline's own console output
             for each file, showing a `tqdm` bar of files completed
             instead. Default is True.
         """
-        # from jwst.pipeline import Image2Pipeline
-        if wisp_when == "pre":
-            from dewispify.dewisp_stage2 import (
-                Image2PipelinePreDewisp as Image2PipelineDewisp,
-            )
-        elif wisp_when == "post":
-            from dewispify.dewisp_stage2 import (
-                Image2PipelinePostDewisp as Image2PipelineDewisp,
-            )
-        else:
-            raise InvalidOptionError(
-                f"wisp_when={wisp_when!r} not in ['pre', 'post']."
-            )
+        from jwst.pipeline import Image2Pipeline
+
+        # if wisp_when == "pre":
+        #     from dewispify.dewisp_stage2 import (
+        #         Image2PipelinePreDewisp as Image2PipelineDewisp,
+        #     )
+        # elif wisp_when == "post":
+        #     from dewispify.dewisp_stage2 import (
+        #         Image2PipelinePostDewisp as Image2PipelineDewisp,
+        #     )
+        # else:
+        #     raise InvalidOptionError(
+        #         f"wisp_when={wisp_when!r} not in ['pre', 'post']."
+        #     )
         # ensure steps has a "wisps" entry
-        if "wisps" not in steps.keys():
-            steps["wisps"] = {}
-        if "wisps" in steps:
-            steps["wisps"]["wisp_when"] = wisp_when
-            steps_wisp_when = steps["wisps"].get("wisp_when", None)
-            if steps_wisp_when is not None:
-                if steps_wisp_when != wisp_when:
-                    galfind_logger.warning(
-                        f"Overriding {steps['wisps']['wisp_when']=} with "
-                        f"{wisp_when=}"
-                    )
+        # if "wisps" not in steps.keys():
+        #     steps["wisps"] = {}
+        # if "wisps" in steps:
+        #     steps["wisps"]["wisp_when"] = wisp_when
+        #     steps_wisp_when = steps["wisps"].get("wisp_when", None)
+        #     if steps_wisp_when is not None:
+        #         if steps_wisp_when != wisp_when:
+        #             galfind_logger.warning(
+        #                 f"Overriding {steps['wisps']['wisp_when']=} with "
+        #                 f"{wisp_when=}"
+        #             )
+
         self.run(
-            Image2PipelineDewisp,
+            Image2Pipeline,  # Dewisp,
             search_str=f"rate_{input_crds}/*_rate.fits",
             output_suffix="cal",
             input_crds=input_crds,
@@ -1515,19 +1910,44 @@ class Raw_JWST_Data:
             silence_pipeline=silence_pipeline,
         )
 
+        if wisp_author_year is None:
+            galfind_logger.info(
+                "Skipping WISP processing for stage 2 output "
+                "(wisp_author_year=None)"
+            )
+        elif wisp_author_year == "Sunnquist2024":
+            from . import subtract_wisps
+
+            galfind_logger.info(
+                "Applying Sunnquist2024 WISP processing to stage 2 output"
+            )
+            post_stage2_files = glob.glob(f"cal_{input_crds}/*_cal.fits")
+            subtract_wisps.subtract_Sunnquist24_wisps(
+                post_stage2_files,
+                n_cores=n_cores,
+                plot=False,
+                overwrite=overwrite,
+            )
+        else:
+            raise InvalidOptionError(
+                f"wisp_author_year={wisp_author_year!r} not in "
+                "['Sunnquist2024', None]."
+            )
+
     @run_in_self_dir(lambda self: self.folder_name)
     @log_time(logging.INFO, u.hour)
     def run_stage3(
         self: Self,
         input_crds: int = 1584,
         steps: Dict[str, Any] = {},
+        asn_file_search_dir: Optional[str] = None,
         config_file: Optional[str] = None,
         asdf_savename: Optional[str] = "stage3.asdf",
         n_cores: int = 1,
         pre_download_refs: bool = False,
         overwrite: bool = False,
         silence_pipeline: bool = True,
-    ) -> None:
+    ) -> Dict[str, Path]:
         """Run JWST stage 3 image processing pipeline.
 
         Performs image alignment, astrometric refinement, image stack creation,
@@ -1539,6 +1959,9 @@ class Raw_JWST_Data:
             CRDS context version. Default is 1584.
         steps : `dict`, optional
             Pipeline step parameters. Default is empty dict.
+        asn_file_search_dir : `str`, optional
+            Subdirectory under ``asn_{input_crds}/`` to search for ASN files.
+            Default is None, which searches the top-level ASN directory.
         config_file : `str`, optional
             Path to pipeline config file. Default is None.
         asdf_savename : `str`, optional
@@ -1553,12 +1976,26 @@ class Raw_JWST_Data:
             Whether to suppress the JWST pipeline's own console output
             for each file, showing a `tqdm` bar of files completed
             instead. Default is True.
+
+        Returns
+        -------
+        `dict` of `str` -> `Path`
+            Each association file matched by `asn_file_search_dir`,
+            mapped to its (now-existing) i2d output path - whether
+            produced by this call or already present from an earlier
+            one. Also accumulated, across every `run_stage3` call made
+            on this instance, in `self.stage3_output_paths[output_dir]`.
         """
         from jwst.pipeline import Image3Pipeline
 
-        self.run(
+        if asn_file_search_dir is None:
+            search_str = f"asn_{input_crds}/*/*.json"
+        else:
+            search_str = f"asn_{input_crds}/{asn_file_search_dir}/*.json"
+
+        return self.run(
             Image3Pipeline,
-            search_str=f"asn_{input_crds}/*/*.json",
+            search_str=search_str,
             output_suffix="science",
             input_crds=input_crds,
             steps=steps,
@@ -1585,7 +2022,7 @@ class Raw_JWST_Data:
         pre_download_refs: bool = False,
         overwrite: bool = False,
         silence_pipeline: bool = True,
-    ) -> None:
+    ) -> Union[List[Optional[str]], Dict[str, Path]]:
         """Execute a JWST pipeline stage on input data files.
 
         Generic pipeline runner that applies the specified JWST pipeline to
@@ -1617,6 +2054,16 @@ class Raw_JWST_Data:
             Whether to suppress the JWST pipeline's own console output
             for each file, showing a `tqdm` bar of files completed
             instead. Default is True.
+
+        Returns
+        -------
+        `list` of `str` or `None`, or `dict` of `str` -> `Path`
+            For `pipe_cls=Image3Pipeline`: each matched association
+            file mapped to its i2d output path (see `run_stage3`). For
+            every other stage: one entry per freshly-processed file
+            (already-complete files skipped by the pre-filter below
+            aren't included), `None` where that file's `_call_stage`
+            call didn't return an output path.
         """
         self.set_crds_context(input_crds)
         os.environ["CRDS_PATH"] = (
@@ -1672,24 +2119,38 @@ class Raw_JWST_Data:
                 + f"to {os.getcwd()}/{asdf_savename}!"
             )
 
-        # check which files are already fully processed *before*
-        # dispatching anything to a worker pool: a `Pool` only keeps
-        # `n_cores` tasks in flight at once, pulling the next one from
-        # the list as a worker frees up, so an already-complete file
-        # sitting later in `filenames` than a slow, not-yet-processed
-        # one wouldn't get its "already done" credit until that slow
-        # task (and whatever else is ahead of it in the queue) frees a
-        # worker slot. Checking here instead means already-done files
-        # show up in the bar immediately, and never occupy a worker
-        # slot just to have it discover the same thing a moment later.
+        # skip files whose output already exists, using a bare
+        # existence check (not `is_complete_pipeline_output`, which
+        # opens every file to verify its ASDF metadata) so this stays
+        # cheap even for thousands of files; a file left truncated by
+        # an earlier interrupted run won't be caught by this and needs
+        # to be removed manually to be reprocessed. Any real failure
+        # during processing is instead caught per-file below and
+        # reported once every file has been attempted.
         already_done = 0
         to_process = []
-        for filename in filenames:
-            out_path = stage_output_path(filename, output_dir, output_suffix)
-            if out_path.is_file():
-                already_done += 1
-            else:
-                to_process.append(filename)
+        if pipe_cls.__name__ == "Image3Pipeline":
+            # stage 3's output filename comes from the association's
+            # declared product name, not a suffix-replace on the
+            # input (association) filename like `stage_output_path`
+            # assumes - see `stage3_output_paths`
+            output_paths = stage3_output_paths(
+                filenames, output_dir, cache=self.stage3_output_paths
+            )
+            for filename in filenames:
+                if not overwrite and output_paths[filename].is_file():
+                    already_done += 1
+                else:
+                    to_process.append(filename)
+        else:
+            for filename in filenames:
+                out_path = stage_output_path(
+                    filename, output_dir, output_suffix
+                )
+                if out_path.is_file():
+                    already_done += 1
+                else:
+                    to_process.append(filename)
         if already_done:
             galfind_logger.info(
                 f"{already_done}/{len(filenames)} {output_suffix!r} "
@@ -1772,12 +2233,85 @@ class Raw_JWST_Data:
                 f"during {pipe_cls.__name__} for {self.pid=}: "
                 f"{failed_files}"
             )
+        if pipe_cls.__name__ == "Image3Pipeline":
+            return output_paths
         return outputs
+
+    @run_in_self_dir(lambda self: self.folder_name)
+    def ingest_stage3_outputs(
+        self: Self,
+        version: str,
+        instrument: Type[Instrument] = NIRCam,
+    ) -> Dict[str, List[Path]]:
+        """Symlink this instance's stage 3 i2d outputs for use in a `Data`.
+
+        Bridges `run_stage3`'s PID-based output layout
+        (``{GALFIND_DATA}/jwst/PID={pid}/science_{input_crds}/*_i2d.fits``,
+        tracked in `self.stage3_output_paths`) into the survey/version/
+        pixel-scale layout `Data.pipeline`/`Data.from_survey_version_psfs`
+        expect (``{GALFIND_DATA}/{facility}/{survey}/{Instrument}/
+        {version}/{pixscale}/``).
+
+        For each i2d file, the survey (pointing) name is parsed from
+        its filename (`parse_i2d_filename`) and its pixel scale is read
+        from its own WCS (`i2d_pixel_scale`) - both determined per-file,
+        since a single instance's stage 3 outputs can cover several
+        pointings and (in principle) different pixel scales. `version`
+        is not derived from the files themselves (nothing in an i2d
+        file's name or header records the stage 1/2/3 step parameters
+        that produced it) - pass the alias from
+        `get_or_register_reduction_version`.
+
+        A destination already symlinked to the same real source file is
+        left alone; one that exists but points elsewhere (e.g. a stale
+        link from a previous, now-superseded reprocessing) is replaced.
+
+        Returns
+        -------
+        `dict` of `str` -> `list` of `Path`
+            Every survey (pointing) name touched, mapped to the
+            symlinks created/kept for it - i.e. what
+            ``Data.pipeline(survey, version)`` can now be called with,
+            for each survey in the returned keys.
+        """
+        instrument_instance = instrument()
+        symlinks_by_survey: Dict[str, List[Path]] = {}
+        i2d_files = [
+            path
+            for output_paths in self.stage3_output_paths.values()
+            for path in output_paths.values()
+        ]
+        for i2d_file in i2d_files:
+            i2d_file = Path(i2d_file).resolve()
+            survey, _ = parse_i2d_filename(i2d_file)
+            pix_scale = i2d_pixel_scale(i2d_file)
+
+            target_dir = Path(
+                Data._get_data_dir(
+                    survey, version, instrument_instance, pix_scale
+                )
+            )
+            link = target_dir / i2d_file.name
+
+            if link.is_symlink() and link.resolve() == i2d_file:
+                galfind_logger.debug(f"{link} already links to {i2d_file}")
+            else:
+                if os.path.lexists(link):
+                    galfind_logger.warning(
+                        f"Replacing stale {link} (was pointing elsewhere) "
+                        f"with a link to {i2d_file}"
+                    )
+                    link.unlink()
+                os.symlink(i2d_file, link)
+                galfind_logger.info(f"Symlinked {i2d_file} -> {link}")
+
+            symlinks_by_survey.setdefault(survey, []).append(link)
+        return symlinks_by_survey
 
     @staticmethod
     def _call_stage_star(
         args: Tuple,
-    ) -> Tuple[str, Optional[ImageModel], Optional[str]]:
+    ) -> Tuple[str, Optional[str], Optional[str]]:
         """`Pool.imap`-compatible wrapper for `_call_stage`.
 
         `multiprocessing.Pool` has no starmap variant that yields
@@ -1796,29 +2330,43 @@ class Raw_JWST_Data:
         output_dir: str,
         output_suffix: str,
         silence_pipeline: bool = True,
-    ) -> Tuple[str, Optional[ImageModel], Optional[str]]:
+    ) -> Tuple[str, Optional[str], Optional[str]]:
         """Run pipeline on a single file."""
         # TODO: Generalize this to work for stage 3 as well!
         output = None
         err = None
         out_path = stage_output_path(file, output_dir, output_suffix)
-        if not out_path.is_file():
-            try:
-                # classmethod
-                call_kwargs = dict(
-                    steps=steps, output_dir=output_dir, save_results=True
-                )
-                if silence_pipeline:
-                    with silence_stdio():
-                        output = pipe_cls.call(file, **call_kwargs)
-                else:
-                    output = pipe_cls.call(file, **call_kwargs)
-            except Exception as e:
-                err = (
-                    "\n--- ERROR PROCESSING FILE ---\n"
-                    + f"File: {file}\n"
-                    + f"Error Type: {type(e).__name__}\n"
-                    + f"Error Message: {e}\n"
-                    + f"Traceback:\n{traceback.format_exc()}"
-                )
+        try:
+            # classmethod
+            call_kwargs = dict(
+                steps=steps, output_dir=output_dir, save_results=True
+            )
+            if silence_pipeline:
+                with silence_stdio():
+                    model = pipe_cls.call(file, **call_kwargs)
+            else:
+                model = pipe_cls.call(file, **call_kwargs)
+            # `save_results=True` already wrote the output to disk,
+            # and nothing downstream needs the in-memory model, so
+            # close it rather than returning it: an `ImageModel`
+            # holds an open file handle internally, which can't be
+            # pickled back to the parent process through a
+            # `multiprocessing.Pool`. Some pipeline stages (e.g.
+            # those driven by an association file) return a list
+            # of models rather than a single one, and Image3Pipeline
+            # (stage 3) returns `None` instead of a model at all, since
+            # its outputs are mosaics/catalogs written directly to disk.
+            models = model if isinstance(model, list) else [model]
+            for m in models:
+                if m is not None:
+                    m.close()
+            output = str(out_path)
+        except Exception as e:
+            err = (
+                "\n--- ERROR PROCESSING FILE ---\n"
+                + f"File: {file}\n"
+                + f"Error Type: {type(e).__name__}\n"
+                + f"Error Message: {e}\n"
+                + f"Traceback:\n{traceback.format_exc()}"
+            )
         return file, output, err

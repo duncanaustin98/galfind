@@ -91,8 +91,10 @@ if config.getboolean("DEFAULT", "USE_LOGGING"):
     )
     # Create a logger instance
     galfind_logger = logging.getLogger(__name__)
-    # don't add file handler to galfind_logger if in workflow
-    if not in_workflow:
+    # don't add file handler to galfind_logger if in workflow, or if
+    # LOG_TO_FILE is disabled (e.g. LOGGING_OUT_DIR lives on a read-only
+    # mount, as happens inside some Apptainer/Singularity setups)
+    if not in_workflow and config.getboolean("DEFAULT", "LOG_TO_FILE", fallback=True):
         current_timestamp = time.strftime("%Y-%m-%d", time.gmtime())
         log_file_name = f"{current_timestamp}.log"
         os.makedirs(config['DEFAULT']['LOGGING_OUT_DIR'], exist_ok = True) # make directory if it doesnt already exist

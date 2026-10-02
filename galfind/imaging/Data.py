@@ -59,10 +59,9 @@ import numpy as np
 from astropy.convolution import convolve, convolve_fft
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
+from astropy.stats import mad_std, sigma_clipped_stats
 from astropy.table import QTable, Table, hstack, vstack
 from astropy.wcs import WCS
-
-# from astroquery.gaia import Gaia
 from joblib import Parallel, delayed
 from matplotlib.colors import LogNorm, Normalize
 from tqdm import tqdm
@@ -2521,6 +2520,200 @@ class Band_Data(Band_Data_Base):
         galfind_logger.info(
             f"Finished aligning {repr(self)} to {repr(align_band_data)}"
         )
+
+    def check_astrometry_gaia(
+        self: Self,
+        max_sep: u.Quantity = 0.3 * u.arcsec,
+        snr_threshold: float = 10.0,
+        fwhm_pix: float = 3.0,
+        gaia_row_lim: int = 5000,
+        overwrite: bool = False,
+    ) -> Dict[str, Any]:
+        """Astrometric offset of this band's image relative to Gaia DR3.
+
+        Detects point sources in the science image (im_path/SCI, via
+        `photutils.detection.DAOStarFinder` on a sigma-clipped
+        background), cross-matches them against a Gaia DR3 cone search
+        centred on the image's footprint, and returns the median RA/Dec
+        offset (image minus Gaia) and scatter of the matches - i.e. how
+        far this band's absolute WCS sits from Gaia's reference frame.
+        The JWST pipeline's `tweakreg` step doesn't correct for this
+        unless given an ``abs_refcat``, which `Raw_JWST_Data.run_stage3`
+        doesn't currently set.
+
+        Parameters
+        ----------
+        max_sep : `astropy.units.Quantity`, optional
+            Maximum separation for a detected source to be matched to a
+            Gaia source. Default is 0.3 arcsec.
+        snr_threshold : `float`, optional
+            Minimum SNR (relative to the sigma-clipped background RMS)
+            for `DAOStarFinder` to flag a detection. Default is 10.0.
+        fwhm_pix : `float`, optional
+            Approximate source FWHM in pixels, passed to
+            `DAOStarFinder`. This is only used to seed detection/
+            centroiding, not as a PSF model, so it doesn't need to be
+            precise. Default is 3.0.
+        gaia_row_lim : `int`, optional
+            Maximum number of Gaia sources to retrieve. Default is 5000.
+        overwrite : `bool`, optional
+            Re-query Gaia even if a cached result exists for this exact
+            `im_path`. Default is `False`.
+
+        Returns
+        -------
+        `dict`
+            ``{"n_matches", "median_ra_offset", "median_dec_offset",
+            "median_offset", "scatter_ra", "scatter_dec"}`` - offsets
+            and scatter (`astropy.stats.mad_std`) in arcsec, using an
+            ``image - Gaia`` sign convention. `n_matches` counts
+            sources within `max_sep` of a Gaia source; if fewer than 5,
+            the offset/scatter values are `None` (too few points for a
+            meaningful statistic) and a warning is logged.
+        """
+        from astroquery.gaia import Gaia
+        from photutils.detection import DAOStarFinder
+
+        im_path = Path(self.im_path)
+        with fits.open(im_path) as hdul:
+            data = hdul["SCI"].data
+            wcs = WCS(hdul["SCI"].header)
+
+        # detect point sources
+        mean, median, std = sigma_clipped_stats(data, sigma=3.0)
+        finder = DAOStarFinder(threshold=snr_threshold * std, fwhm=fwhm_pix)
+        sources = finder(data - median)
+        if sources is None or len(sources) == 0:
+            galfind_logger.warning(
+                f"No sources detected in im_path={str(im_path)!r} for "
+                f"{repr(self)}; can't check astrometry against Gaia DR3."
+            )
+            return {
+                "n_matches": 0,
+                "median_ra_offset": None,
+                "median_dec_offset": None,
+                "median_offset": None,
+                "scatter_ra": None,
+                "scatter_dec": None,
+            }
+        # photutils >= 2.0 renamed DAOStarFinder's centroid columns
+        # ("xcentroid" -> "x_centroid"); support both since different
+        # environments running this may pin different versions
+        x_col = (
+            "x_centroid" if "x_centroid" in sources.colnames else "xcentroid"
+        )
+        y_col = (
+            "y_centroid" if "y_centroid" in sources.colnames else "ycentroid"
+        )
+        detected_coords = SkyCoord(
+            *wcs.pixel_to_world_values(sources[x_col], sources[y_col]),
+            unit="deg",
+        )
+
+        # query Gaia DR3 for the image's footprint, caching the raw
+        # result alongside im_path so repeat calls for the same band
+        # don't have to wait on Gaia's async job queue again
+        footprint = SkyCoord(wcs.calc_footprint(), unit="deg")
+        footprint_centre = SkyCoord(
+            ra=footprint.ra.deg.mean() * u.deg,
+            dec=footprint.dec.deg.mean() * u.deg,
+        )
+        search_radius = footprint.separation(footprint_centre).max()
+
+        gaia_query_path = (
+            im_path.parent / "gaia_query" / f"{im_path.stem}_gaia.fits"
+        )
+        if gaia_query_path.is_file() and not overwrite:
+            galfind_logger.debug(
+                f"Loading cached Gaia query from {gaia_query_path}"
+            )
+            gaia_stars = Table.read(gaia_query_path)
+        else:
+            Gaia.ROW_LIMIT = gaia_row_lim
+            adql_query = f"""
+                SELECT source_id, ra, dec, phot_g_mean_mag, ruwe
+                FROM gaiadr3.gaia_source
+                WHERE 1 = CONTAINS(
+                    POINT('ICRS', ra, dec),
+                    CIRCLE('ICRS', {footprint_centre.ra.deg},
+                        {footprint_centre.dec.deg},
+                        {search_radius.deg}))
+                AND ruwe < 1.4"""
+            job = Gaia.launch_job_async(adql_query)
+            gaia_stars = job.get_results()
+            gaia_query_path.parent.mkdir(parents=True, exist_ok=True)
+            gaia_stars.write(gaia_query_path, overwrite=True)
+
+        if len(gaia_stars) == 0:
+            galfind_logger.warning(
+                f"No Gaia DR3 sources found for im_path={str(im_path)!r} "
+                f"({repr(self)}); can't check astrometry."
+            )
+            return {
+                "n_matches": 0,
+                "median_ra_offset": None,
+                "median_dec_offset": None,
+                "median_offset": None,
+                "scatter_ra": None,
+                "scatter_dec": None,
+            }
+        gaia_coords = SkyCoord(
+            ra=gaia_stars["ra"], dec=gaia_stars["dec"], unit="deg"
+        )
+
+        # nearest-neighbour cross-match, keeping only matches within
+        # max_sep
+        idx, sep, _ = detected_coords.match_to_catalog_sky(gaia_coords)
+        matched = sep < max_sep
+        n_matches = int(np.count_nonzero(matched))
+
+        if n_matches < 5:
+            galfind_logger.warning(
+                f"Only {n_matches} Gaia DR3 match(es) within {max_sep} "
+                f"for {repr(self)}; too few for a meaningful astrometric "
+                "offset."
+            )
+            return {
+                "n_matches": n_matches,
+                "median_ra_offset": None,
+                "median_dec_offset": None,
+                "median_offset": None,
+                "scatter_ra": None,
+                "scatter_dec": None,
+            }
+
+        matched_detected = detected_coords[matched]
+        matched_gaia = gaia_coords[idx[matched]]
+        d_ra = (
+            (matched_detected.ra - matched_gaia.ra)
+            * np.cos(matched_gaia.dec.radian)
+        ).to(u.arcsec)
+        d_dec = (matched_detected.dec - matched_gaia.dec).to(u.arcsec)
+
+        median_ra_offset = np.median(d_ra)
+        median_dec_offset = np.median(d_dec)
+        median_offset = np.hypot(median_ra_offset, median_dec_offset)
+        result = {
+            "n_matches": n_matches,
+            "median_ra_offset": median_ra_offset,
+            "median_dec_offset": median_dec_offset,
+            "median_offset": median_offset,
+            "scatter_ra": mad_std(d_ra),
+            "scatter_dec": mad_std(d_dec),
+        }
+        galfind_logger.info(
+            f"Astrometry check for {repr(self)}: {n_matches} Gaia DR3 "
+            f"matches, median offset={median_offset:.3f} "
+            f"(dRA={median_ra_offset:.3f}, dDec={median_dec_offset:.3f})"
+        )
+        if median_offset > 0.1 * u.arcsec:
+            galfind_logger.warning(
+                f"{repr(self)} median offset from Gaia DR3 "
+                f"({median_offset:.3f}) exceeds 0.1 arcsec; this "
+                "band's absolute astrometry may need correcting "
+                "(e.g. via tweakreg's abs_refcat)."
+            )
+        return result
 
     def xy_align(
         self: Type[Self],
