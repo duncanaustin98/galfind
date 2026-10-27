@@ -70,6 +70,7 @@ from .. import config, galfind_logger
 from ..photometry import Photutils, SExtractor
 from ..utils import Depths, Masking
 from ..utils import useful_funcs_austind as funcs
+from ..utils.catalogue_readme import update_cat_readme
 from ..utils.exceptions import (
     AbstractMethodError,
     ExternalToolError,
@@ -5990,11 +5991,16 @@ class Data:
                     ),
                 },
             }
+            readme_step = (
+                "Forced photometry: combined per-band catalogues "
+                f"(forced phot band = {self.forced_phot_band.filt_name})"
+            )
             if not Path(phot_cat_path).is_file() or overwrite:
                 # save master table
                 master_tab.write(
                     self.phot_cat_path, format="fits", overwrite=True
                 )
+                update_cat_readme(self.phot_cat_path, step=readme_step)
             else:
                 from ..catalogues import Catalogue
 
@@ -6002,51 +6008,11 @@ class Data:
                     master_tab,
                     self.phot_cat_path,
                     "OBJECTS",
+                    readme_step=readme_step,
                 )
             galfind_logger.info(
                 f"Saved combined SExtractor catalogue as {self.phot_cat_path}"
             )
-            self._create_phot_cat_readme()
-
-    def _create_phot_cat_readme(self):
-        pass
-        # create galfind catalogue README
-        # sex_aper_diams = json.loads(
-        #     config.get("SExtractor", "APERTURE_DIAMS")
-        # ) * u.arcsec
-        # text = f"""
-        #     NUMBER: Galaxy ID
-        #     X/Y_IMAGE: X/Y image co-ordinates in
-        #     ALPHA/DELTA_J2000: RA/Dec (J2000 co-ordinates)
-        #     FLUX(ERR)_APER_'band': Aperture flux/flux errors in
-        #         {str(sex_aper_diams.to(u.arcsec).value) + 'as'}
-        #         diameter apertures, image units with ZPs as
-        #         explained below
-        #     MAG_APER_'band': Aperture magnitudes in
-        #         {str(sex_aper_diams.to(u.arcsec).value) + 'as'}
-        #         diameter apertures, AB mag units, defaults to 99.
-        #         if flux < 0.
-        #     MAGERR_APER_'band': Aperture magnitude errors in
-        #         {str(sex_aper_diams.to(u.arcsec).value) + 'as'}
-        #         diameter apertures, AB mag units, negative if
-        #         mag == 99.
-        # """
-        # if 'sextractor' in [
-        #     cat_type.lower() for cat_type in
-        #     self.sex_cat_types.values()
-        # ]:
-        #     text += (
-        #         f"See SExtractor documentation () for descriptions "
-        #         f"of other columns. These are only available for "
-        #         f"{'+'.join([filt_name for filt_name, sex_cat_type "
-        #         f"in self.sex_cat_types.items() if 'sextractor' "
-        #         f"in sex_cat_type.lower()])}\n"
-        #     )
-        # text += readme_sep + "\n"
-        # self.make_sex_readme(
-        #     {"Photometry": text},
-        #     self.sex_cat_master_path.replace(".fits", "_README.txt")
-        # )
 
     def mask(
         self: Self,
@@ -7045,6 +7011,7 @@ class Data:
             galfind_logger.info(
                 f"Appended aperture correction columns to {self.phot_cat_path}"
             )
+            update_cat_readme(self.phot_cat_path, step="Aperture corrections")
         else:
             galfind_logger.warning(
                 f"Aperture correction columns already in {self.phot_cat_path}"
@@ -7142,15 +7109,15 @@ class Data:
                     tab,
                     self.phot_cat_path,
                     "OBJECTS",
+                    readme_step="Masking",
                 )
             else:
                 tab.write(self.phot_cat_path, overwrite=True)
                 funcs.change_file_permissions(self.phot_cat_path)
+                update_cat_readme(self.phot_cat_path, step="Masking")
             galfind_logger.info(
                 f"Appended mask columns to {self.phot_cat_path}"
             )
-            # TODO: update README
-            galfind_logger.debug("Updating README for mask not implemented!")
         else:
             galfind_logger.debug(
                 f"Mask columns already in {self.phot_cat_path}, skipping!"

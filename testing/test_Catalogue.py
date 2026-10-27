@@ -699,9 +699,68 @@ def test_catalogue_update_depths_from_data_missing_data(synthetic_eazy_cat):
         synthetic_eazy_cat._update_depths_from_data(0.32 * u.arcsec)
 
 
-def test_readme_info_from_fits_tab_returns_dict(synthetic_eazy_cat_path):
-    result = Catalogue._readme_info_from_fits_tab(synthetic_eazy_cat_path)
-    assert result == {}
+def _make_readme_test_cat(cat_path):
+    tab = Table()
+    tab["NUMBER"] = np.array([1, 2], dtype=int)
+    tab["ALPHA_J2000"] = np.array([150.0, 150.001])
+    tab["DELTA_J2000"] = np.array([2.0, 2.001])
+    for band in ["F277W", "F444W", "F277W+F444W"]:
+        for prefix in ["FLUX_APER", "FLUXERR_APER", "MAGERR_APER"]:
+            tab[f"{prefix}_{band}"] = np.ones(2)
+    tab.meta = {"SURVEY": "test", "BANDS": str(["F277W", "F444W"])}
+    Catalogue_Base._write_cat(
+        [tab], ["OBJECTS"], str(cat_path), readme_step="Forced photometry"
+    )
+
+
+def _read_readme(cat_path):
+    return (cat_path.parent / f"{cat_path.stem}_README.txt").read_text()
+
+
+def test_readme_created_with_catalogue(tmp_path):
+    cat_path = tmp_path / "test_cat.fits"
+    _make_readme_test_cat(cat_path)
+    readme = _read_readme(cat_path)
+    assert "1. [" in readme and "Forced photometry" in readme
+    assert "created OBJECTS (2 rows)" in readme
+    # per-band columns are grouped, incl. the stacked detection band
+    assert "FLUX_APER_{band}" in readme
+    assert "bands: F277W, F444W, F277W+F444W" in readme
+    assert (tmp_path / "test_cat_README.json").is_file()
+
+
+def test_readme_records_each_step(tmp_path):
+    cat_path = tmp_path / "test_cat.fits"
+    _make_readme_test_cat(cat_path)
+    mask_tab = Table(
+        {f"unmasked_{band}": [True, False] for band in ["F277W", "F444W"]}
+    )
+    Catalogue_Base.update_fits_cat(mask_tab, str(cat_path), "OBJECTS")
+    # re-writing the same columns does not add a history entry
+    Catalogue_Base.update_fits_cat(mask_tab, str(cat_path), "OBJECTS")
+    objects = Table.read(cat_path, hdu="OBJECTS")
+    eazy = Table({"IDENT": [1, 2], "zbest_fsps_larson_zfree": [9.5, 1.0]})
+    Catalogue_Base._write_cat(
+        [objects, eazy], ["OBJECTS", "EAZY_FSPS_LARSON"], str(cat_path)
+    )
+    readme = _read_readme(cat_path)
+    assert "2. [" in readme and "] Masking" in readme
+    assert "+ unmasked_{band} (2 bands)" in readme
+    assert "3. [" in readme and "SED fitting (EAZY_FSPS_LARSON)" in readme
+    assert "4. [" not in readme
+    assert "Best-fitting photometric redshift" in readme
+
+
+def test_catalogue_make_readme_custom_step(tmp_path):
+    cat_path = tmp_path / "test_cat.fits"
+    _make_readme_test_cat(cat_path)
+    cat = SimpleNamespace(cat_path=str(cat_path))
+    readme_path = Catalogue.make_readme(
+        cat, step="Manual check", details="looked fine"
+    )
+    assert readme_path == str(tmp_path / "test_cat_README.txt")
+    readme = _read_readme(cat_path)
+    assert "Manual check" in readme and "looked fine" in readme
 
 
 # -- Multiple_Catalogue: Combined_Catalogue_Creator --------------------------

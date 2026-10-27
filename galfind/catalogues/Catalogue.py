@@ -68,6 +68,7 @@ from ..sed_fitting.SED_codes import SED_code
 from ..spectra.Spectrum import Spectral_Catalogue
 from ..utils import Depths
 from ..utils import useful_funcs_austind as funcs
+from ..utils.catalogue_readme import get_readme_path, update_cat_readme
 from ..utils.exceptions import (
     GalfindError,
     GalfindTypeError,
@@ -4320,61 +4321,29 @@ class Catalogue(Catalogue_Base):
 
     def make_readme(
         self: Self,
-        update: bool = False,
-        hdu_divider: str = "------------------",
-    ) -> None:
-        """Generate or update a README file documenting the catalogue.
+        step: Optional[str] = None,
+        details: Optional[str] = None,
+    ) -> str:
+        """Generate or update the README file documenting the catalogue.
 
-        Creates a human-readable README file describing the catalogue contents,
-        column definitions, and data provenance for each HDU extension.
-
-        Parameters
-        ----------
-        update : `bool`, optional
-            Whether to update an existing README. Default is `False`.
-        hdu_divider : `str`, optional
-            String to use as divider between HDU sections. Default is 18
-            dashes.
-        """
-        out_path = f"{self.fits_path.replace('.fits', '')}_README.txt"
-        if not Path(out_path).is_file() or update:
-            out_str = ""
-            if Path(out_path).is_file():
-                with open(out_path, "r") as f:
-                    out_str = f.read()
-                # split by hdu_divider
-                out_str = out_str.split(hdu_divider)
-
-            readme_info = self._readme_info_from_fits_tab(self.fits_path)
-        for origin, columns in readme_info.items():
-            pass
-
-    @staticmethod
-    def _readme_info_from_fits_tab(
-        fits_path: str,
-    ) -> Dict[str, Dict[str, str]]:
-        """Extract column metadata from a FITS catalogue for README generation.
-
-        Parses a multi-extension FITS catalogue file, extracting header and
-        column information from each HDU to generate documentation.
+        The README (``<catalogue>_README.txt``) is updated automatically
+        every time galfind writes to the catalogue; call this to regenerate
+        it manually or to record a custom step in its processing history.
 
         Parameters
         ----------
-        fits_path : `str`
-            Path to the FITS catalogue file.
+        step : `str`, optional
+            Processing step to record in the README history. If `None`, an
+            entry is only made if the catalogue changed since the README was
+            last written. Default is `None`.
+        details : `str`, optional
+            Extra free-text information to record alongside `step`.
+            Default is `None`.
 
         Returns
         -------
-        `dict` of `str` to `dict` of `str` to `str`
-            Nested dictionary mapping HDU names to dictionaries of column
-            names and their descriptions.
+        `str`
+            Path to the README file.
         """
-        hdul = fits.open(fits_path)
-        hdu_names = [hdu.name for hdu in hdul]
-        readme_info = {}
-        for i, hdu_name in enumerate(hdu_names):
-            hdul[i]
-            if hdu_name == "OBJECTS":
-                # check for SExtractor columns
-                pass
-        return readme_info
+        update_cat_readme(self.cat_path, step=step, details=details)
+        return get_readme_path(self.cat_path)

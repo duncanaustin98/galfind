@@ -30,7 +30,9 @@ repos:
         stages: [pre-commit, pre-push]
         exclude: ^examples/
 
-  # Sanitise Jupyter notebooks.
+  # Sanitise Jupyter notebooks. Cell outputs and execution counts are kept
+  # because the docs (nbsphinx_execute = "never") render the committed
+  # outputs rather than re-running the notebooks.
   - repo: https://github.com/srstevenson/nb-clean
     rev: 3.3.0
     hooks:
@@ -39,5 +41,7 @@ repos:
           - --remove-empty-cells
           - --preserve-cell-metadata
           - tags
+          - --preserve-cell-outputs
+          - --preserve-execution-counts
           - -M
           - --

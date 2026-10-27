@@ -48,6 +48,7 @@ except ImportError:
 from .. import config, galfind_logger
 from ..sed_fitting.SED_codes import SED_code
 from ..utils import useful_funcs_austind as funcs
+from ..utils.catalogue_readme import update_cat_readme
 from ..utils.exceptions import (
     EmptyCatalogueError,
     GalfindError,
@@ -1099,6 +1100,7 @@ class Catalogue_Base:
         tab_arr: List[Table],
         tab_names: List[str],
         cat_path: str,
+        readme_step: Optional[str] = None,
     ) -> None:
         """Write a set of tables to a multi-extension FITS catalogue.
 
@@ -1111,8 +1113,11 @@ class Catalogue_Base:
         cat_path : `str`
             Path to write the FITS catalogue to. Overwrites any existing
             file.
+        readme_step : `str`, optional
+            Processing step recorded in the catalogue README. If `None`,
+            it is inferred from the columns that changed. Default is `None`.
         """
-        self._write_cat(tab_arr, tab_names, cat_path)
+        self._write_cat(tab_arr, tab_names, cat_path, readme_step=readme_step)
         # Update cache with written tables
         if hasattr(self, "cat_creator"):
             for tab, name in zip(tab_arr, tab_names):
@@ -1123,6 +1128,7 @@ class Catalogue_Base:
         tab_arr: List[Table],
         tab_names: List[str],
         cat_path: str,
+        readme_step: Optional[str] = None,
     ) -> None:
         try:
             hdu_list = fits.HDUList()
@@ -1143,12 +1149,14 @@ class Catalogue_Base:
         hdu_list.writeto(cat_path, overwrite=True)
         funcs.change_file_permissions(cat_path)
         galfind_logger.info(f"Writing table to {cat_path}")
+        update_cat_readme(cat_path, step=readme_step)
 
     @staticmethod
     def update_fits_cat(
         new_tab: Table,
         cat_path: str,
         hdu_name: str,
+        readme_step: Optional[str] = None,
     ) -> None:
         """Update a single HDU of a FITS catalogue with new/updated columns.
 
@@ -1165,6 +1173,9 @@ class Catalogue_Base:
             Path to the FITS catalogue to update.
         hdu_name : `str`
             Name of the extension to update.
+        readme_step : `str`, optional
+            Processing step recorded in the catalogue README. If `None`,
+            it is inferred from the columns that changed. Default is `None`.
         """
         # retain any pre-existing column and meta names
         orig_tab = Table.read(cat_path, hdu=hdu_name)
@@ -1209,6 +1220,7 @@ class Catalogue_Base:
         galfind_logger.info(
             f"Updated {hdu_name} in {cat_path} with new table!"
         )
+        update_cat_readme(cat_path, step=readme_step)
 
     def write_hdu(self: Self, tab: Table, hdu: str) -> None:
         """Write (or overwrite) a single HDU extension in the FITS catalogue.

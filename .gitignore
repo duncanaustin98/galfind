@@ -40,3 +40,4 @@ testing/test_data/**/*_psfmatch_*_stpsf
 examples
 .ruff_cache
 galfind.sif
+SVO_filters

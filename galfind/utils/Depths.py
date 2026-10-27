@@ -56,6 +56,7 @@ except ImportError:
 from .. import config, galfind_logger
 from . import Masking
 from . import useful_funcs_austind as funcs
+from .catalogue_readme import update_cat_readme
 from .exceptions import (
     GalfindError,
     GalfindTypeError,
@@ -3519,11 +3520,13 @@ def append_loc_depth_cols(
                 tab,
                 self.phot_cat_path,
                 "OBJECTS",
+                readme_step="Local depths",
             )
         else:
             # overwrite original catalogue with local depth columns
             tab.write(self.phot_cat_path, overwrite=True)
             funcs.change_file_permissions(self.phot_cat_path)
+            update_cat_readme(self.phot_cat_path, step="Local depths")
             galfind_logger.info(
                 f"Appended local depth columns to {self.phot_cat_path}"
             )
